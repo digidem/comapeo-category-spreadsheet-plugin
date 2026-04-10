@@ -9,6 +9,7 @@
     "push": "npm run version:update && clasp push",
     "lint": "bunx biome lint --write --unsafe .",
     "push:all": "npm run version:update && bash src/scripts/push-all.sh",
+    "push:one": "npm run version:update && bash src/scripts/push-one.sh",
     "fixture": "bun run scripts/generate-fixture.ts"
   },
   "devDependencies": {

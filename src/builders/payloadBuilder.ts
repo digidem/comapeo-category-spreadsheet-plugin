@@ -508,6 +508,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
   });
 
   let hasTrackCategory = false;
+  let hasObservationCategory = false;
 
   const mappedCategories = categories
     .map((row, index) => {
@@ -546,9 +547,8 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
             .map((t) => t.trim().toLowerCase())
             .filter(Boolean)
             .map((t) => {
-              if (t === "o" || t === "obs" || t === "observation")
-                return "observation";
-              if (t === "t" || t === "track" || t === "tracks") return "track";
+              if (t.startsWith("o")) return "observation";
+              if (t.startsWith("t")) return "track";
               return undefined;
             })
             .filter((v): v is string => Boolean(v));
@@ -585,6 +585,9 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
       if (appliesTo.includes("track")) {
         hasTrackCategory = true;
+      }
+      if (appliesTo.includes("observation")) {
+        hasObservationCategory = true;
       }
 
       // Determine category ID from Column E (Category ID) when available
@@ -666,6 +669,23 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
     })
     .filter((cat): cat is Category => cat !== null);
 
+  if (!hasObservationCategory) {
+    const message =
+      'At least one category must include "observation" in the Applies column. Please update the Categories sheet and try again.';
+    try {
+      if (typeof SpreadsheetApp !== "undefined") {
+        SpreadsheetApp.getUi().alert(
+          "Observation Applies Required",
+          `${message}\n\nTip: mark the categories that should appear in the observation viewer with "observation" (you can combine it with "track").`,
+          SpreadsheetApp.getUi().ButtonSet.OK,
+        );
+      }
+    } catch (error) {
+      console.warn("Unable to show missing observation alert:", error);
+    }
+    throw new Error(message);
+  }
+
   if (!hasTrackCategory) {
     const appliesColumnMissing = appliesCol === undefined;
     const wasAutoCreated = AUTO_CREATED_APPLIES_COLUMN === true;
@@ -700,6 +720,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         if (mappedCategories.length > 0) {
           mappedCategories[0].appliesTo = ["track", "observation"];
           hasTrackCategory = true;
+          hasObservationCategory = true;
         }
 
         try {
