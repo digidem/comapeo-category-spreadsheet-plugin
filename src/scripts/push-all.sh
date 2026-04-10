@@ -10,6 +10,8 @@ while IFS= read -r line; do
     echo "Pushing to $name..."
   elif [[ $line =~ \"scriptId\":\ \"([^\"]+)\" ]]; then
     scriptId="${BASH_REMATCH[1]}"
+    # Remove any whitespace that might have snuck in
+    scriptId="${scriptId// /}"
 
     # Create temporary .clasp.json for this project
     echo "{\"scriptId\":\"$scriptId\",\"rootDir\":\"./\"}" > .clasp.json
