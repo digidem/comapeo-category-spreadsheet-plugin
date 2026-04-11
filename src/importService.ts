@@ -16,6 +16,8 @@ const MAX_COMAPEOCAT_SIZE = 10 * 1024 * 1024;
 /** ZIP file signature bytes */
 const ZIP_SIGNATURE = [0x50, 0x4B, 0x03, 0x04];
 
+const log = getScopedLogger("ImportService");
+
 // =============================================================================
 // Import Dialog HTML Builder
 // =============================================================================
@@ -629,7 +631,6 @@ function validateBuildRequest(content: BuildRequest, options?: BuildValidationOp
 }
 
 function runStrictBuildValidations(buildRequest: BuildRequest): void {
-  const log = getScopedLogger("ImportService");
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -908,7 +909,6 @@ function countTranslationEntries(translations: any): number {
 }
 
 function getByteLength(value: string): number {
-  const log = getScopedLogger("ImportService");
   const str = value || '';
   try {
     if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.newBlob === 'function') {

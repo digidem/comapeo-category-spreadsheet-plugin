@@ -54,7 +54,7 @@ function applyConfigurationToSpreadsheet(
     }
     applyMetadata(metadataSheet, configData.metadata);
   }
-  logApplyConfiguration.info("configData:", JSON.stringify(configData));
+  logApplyConfiguration.debug("configData keys:", Object.keys(configData).join(", "));
   // Apply categories (presets)
   if (configData.presets && configData.presets.length > 0) {
     if (onProgress) {
