@@ -41,9 +41,7 @@ function processFields(data) {
 
   // Log warnings if any
   if (warnings.length > 0) {
-    const logger = typeof getScopedLogger === "function"
-      ? getScopedLogger("ProcessFields")
-      : console;
+    const logger = getScopedLogger("ProcessFields");
     logger.warn(
       `Field validation warnings (${warnings.length}):\n${warnings.join("\n")}`,
     );

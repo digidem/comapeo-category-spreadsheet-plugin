@@ -1,11 +1,6 @@
 /// <reference path="../loggingHelpers.ts" />
 /// <reference path="../types.ts" />
 
-function getProcessTranslationsLogger() {
-  return typeof getScopedLogger === "function"
-    ? getScopedLogger("ProcessTranslations")
-    : console;
-}
 
 function normalizeComparisonKey(value: unknown): string {
   if (typeof value === "string") {
@@ -88,10 +83,10 @@ function buildColumnMapForSheet(sheetName: string): {
   targetLanguages: string[];
   columnToLanguageMap: Record<number, string>;
 } {
+  const log = getScopedLogger('ProcessTranslations');
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
 
   if (!sheet) {
-    const log = getProcessTranslationsLogger();
     log.warn(`⏭️  Sheet "${sheetName}" not found - using only primary language`);
     const primaryLanguage = getPrimaryLanguage();
     return {
@@ -104,7 +99,6 @@ function buildColumnMapForSheet(sheetName: string): {
 
   // Guard: Skip if sheet is empty or has no columns
   if (lastColumn === 0) {
-    const log = getProcessTranslationsLogger();
     log.warn(`⏭️  Sheet "${sheetName}" is empty - using only primary language`);
     const primaryLanguage = getPrimaryLanguage();
     return {
@@ -129,29 +123,28 @@ function buildColumnMapForSheet(sheetName: string): {
   for (let i = languageStartIndex; i < headerRow.length; i++) {
     const header = headerRow[i]?.toString().trim();
     if (!header) {
-      getProcessTranslationsLogger().warn(`⚠️  Empty header at column ${i + 1} in "${sheetName}" - skipping`);
+      log.warn(`⚠️  Empty header at column ${i + 1} in "${sheetName}" - skipping`);
       continue;
     }
 
     const langCode = resolveHeaderCode(header);
     if (!langCode) {
-      getProcessTranslationsLogger().warn(`⚠️  Could not parse language from header "${header}" at column ${i + 1} in "${sheetName}"`);
+      log.warn(`⚠️  Could not parse language from header "${header}" at column ${i + 1} in "${sheetName}"`);
       continue;
     }
 
     const normalizedCode = langCode.toLowerCase();
     if (seenLanguages.has(normalizedCode)) {
-      getProcessTranslationsLogger().warn(`⚠️  Duplicate language header "${header}" (${langCode}) in "${sheetName}" - skipping duplicate`);
+      log.warn(`⚠️  Duplicate language header "${header}" (${langCode}) in "${sheetName}" - skipping duplicate`);
       continue;
     }
 
     seenLanguages.add(normalizedCode);
     targetLanguages.push(langCode);
     columnToLanguageMap[i] = langCode;
-    getProcessTranslationsLogger().info(`[${sheetName}] Column ${i} (${header}) → ${langCode}`);
+    log.info(`[${sheetName}] Column ${i} (${header}) → ${langCode}`);
   }
 
-  const log = getProcessTranslationsLogger();
   log.info(`[${sheetName}] Found ${targetLanguages.length} languages:`, targetLanguages);
   log.info(`[${sheetName}] Column mapping:`, columnToLanguageMap);
 
@@ -176,7 +169,7 @@ function buildColumnMapForSheet(sheetName: string): {
  * // Returns: { "en": {...}, "es": {...}, "fr": {...} }
  */
 function processTranslations(data, fields, presets) {
-  const log = getProcessTranslationsLogger();
+  const log = getScopedLogger('ProcessTranslations');
   log.info("Starting processTranslations...");
   const primaryLanguage = getPrimaryLanguage();
 

@@ -44,9 +44,7 @@ function processPresets(
   }
 
   // Log warnings if any
-  const logger = typeof getScopedLogger === "function"
-    ? getScopedLogger("ProcessPresets")
-    : console;
+  const logger = getScopedLogger("ProcessPresets");
 
   if (warnings.length > 0) {
     logger.warn(
