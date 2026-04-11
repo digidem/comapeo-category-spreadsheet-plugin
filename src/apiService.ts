@@ -2,6 +2,7 @@
  * CoMapeo Config API Service v2.0.0
  * JSON-only build endpoint, no ZIP workflow
  */
+const logApiService = getScopedLogger("ApiService");
 
 let AUTO_CREATED_APPLIES_COLUMN = false;
 let AUTO_CREATED_CATEGORY_ID_COLUMN = false;
@@ -37,7 +38,7 @@ function validateSheetHeaders(
   expected: string[]
 ): boolean {
   if (headers.length < expected.length) {
-    console.warn(
+    logApiService.warn(
       `${sheetName} sheet has ${headers.length} columns but expected ${expected.length}. ` +
       `Expected: [${expected.join(', ')}], Found: [${headers.join(', ')}]. ` +
       `This may cause issues if columns are misaligned.`
@@ -47,7 +48,7 @@ function validateSheetHeaders(
 
   for (let i = 0; i < expected.length; i++) {
     if (headers[i] !== expected[i]) {
-      console.warn(
+      logApiService.warn(
         `${sheetName} sheet column ${i + 1} header mismatch: ` +
         `expected "${expected[i]}" but found "${headers[i]}". ` +
         `Data may not be read correctly.`
@@ -108,7 +109,7 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
         );
       }
 
-      console.log(`Sending JSON build request to API (attempt ${attemptNumber} of ${maxRetries}):`, apiUrl);
+      logApiService.info(`Sending JSON build request to API (attempt ${attemptNumber} of ${maxRetries}):`, apiUrl);
 
       const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
         method: 'post',
@@ -119,12 +120,12 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
 
       const response = UrlFetchApp.fetch(apiUrl, options);
       const responseCode = response.getResponseCode();
-      console.log('Response code:', responseCode);
+      logApiService.info('Response code:', responseCode);
 
       if (responseCode === 200) {
         const responseBlob = response.getBlob();
         const contentType = response.getHeaders()['Content-Type'] || '';
-        console.log('Content-Type:', contentType);
+        logApiService.info('Content-Type:', contentType);
 
         // Verify we got a binary file response
         if (contentType.includes('application/octet-stream') || contentType.includes('application/zip')) {
@@ -152,7 +153,7 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
         }
       }
 
-      console.error(lastError?.message);
+      logApiService.error(lastError?.message);
 
       // Only sleep if we're going to retry (not on last attempt)
       if (attemptNumber < maxRetries) {
@@ -160,7 +161,7 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
       }
     } catch (error) {
       lastError = error;
-      console.error(`Error in API request (attempt ${attemptNumber} of ${maxRetries}):`, error);
+      logApiService.error(`Error in API request (attempt ${attemptNumber} of ${maxRetries}):`, error);
 
       // Only sleep if we're going to retry (not on last attempt)
       if (attemptNumber < maxRetries) {
@@ -190,7 +191,7 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
  * @returns URL to the saved file
  */
 function saveComapeocatToDrive(blob: GoogleAppsScript.Base.Blob): string {
-  console.log('Saving .comapeocat file to Drive...');
+  logApiService.info('Saving .comapeocat file to Drive...');
   const configFolder = getConfigFolder();
 
   // Get or create builds folder
@@ -206,14 +207,14 @@ function saveComapeocatToDrive(blob: GoogleAppsScript.Base.Blob): string {
   // This preserves both name and version to prevent file collisions
   const file = buildsFolderObj.createFile(blob);
   const fileUrl = file.getUrl();
-  console.log(`Download the .comapeocat file here: ${fileUrl}`);
+  logApiService.info(`Download the .comapeocat file here: ${fileUrl}`);
 
   // Also create a ZIP archive of the .comapeocat file for easier sharing
   const zipName = `${blob.getName()}.zip`;
   const zipBlob = Utilities.zip([blob], zipName);
   const zipFile = buildsFolderObj.createFile(zipBlob);
   const zipUrl = zipFile.getUrl();
-  console.log(`Download the zipped .comapeocat file here: ${zipUrl}`);
+  logApiService.info(`Download the zipped .comapeocat file here: ${zipUrl}`);
 
   // Return ZIP URL by default
   return zipUrl;
@@ -268,7 +269,7 @@ function migrateSpreadsheetFormat(): void {
   if (categoriesSheet) {
     const lastCol = categoriesSheet.getLastColumn();
     if (lastCol === 0) {
-      console.log('Categories sheet is empty, skipping migration');
+      logApiService.info('Categories sheet is empty, skipping migration');
     } else {
       let headers = categoriesSheet.getRange(1, 1, 1, lastCol).getValues()[0];
       let headersLower = headers.map(normalizeHeaderLabel);
@@ -279,7 +280,7 @@ function migrateSpreadsheetFormat(): void {
       };
 
       const logCategoryWarning = (message: string) => {
-        console.warn(message);
+        logApiService.warn(message);
         migrationWarnings.push(message);
       };
 
@@ -314,12 +315,12 @@ function migrateSpreadsheetFormat(): void {
             isRecognizedLanguageHeader = Boolean(validation?.valid);
           }
         } catch (validationError) {
-          console.warn('Failed to validate Categories!A1 language header:', validationError);
+          logApiService.warn('Failed to validate Categories!A1 language header:', validationError);
         }
       }
 
       if (headerA1Value && headerA1Value !== 'Name' && isRecognizedLanguageHeader) {
-        console.log(`Preserving primary language '${headerA1Value}' from Categories!A1 before migration`);
+        logApiService.info(`Preserving primary language '${headerA1Value}' from Categories!A1 before migration`);
 
         const metadataData = metadataSheet.getDataRange().getValues();
         let primaryLanguageExists = false;
@@ -332,13 +333,13 @@ function migrateSpreadsheetFormat(): void {
 
         if (!primaryLanguageExists) {
           metadataSheet.appendRow(['primaryLanguage', headerA1Value]);
-          console.log(`Stored primaryLanguage='${headerA1Value}' in Metadata sheet`);
+          logApiService.info(`Stored primaryLanguage='${headerA1Value}' in Metadata sheet`);
         }
 
         categoriesSheet.getRange(1, 1, 1, 4)
           .setValues([['Name', 'Icon', 'Fields', 'Applies']])
           .setFontWeight('bold');
-        console.log('Updated Categories headers to Name/Icon/Fields/Applies');
+        logApiService.info('Updated Categories headers to Name/Icon/Fields/Applies');
         refreshCategoryHeaders();
       }
       else if (headerA1Value && headerA1Value !== 'Name') {
@@ -414,7 +415,7 @@ function migrateSpreadsheetFormat(): void {
   if (detailsSheet) {
     const lastCol = detailsSheet.getLastColumn();
     if (lastCol === 0) {
-      console.log('Details sheet is empty, skipping migration');
+      logApiService.info('Details sheet is empty, skipping migration');
     } else {
       let headers = detailsSheet.getRange(1, 1, 1, lastCol).getValues()[0];
       let headersLower = headers.map(normalizeHeaderLabel);
@@ -446,7 +447,7 @@ function migrateSpreadsheetFormat(): void {
           headers[0] === expectedNewHeaders[0] &&
           headers[4] === expectedNewHeaders[4] &&
           headers[5] === expectedNewHeaders[5]) {
-        console.log('Details sheet already in new format with ID column, skipping migration');
+        logApiService.info('Details sheet already in new format with ID column, skipping migration');
       }
       // Check if it's old format without ID column (4 or 5 columns)
       else if ((headers.length === 4 || headers.length === 5) &&
@@ -454,7 +455,7 @@ function migrateSpreadsheetFormat(): void {
                headers[1] === 'Helper Text' &&
                headers[2] === 'Type' &&
                headers[3] === 'Options') {
-        console.log('Migrating Details sheet to include ID column...');
+        logApiService.info('Migrating Details sheet to include ID column...');
 
         // Insert column E for ID (after OPTIONS in column D)
         detailsSheet.insertColumnAfter(4);
@@ -470,18 +471,18 @@ function migrateSpreadsheetFormat(): void {
 
         detailsSheet.getRange(1, 1, 1, newHeaders.length).setValues([newHeaders]).setFontWeight('bold');
 
-        console.log('Details sheet migrated successfully');
+        logApiService.info('Details sheet migrated successfully');
       }
       // Ambiguous format - log warning and skip to prevent data corruption
       else {
         const warning = `Details sheet must match [Name, Helper Text, Type, Options, ID, Universal]. Found ${headers.length} columns: ${headers.join(', ')}.`;
-        console.warn(warning);
+        logApiService.warn(warning);
         migrationWarnings.push(warning);
       }
 
       const detailsLayoutError = validateDetailsHeaderLayout(detailsSheet);
       if (detailsLayoutError) {
-        console.warn(detailsLayoutError);
+        logApiService.warn(detailsLayoutError);
         migrationWarnings.push(detailsLayoutError);
       }
     }
@@ -501,7 +502,7 @@ function migrateSpreadsheetFormat(): void {
         closeProcessingModalDialog();
       }
     } catch (error) {
-      console.warn('Unable to close processing dialog before migration alert:', error);
+      logApiService.warn('Unable to close processing dialog before migration alert:', error);
     }
 
     ui.alert(
@@ -550,12 +551,12 @@ function ensurePlainTextColumn(
   try {
     range.clearDataValidations();
   } catch (error) {
-    console.warn('Failed to clear data validations for column', column, error);
+    logApiService.warn('Failed to clear data validations for column', column, error);
   }
   try {
     range.setNumberFormat('@STRING@');
   } catch (error) {
-    console.warn('Failed to set plain text format for column', column, error);
+    logApiService.warn('Failed to set plain text format for column', column, error);
   }
 }
 
@@ -600,7 +601,7 @@ function ensureAppliesColumn(categoriesSheet: GoogleAppsScript.Spreadsheet.Sheet
         firstAppliesCell.setValue('track, observation');
       }
     } catch (error) {
-      console.warn('Unable to seed Applies column default value:', error);
+      logApiService.warn('Unable to seed Applies column default value:', error);
     }
   }
   return true;
