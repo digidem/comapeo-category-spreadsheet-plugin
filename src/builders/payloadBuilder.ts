@@ -10,6 +10,7 @@
  * @returns BuildRequest payload ready for API
  */
 function createBuildPayload(data: SheetData): BuildRequest {
+  const log = getScopedLogger("PayloadBuilder");
   const fields = buildFields(data);
   // buildCategories now returns categories with both defaultFieldIds and fields populated.
   // Avoid remapping here to prevent accidentally clearing the arrays.
@@ -38,7 +39,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
   const locales = buildLocales();
   const translations = buildTranslationsPayload(data, categories, fields);
 
-  console.log("Build payload summary", {
+  log.info("Build payload summary", {
     categories: categories.length,
     fields: fields.length,
     icons: icons.length,
@@ -50,7 +51,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
   const categoryIds = categories.map((c) => c.id);
   setCategorySelection(categoryIds);
 
-  console.log(
+  log.info(
     `Built payload with ${categories.length} categories, ${fields.length} fields, ${icons.length} icons`,
   );
 
@@ -72,7 +73,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
       ? `<<${payload.icons.length} icons omitted from preview>>`
       : undefined,
   };
-  console.log(
+  log.info(
     "[DEBUG] BuildRequest payload preview:",
     JSON.stringify(debugPayloadPreview, null, 2),
   );
@@ -85,6 +86,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
  * Uses Metadata!primaryLanguage if present, otherwise defaults to 'en'
  */
 function buildLocales(): string[] {
+  const log = getScopedLogger("PayloadBuilder");
   const normalizeLocaleInput = (
     raw: string | null | undefined,
   ): string | null => {
@@ -105,7 +107,7 @@ function buildLocales(): string[] {
         }
       }
     } catch (error) {
-      console.warn(
+      log.warn(
         "Failed to map primary language name to locale code:",
         error,
       );
@@ -127,7 +129,7 @@ function buildLocales(): string[] {
       }
     }
   } catch (error) {
-    console.warn(
+    log.warn(
       "Falling back to Metadata primaryLanguage for locales:",
       error,
     );
@@ -233,6 +235,7 @@ function buildMetadata(data: SheetData): Metadata {
  * Builds fields array from Details sheet
  */
 function buildFields(data: SheetData): Field[] {
+  const log = getScopedLogger("PayloadBuilder");
   const details = data.Details?.slice(1) || [];
 
   // Keep a handle to the sheet so we can write back auto-generated IDs for missing values
@@ -241,7 +244,7 @@ function buildFields(data: SheetData): Field[] {
     detailsSheet =
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
   } catch (error) {
-    console.warn("Unable to fetch Details sheet for ID backfill:", error);
+    log.warn("Unable to fetch Details sheet for ID backfill:", error);
   }
 
   // Use headers from data directly instead of fetching from sheet again
@@ -276,7 +279,7 @@ function buildFields(data: SheetData): Field[] {
     .map((row, index) => {
       const name = String(row[nameCol] || "").trim();
       if (!name) {
-        console.log(`Skipping Details row ${index + 2}: empty field name`);
+        log.info(`Skipping Details row ${index + 2}: empty field name`);
         return null; // Skip blank rows
       }
 
@@ -316,7 +319,7 @@ function buildFields(data: SheetData): Field[] {
         (type === "selectOne" || type === "selectMultiple") &&
         (!options || options.length === 0)
       ) {
-        console.warn(
+        log.warn(
           `Skipping Details row ${index + 2}: select field without options`,
         );
         return null;
@@ -339,7 +342,7 @@ function buildFields(data: SheetData): Field[] {
         }
 
         if (removedCount.count > 0) {
-          console.warn(
+          log.warn(
             `Field "${name}" (row ${index + 2}): Removed ${removedCount.count} duplicate option value(s)`,
           );
           options = uniqueOptions;
@@ -377,7 +380,7 @@ function buildFields(data: SheetData): Field[] {
             detailsSheet!.getRange(write.row, idCol + 1).setValue(write.value);
           });
         } catch (err) {
-          console.warn(
+          log.warn(
             "Failed to write auto-generated field IDs to Details sheet:",
             err,
           );
@@ -423,6 +426,7 @@ function parseOptions(optionsStr: string): SelectOption[] | undefined {
  * Categories are built in exact spreadsheet order for setCategorySelection
  */
 function buildCategories(data: SheetData, fields: Field[]): Category[] {
+  const log = getScopedLogger("PayloadBuilder");
   const categories = data.Categories?.slice(1) || [];
   if (categories.length === 0) {
     return [];
@@ -444,7 +448,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         .getBackgrounds();
     }
   } catch (e) {
-    console.warn(
+    log.warn(
       "Could not fetch display values or backgrounds from sheet (might be running in test/mock mode):",
       e,
     );
@@ -516,7 +520,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
       const name = String(getVal(nameCol) || "").trim();
       if (!name) {
-        console.log(
+        log.info(
           `Skipping Categories row ${index + 2}: empty category name`,
         );
         return null; // Skip blank rows
@@ -555,7 +559,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
         if (!trimmedRaw) {
           if (AUTO_CREATED_APPLIES_COLUMN && index === 0 && categoriesSheet) {
-            console.warn(
+            log.warn(
               `Auto-created Applies column: defaulting category row ${index + 2} to track + observation.`,
             );
             appliesTo = ["track", "observation"];
@@ -564,7 +568,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
                 .getRange(index + 2, appliesCol + 1)
                 .setValue("track, observation");
             } catch (seedError) {
-              console.warn(
+              log.warn(
                 "Failed to seed Applies cell during auto-create fallback:",
                 seedError,
               );
@@ -628,7 +632,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
               fieldNameToId.get(name.toLowerCase()) ||
               slugify(name);
             if (!id) {
-              console.log(
+              log.info(
                 `DEBUG: Could not map field token '${name}' to an ID. Available keys sample:`,
                 Array.from(fieldNameToId.keys()).slice(0, 5),
               );
@@ -681,7 +685,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         );
       }
     } catch (error) {
-      console.warn("Unable to show missing observation alert:", error);
+      log.warn("Unable to show missing observation alert:", error);
     }
     throw new Error(message);
   }
@@ -692,7 +696,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
     // UX improvement: if the Applies column is missing, auto-create + seed it instead of failing hard
     if (appliesColumnMissing || wasAutoCreated) {
-      console.warn(
+      log.warn(
         "Applies column missing or newly created; seeding first category with track + observation.",
       );
 
@@ -710,7 +714,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
               seedCell.setValue("track, observation");
             }
           } catch (seedError) {
-            console.warn(
+            log.warn(
               "Unable to seed Applies column default value:",
               seedError,
             );
@@ -730,10 +734,10 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
             8,
           );
         } catch (toastError) {
-          console.warn("Unable to display Applies column toast:", toastError);
+          log.warn("Unable to display Applies column toast:", toastError);
         }
       } catch (repairError) {
-        console.warn(
+        log.warn(
           "Auto-create Applies column failed; falling back to validation error.",
           repairError,
         );
@@ -754,7 +758,7 @@ Tip: mark the categories that should appear in the track viewer with "track" (yo
           );
         }
       } catch (error) {
-        console.warn("Unable to show missing track alert:", error);
+        log.warn("Unable to show missing track alert:", error);
       }
       throw new Error(message);
     }
@@ -935,6 +939,7 @@ function parseIconSource(
 }
 
 function decodeDataSvg(dataUri: string): string | null {
+  const log = getScopedLogger("PayloadBuilder");
   try {
     if (dataUri.includes(";base64,")) {
       const base64 = dataUri.split(";base64,")[1];
@@ -949,7 +954,7 @@ function decodeDataSvg(dataUri: string): string | null {
     const payload = dataUri.substring(commaIndex + 1);
     return decodeURIComponent(payload);
   } catch (err) {
-    console.warn("Failed to decode data URI icon:", err);
+    log.warn("Failed to decode data URI icon:", err);
     return null;
   }
 }
@@ -959,6 +964,7 @@ function isGoogleDriveLink(url: string): boolean {
 }
 
 function loadDriveSvg(url: string): string | null {
+  const log = getScopedLogger("PayloadBuilder");
   try {
     const fileId = url.split("/d/")[1]?.split("/")[0];
     if (!fileId) return null;
@@ -974,10 +980,10 @@ function loadDriveSvg(url: string): string | null {
       return text.trim();
     }
 
-    console.warn(`Drive icon ${fileId} rejected: mime=${mime}`);
+    log.warn(`Drive icon ${fileId} rejected: mime=${mime}`);
     return null;
   } catch (err) {
-    console.warn(`Failed to inline Drive icon ${url}:`, err);
+    log.warn(`Failed to inline Drive icon ${url}:`, err);
     return null;
   }
 }
@@ -1053,6 +1059,7 @@ function buildTranslationsPayload(
   categories: Category[],
   fields: Field[],
 ): ApiTranslationsByLocale {
+  const log = getScopedLogger("PayloadBuilder");
   const translations: ApiTranslationsByLocale = {};
 
   const ensureLocaleEntry = (lang: string): ApiTranslationLocale => {
@@ -1156,12 +1163,12 @@ function buildTranslationsPayload(
 
   // If no translation sheets found with languages, return empty translations
   if (allLangs.size === 0) {
-    console.log("No translation sheets found with language columns");
+    log.info("No translation sheets found with language columns");
     return translations;
   }
 
   const langs = Array.from(allLangs);
-  console.log(`Found ${langs.length} languages for translations:`, langs);
+  log.info(`Found ${langs.length} languages for translations:`, langs);
 
   // Initialize translations structure
   // Process category translations - match by name to handle blank rows
