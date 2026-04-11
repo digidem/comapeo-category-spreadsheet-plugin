@@ -54,13 +54,14 @@ type SharingPolicy = "inherit" | "anyone" | "off";
 let iconHashCache: Record<string, IconHashMetadata> | null = null;
 let iconHashKeysUsedThisRun: Record<string, boolean> = {};
 let cachedSharingPolicy: SharingPolicy | null = null;
+
+const logDriveService = getScopedLogger("DriveService");
 function saveDriveFolderToZip(
   folderId,
   onProgress?: (message: string, detail?: string) => void,
   preCollectedBlobs?: GoogleAppsScript.Base.Blob[],
 ): GoogleAppsScript.Base.Blob {
-  const log = getScopedLogger("DriveService");
-  log.info("[ZIP] Attempting to access folder with ID:", folderId);
+  logDriveService.info("[ZIP] Attempting to access folder with ID:", folderId);
 
   if (!folderId) {
     throw new Error("Folder ID is null or undefined");
@@ -68,7 +69,7 @@ function saveDriveFolderToZip(
 
   // Progress callback helper
   const reportProgress = (message: string, detail?: string) => {
-    log.info(`[ZIP] ${message}${detail ? ': ' + detail : ''}`);
+    logDriveService.info(`[ZIP] ${message}${detail ? ': ' + detail : ''}`);
     if (onProgress) {
       onProgress(message, detail);
     }
@@ -85,7 +86,7 @@ function saveDriveFolderToZip(
       break; // Success, exit retry loop
     } catch (error) {
       retryCount++;
-      log.error(`[ZIP] Failed to access folder (attempt ${retryCount}/${maxRetries + 1}):`, error.message);
+      logDriveService.error(`[ZIP] Failed to access folder (attempt ${retryCount}/${maxRetries + 1}):`, error.message);
 
       if (retryCount > maxRetries) {
         throw new Error(`Failed to access Drive folder with ID "${folderId}" after ${maxRetries + 1} attempts. This could be due to permissions or the folder not being properly created. Original error: ${error.message}`);
@@ -93,7 +94,7 @@ function saveDriveFolderToZip(
 
       // Wait before retrying (exponential backoff)
       const waitTime = 1000 * Math.pow(2, retryCount);
-      log.info(`[ZIP] Waiting ${waitTime}ms before retry...`);
+      logDriveService.info(`[ZIP] Waiting ${waitTime}ms before retry...`);
       Utilities.sleep(waitTime);
     }
   }
@@ -102,7 +103,7 @@ function saveDriveFolderToZip(
     throw new Error(`Folder with ID "${folderId}" was not found or is not accessible`);
   }
 
-  log.info("[ZIP] Successfully accessed folder:", folder.getName());
+  logDriveService.info("[ZIP] Successfully accessed folder:", folder.getName());
   const logZipDigests = isZipDigestLoggingEnabled();
 
   if (preCollectedBlobs && preCollectedBlobs.length > 0) {
@@ -111,7 +112,7 @@ function saveDriveFolderToZip(
     const sortedCachedBlobs = sortBlobsByName(preCollectedBlobs);
     const zipBlob = Utilities.zip(sortedCachedBlobs, `${folder.getName()}.zip`);
     const zipTime = ((new Date().getTime() - zipStartTime) / 1000).toFixed(1);
-    log.info(`[ZIP] ZIP archive created from cached blobs in ${zipTime}s (size: ${zipBlob.getBytes().length} bytes)`);
+    logDriveService.info(`[ZIP] ZIP archive created from cached blobs in ${zipTime}s (size: ${zipBlob.getBytes().length} bytes)`);
     if (logZipDigests) {
       logZipDigestComparison(sortedCachedBlobs, zipBlob, folder);
     }
@@ -131,7 +132,7 @@ function saveDriveFolderToZip(
   ) {
     // Prevent infinite recursion with depth limit
     if (depth > MAX_DRIVE_FOLDER_DEPTH) {
-      log.error(`[ZIP] Maximum folder depth (${MAX_DRIVE_FOLDER_DEPTH}) exceeded at path: ${path}`);
+      logDriveService.error(`[ZIP] Maximum folder depth (${MAX_DRIVE_FOLDER_DEPTH}) exceeded at path: ${path}`);
       throw new Error(`Maximum folder depth of ${MAX_DRIVE_FOLDER_DEPTH} exceeded. Please check for circular folder references or deeply nested structures.`);
     }
 
@@ -139,12 +140,12 @@ function saveDriveFolderToZip(
     while (files.hasNext()) {
       const file = files.next();
       fileCount++;
-      log.info(`[ZIP] Adding file ${fileCount}: ${path}${file.getName()}`);
+      logDriveService.info(`[ZIP] Adding file ${fileCount}: ${path}${file.getName()}`);
 
       // Heartbeat logging and progress reporting every 10 files
       if (fileCount % 10 === 0) {
         const elapsed = ((new Date().getTime() - startTime) / 1000).toFixed(1);
-        log.info(`[ZIP] Progress: ${fileCount} files processed in ${elapsed}s`);
+        logDriveService.info(`[ZIP] Progress: ${fileCount} files processed in ${elapsed}s`);
         reportProgress("Creating package... (5/8)", `Collecting files (${fileCount})...`);
       }
 
@@ -162,7 +163,7 @@ function saveDriveFolderToZip(
   addFolderContentsToBlobs(folder);
 
   const totalTime = ((new Date().getTime() - startTime) / 1000).toFixed(1);
-  log.info(`[ZIP] Collected ${fileCount} files in ${totalTime}s`);
+  logDriveService.info(`[ZIP] Collected ${fileCount} files in ${totalTime}s`);
   reportProgress("Creating package... (5/8)", `Compressing ${fileCount} files into archive...`);
 
   const zipStartTime = new Date().getTime();
@@ -170,27 +171,26 @@ function saveDriveFolderToZip(
   const zipBlob = Utilities.zip(sortedDriveBlobs, `${folder.getName()}.zip`);
   const zipTime = ((new Date().getTime() - zipStartTime) / 1000).toFixed(1);
 
-  log.info(`[ZIP] ZIP archive created in ${zipTime}s (size: ${zipBlob.getBytes().length} bytes)`);
+  logDriveService.info(`[ZIP] ZIP archive created in ${zipTime}s (size: ${zipBlob.getBytes().length} bytes)`);
   if (logZipDigests) {
     const driveDigest = computeBlobMd5Digest(zipBlob);
-    log.info(`[ZIP] Digest (Drive traversal): ${driveDigest}`);
+    logDriveService.info(`[ZIP] Digest (Drive traversal): ${driveDigest}`);
   }
   return zipBlob;
 }
 
 function isZipDigestLoggingEnabled(): boolean {
-  const log = getScopedLogger("DriveService");
   try {
     const propertyValue = PropertiesService.getScriptProperties().getProperty(
       ZIP_DIGEST_LOGGING_PROPERTY_KEY,
     );
     const isEnabled = typeof propertyValue === "string" && propertyValue.toLowerCase() === "true";
     if (isEnabled) {
-      log.info("[ZIP] Digest comparison logging enabled via script property");
+      logDriveService.info("[ZIP] Digest comparison logging enabled via script property");
     }
     return isEnabled;
   } catch (error) {
-    log.warn(
+    logDriveService.warn(
       `[ZIP] Unable to read script property "${ZIP_DIGEST_LOGGING_PROPERTY_KEY}": ${error.message}`,
     );
     return false;
@@ -202,12 +202,11 @@ function logZipDigestComparison(
   cachedZipBlob: GoogleAppsScript.Base.Blob,
   sourceFolder: GoogleAppsScript.Drive.Folder,
 ): void {
-  const log = getScopedLogger("DriveService");
   try {
     const cachedNames = cachedBlobs.map((blob) => blob.getName() || "");
     const cachedSortedNames = cachedNames.slice().sort();
     const cachedDigest = computeBlobMd5Digest(cachedZipBlob);
-    log.info(`[ZIP] Digest (cached blobs): ${cachedDigest}`);
+    logDriveService.info(`[ZIP] Digest (cached blobs): ${cachedDigest}`);
 
     const driveBlobs = collectFolderBlobsForDigest(sourceFolder);
     const driveNames = driveBlobs.map((blob) => blob.getName() || "");
@@ -217,14 +216,14 @@ function logZipDigestComparison(
     const sortedDriveBlobs = sortBlobsByName(driveBlobs);
     const driveZipBlob = Utilities.zip(sortedDriveBlobs, `${sourceFolder.getName()}.zip`);
     const driveDigest = computeBlobMd5Digest(driveZipBlob);
-    log.info(`[ZIP] Digest (Drive traversal): ${driveDigest}`);
+    logDriveService.info(`[ZIP] Digest (Drive traversal): ${driveDigest}`);
 
     logPerBlobDigestDifferences(cachedBlobs, sortedDriveBlobs);
 
     const digestsMatch = cachedDigest === driveDigest;
-    log.info(`[ZIP] Digest comparison result: ${digestsMatch ? "MATCH" : "MISMATCH"}`);
+    logDriveService.info(`[ZIP] Digest comparison result: ${digestsMatch ? "MATCH" : "MISMATCH"}`);
   } catch (error) {
-    log.error("[ZIP] Failed to compute ZIP digest comparison:", error);
+    logDriveService.error("[ZIP] Failed to compute ZIP digest comparison:", error);
   }
 }
 
@@ -232,7 +231,6 @@ function logZipBlobNameDiagnostics(
   cachedSortedNames: string[],
   driveSortedNames: string[],
 ): void {
-  const log = getScopedLogger("DriveService");
   const cachedCount = cachedSortedNames.length;
   const driveCount = driveSortedNames.length;
 
@@ -240,15 +238,15 @@ function logZipBlobNameDiagnostics(
     cachedCount === driveCount &&
     cachedSortedNames.every((name, index) => name === driveSortedNames[index])
   ) {
-    log.info(`[ZIP] Blob name lists match (${cachedCount} entries)`);
+    logDriveService.info(`[ZIP] Blob name lists match (${cachedCount} entries)`);
   } else {
-    log.info(
+    logDriveService.info(
       `[ZIP] Blob name lists differ — cached (${cachedCount}) vs Drive (${driveCount})`,
     );
-    log.info(
+    logDriveService.info(
       `[ZIP] Cached blob names: ${cachedSortedNames.join(", ") || "(none)"}`,
     );
-    log.info(
+    logDriveService.info(
       `[ZIP] Drive blob names: ${driveSortedNames.join(", ") || "(none)"}`,
     );
 
@@ -261,10 +259,10 @@ function logZipBlobNameDiagnostics(
       new Set(cachedSortedNames),
     );
 
-    log.info(
+    logDriveService.info(
       `[ZIP] Only in cached blobs: ${cachedOnly.join(", ") || "(none)"}`,
     );
-    log.info(
+    logDriveService.info(
       `[ZIP] Only in Drive blobs: ${driveOnly.join(", ") || "(none)"}`,
     );
   }
@@ -273,12 +271,12 @@ function logZipBlobNameDiagnostics(
   const driveDuplicates = findDuplicateNames(driveSortedNames);
 
   if (cachedDuplicates.length > 0) {
-    log.info(
+    logDriveService.info(
       `[ZIP] Duplicate cached blob names: ${cachedDuplicates.join(", ")}`,
     );
   }
   if (driveDuplicates.length > 0) {
-    log.info(
+    logDriveService.info(
       `[ZIP] Duplicate Drive blob names: ${driveDuplicates.join(", ")}`,
     );
   }
@@ -313,7 +311,6 @@ function logPerBlobDigestDifferences(
   cachedBlobs: GoogleAppsScript.Base.Blob[],
   driveBlobs: GoogleAppsScript.Base.Blob[],
 ): void {
-  const log = getScopedLogger("DriveService");
   const cachedDigestMap = computeBlobDigestMap(cachedBlobs);
   const driveDigestMap = computeBlobDigestMap(driveBlobs);
   const mismatchedNames: string[] = [];
@@ -325,13 +322,13 @@ function logPerBlobDigestDifferences(
   });
 
   if (mismatchedNames.length === 0) {
-    log.info("[ZIP] Individual blob digests match for all entries");
+    logDriveService.info("[ZIP] Individual blob digests match for all entries");
   } else {
-    log.info(
+    logDriveService.info(
       `[ZIP] Individual blob digest mismatches (${mismatchedNames.length}): ${mismatchedNames.join(", ")}`,
     );
     mismatchedNames.forEach((name) => {
-      log.info(
+      logDriveService.info(
         `[ZIP]  • ${name}: cached=${cachedDigestMap[name]} vs Drive=${driveDigestMap[name]}`,
       );
     });
@@ -427,8 +424,7 @@ function getConfigFolder(): GoogleAppsScript.Drive.Folder {
 }
 
 function saveZipToDrive(zipBlob: GoogleAppsScript.Base.Blob, version): string {
-  const log = getScopedLogger("DriveService");
-  log.info("Saving ZIP file to Drive...");
+  logDriveService.info("Saving ZIP file to Drive...");
   const configFolder = getConfigFolder();
   const buildsFolder = "builds";
   let buildsFolderObj: GoogleAppsScript.Drive.Folder;
@@ -440,7 +436,7 @@ function saveZipToDrive(zipBlob: GoogleAppsScript.Base.Blob, version): string {
     buildsFolderObj = configFolder.createFolder(buildsFolder);
     applyDefaultSharing(buildsFolderObj);
   }
-  log.info("Saving ZIP file to Drive...");
+  logDriveService.info("Saving ZIP file to Drive...");
   const fileName = `${version}.zip`;
   const doubleZippedBlob = Utilities.zip([zipBlob], fileName);
   const zipFile = buildsFolderObj
@@ -448,7 +444,7 @@ function saveZipToDrive(zipBlob: GoogleAppsScript.Base.Blob, version): string {
     .setName(fileName);
   applyDefaultSharing(zipFile);
   const fileUrl = zipFile.getUrl();
-  log.info(`Download the ZIP file here: ${fileUrl}`);
+  logDriveService.info(`Download the ZIP file here: ${fileUrl}`);
 
   return fileUrl;
 }
@@ -476,11 +472,10 @@ function saveConfigToDrive(
   onProgress?: (message: string, detail?: string) => void,
   options?: SaveConfigOptions,
 ): { url: string; id: string; zipBlobs: GoogleAppsScript.Base.Blob[] } {
-  const log = getScopedLogger("DriveService");
   const skipDriveWrites = Boolean(options?.skipDriveWrites);
   const shouldWriteToDrive = !skipDriveWrites;
   const folderName = `${slugify(config.metadata.version)}`;
-  log.info(
+  logDriveService.info(
     `[DRIVE] Saving config to ${shouldWriteToDrive ? "drive" : "in-memory zip"}:`,
     folderName,
   );
@@ -490,7 +485,7 @@ function saveConfigToDrive(
 
   // Progress callback helper
   const reportProgress = (message: string, detail?: string) => {
-    log.info(`[DRIVE] ${message}${detail ? ': ' + detail : ''}`);
+    logDriveService.info(`[DRIVE] ${message}${detail ? ': ' + detail : ''}`);
     if (onProgress) {
       onProgress(message, detail);
     }
@@ -515,7 +510,7 @@ function saveConfigToDrive(
       break; // Success, exit retry loop
     } catch (error) {
       retryCount++;
-      log.error(`[DRIVE] Error creating folder (attempt ${retryCount}/${maxRetries + 1}):`, error.message);
+      logDriveService.error(`[DRIVE] Error creating folder (attempt ${retryCount}/${maxRetries + 1}):`, error.message);
 
       if (retryCount > maxRetries) {
         throw new Error(
@@ -525,7 +520,7 @@ function saveConfigToDrive(
 
       // Wait before retrying (exponential backoff)
       const waitTime = 1000 * Math.pow(2, retryCount);
-      log.info(`[DRIVE] Waiting ${waitTime}ms before retry...`);
+      logDriveService.info(`[DRIVE] Waiting ${waitTime}ms before retry...`);
       Utilities.sleep(waitTime);
     }
   }
@@ -535,12 +530,12 @@ function saveConfigToDrive(
       `Failed to create folder "${folderName}" in "rawBuilds". Root folder is undefined.`,
     );
   }
-  log.info("[DRIVE] Created folder:", rootFolder.getName(), "in rawBuilds");
+  logDriveService.info("[DRIVE] Created folder:", rootFolder.getName(), "in rawBuilds");
 
   // Verify folder ID is valid before proceeding
   folderId = rootFolder.getId();
   folderUrl = rootFolder.getUrl();
-  log.info("[DRIVE] Folder ID:", folderId);
+  logDriveService.info("[DRIVE] Folder ID:", folderId);
 
   if (!folderId) {
     throw new Error("Failed to get valid folder ID from created folder");
@@ -553,7 +548,7 @@ function saveConfigToDrive(
   try {
     reportProgress("Saving to Drive... (4/8)", "Creating folders...");
     const folders = createSubFolders(rootFolder, shouldWriteToDrive);
-    log.info("[DRIVE] ✅ Created subfolders successfully");
+    logDriveService.info("[DRIVE] ✅ Created subfolders successfully");
 
     // Process each step individually with better error handling and progress logging
     const iconSuffixes = ["-100px", "-24px"];
@@ -562,29 +557,29 @@ function saveConfigToDrive(
     const presetsStart = new Date().getTime();
     savePresetsAndIcons(config, folders, iconSuffixes, zipBlobs, shouldWriteToDrive);
     const presetsTime = ((new Date().getTime() - presetsStart) / 1000).toFixed(1);
-    log.info(`[DRIVE] ✅ Saved presets and icons (${presetsTime}s)`);
+    logDriveService.info(`[DRIVE] ✅ Saved presets and icons (${presetsTime}s)`);
 
     reportProgress("Saving to Drive... (4/8)", `Saving ${config.fields.length} fields...`);
     const fieldsStart = new Date().getTime();
     saveFields(config.fields, folders.fields, zipBlobs, shouldWriteToDrive);
     const fieldsTime = ((new Date().getTime() - fieldsStart) / 1000).toFixed(1);
-    log.info(`[DRIVE] ✅ Saved ${config.fields.length} fields (${fieldsTime}s)`);
+    logDriveService.info(`[DRIVE] ✅ Saved ${config.fields.length} fields (${fieldsTime}s)`);
 
     const languageCount = Object.keys(config.messages).length;
     reportProgress("Saving to Drive... (4/8)", `Saving translations for ${languageCount} languages...`);
     const messagesStart = new Date().getTime();
     saveMessages(config.messages, folders.messages, zipBlobs, shouldWriteToDrive);
     const messagesTime = ((new Date().getTime() - messagesStart) / 1000).toFixed(1);
-    log.info(`[DRIVE] ✅ Saved messages for ${languageCount} languages (${messagesTime}s)`);
+    logDriveService.info(`[DRIVE] ✅ Saved messages for ${languageCount} languages (${messagesTime}s)`);
 
     reportProgress("Saving to Drive... (4/8)", "Saving metadata and package...");
     const metadataStart = new Date().getTime();
     saveMetadataAndPackage(config, rootFolder, zipBlobs, shouldWriteToDrive);
     const metadataTime = ((new Date().getTime() - metadataStart) / 1000).toFixed(1);
-    log.info(`[DRIVE] ✅ Saved metadata and package (${metadataTime}s)`);
+    logDriveService.info(`[DRIVE] ✅ Saved metadata and package (${metadataTime}s)`);
 
     const totalTime = ((new Date().getTime() - startTime) / 1000).toFixed(1);
-    log.info(`[DRIVE] ✅ Successfully saved all config files to folder (total: ${totalTime}s)`);
+    logDriveService.info(`[DRIVE] ✅ Successfully saved all config files to folder (total: ${totalTime}s)`);
 
     const iconVariantCount = iconSuffixes.length > 0 ? iconSuffixes.length : 1;
     const iconFilesCreated = config.icons.length * iconVariantCount;
@@ -597,10 +592,10 @@ function saveConfigToDrive(
 
     if (shouldWriteToDrive) {
       if (totalFilesCreated > 80) {
-        log.info(`[DRIVE] Created ${totalFilesCreated} files; waiting for Drive sync...`);
+        logDriveService.info(`[DRIVE] Created ${totalFilesCreated} files; waiting for Drive sync...`);
         Utilities.sleep(2000);
       } else {
-        log.info("[DRIVE] Skipping Drive sync wait (small batch)");
+        logDriveService.info("[DRIVE] Skipping Drive sync wait (small batch)");
       }
     }
 
@@ -610,7 +605,7 @@ function saveConfigToDrive(
       zipBlobs,
     };
   } catch (error) {
-    log.error("[DRIVE] Error saving config files to Drive:", error);
+    logDriveService.error("[DRIVE] Error saving config files to Drive:", error);
     throw new Error(`Failed to save config files to Drive: ${error.message}`);
   }
 }
@@ -654,11 +649,10 @@ function savePresetsAndIcons(
   zipBlobs: GoogleAppsScript.Base.Blob[] | undefined,
   shouldWriteToDrive: boolean,
 ) {
-  const log = getScopedLogger("DriveService");
   try {
-    log.info("Saving presets...");
+    logDriveService.info("Saving presets...");
     savePresets(config.presets, folders.presets, zipBlobs, shouldWriteToDrive);
-    log.info("Saving icons from cached config...");
+    logDriveService.info("Saving icons from cached config...");
     config.icons = saveExistingIconsToFolder(
       config,
       folders.icons,
@@ -666,9 +660,9 @@ function savePresetsAndIcons(
       zipBlobs,
       true,
     );
-    log.info("Icons saved successfully");
+    logDriveService.info("Icons saved successfully");
   } catch (error) {
-    log.error("Error in savePresetsAndIcons:", error);
+    logDriveService.error("Error in savePresetsAndIcons:", error);
     throw new Error(`Failed to save presets and icons: ${error.message}`);
   }
 }
@@ -715,7 +709,7 @@ function saveExistingIconsToFolder(
     if (shouldUpdateIconCell(savedUrl, shouldWriteToDrive)) {
       updateIconUrlInSheet(categoriesSheet, index + 2, 2, savedUrl);
     } else {
-      log.info(
+      logDriveService.info(
         `[ICON] Skipping sheet update for ${presetSlug} (URL length: ${savedUrl ? savedUrl.length : 0})`,
       );
     }
@@ -748,8 +742,7 @@ function saveIconToFolderWithCaching(
   depth = 0,
   stats?: IconCacheStats,
 ): string {
-  const log = getScopedLogger("DriveService");
-  log.info(`[ICON] Saving icon with caching for ${displayName} (slug: ${presetSlug})`);
+  logDriveService.info(`[ICON] Saving icon with caching for ${displayName} (slug: ${presetSlug})`);
 
   const { iconContent, mimeType } = getIconContent({
     svg: iconSvg,
@@ -757,11 +750,11 @@ function saveIconToFolderWithCaching(
   });
 
   if (!iconContent) {
-    log.warn(`[ICON] Failed to resolve icon content for ${displayName}, generating fallback`);
+    logDriveService.warn(`[ICON] Failed to resolve icon content for ${displayName}, generating fallback`);
     const defaultBackground = backgroundColor || "#6d44d9";
 
     if (depth > 0) {
-      log.error(`[ICON] Unable to generate icon for ${displayName} after retry, using fallback icon`);
+      logDriveService.error(`[ICON] Unable to generate icon for ${displayName} after retry, using fallback icon`);
       if (stats) {
         stats.generatedFallbacks++;
       }
@@ -814,14 +807,14 @@ function saveIconToFolderWithCaching(
   }
 
   if (!resolvedUrl) {
-    log.warn(`[ICON] Failed to determine icon URL for ${displayName}, returning fallback icon`);
+    logDriveService.warn(`[ICON] Failed to determine icon URL for ${displayName}, returning fallback icon`);
     if (stats) {
       stats.generatedFallbacks++;
     }
     return FALLBACK_ICON_SVG;
   }
 
-  log.info(`[ICON] Icon ready for ${displayName}: ${resolvedUrl}`);
+  logDriveService.info(`[ICON] Icon ready for ${displayName}: ${resolvedUrl}`);
   return resolvedUrl;
 }
 
@@ -836,7 +829,6 @@ function saveIconVariantWithCaching(
   shouldWriteToDrive: boolean,
   stats?: IconCacheStats,
 ): string | null {
-  const log = getScopedLogger("DriveService");
   const sanitizedSize = suffix ? suffix.replace("-", "") : "";
   const propertyKey = getIconHashPropertyKey(presetSlug, sanitizedSize);
   markIconHashUsage(propertyKey);
@@ -854,7 +846,7 @@ function saveIconVariantWithCaching(
         ...existingMetadata,
         updatedAt: new Date().toISOString(),
       });
-      log.info(
+      logDriveService.info(
         `[ICON] Reused cached icon metadata for ${presetSlug}${suffix ? suffix : ""} (in-memory mode)`,
       );
       if (stats) {
@@ -890,12 +882,12 @@ function saveIconVariantWithCaching(
       if (stats) {
         stats.reusedFromCache++;
       }
-      log.info(
+      logDriveService.info(
         `[ICON] Reused cached icon for ${presetSlug}${suffix ? suffix : ""}`,
       );
       return reusedUrl;
     }
-    log.warn(
+    logDriveService.warn(
       `[ICON] Cached icon metadata invalid for ${presetSlug}${suffix ? suffix : ""}, regenerating`,
     );
   }
@@ -986,9 +978,8 @@ function reuseExistingIconVariant(
   destinationFolder: MaybeDriveFolder,
   iconHash: string,
 ): string | null {
-  const log = getScopedLogger("DriveService");
   if (!metadata.fileId) {
-    log.warn(
+    logDriveService.warn(
       `[ICON] Cached icon metadata missing file ID for ${presetSlug}${sanitizedSize ? '-' + sanitizedSize : ''}, regenerating`,
     );
     return null;
@@ -1018,7 +1009,7 @@ function reuseExistingIconVariant(
 
     return fileUrl;
   } catch (error) {
-    log.warn(
+    logDriveService.warn(
       `[ICON] Cached icon file ${metadata.fileId} inaccessible: ${error.message}`,
     );
     return null;
@@ -1032,7 +1023,6 @@ function ensureIconFileLinkedToFolder(
   sanitizedSize: string,
   mimeType: string,
 ): void {
-  const log = getScopedLogger("DriveService");
   if (!folder) {
     return;
   }
@@ -1050,12 +1040,12 @@ function ensureIconFileLinkedToFolder(
     folder.addFile(file);
 
     if (file.getName() !== expectedName) {
-      log.warn(
+      logDriveService.warn(
         `[ICON] Reused icon file name mismatch for ${presetSlug}${sanitizedSize ? '-' + sanitizedSize : ''}: expected ${expectedName}, found ${file.getName()}`,
       );
     }
   } catch (error) {
-    log.warn(
+    logDriveService.warn(
       `[ICON] Failed to attach cached icon ${file.getId()} to raw build folder: ${error.message}`,
     );
   }
@@ -1084,7 +1074,6 @@ function pushIconContentToZip(
 }
 
 function getDefaultSharingPolicy(): SharingPolicy {
-  const log = getScopedLogger("DriveService");
   if (cachedSharingPolicy) {
     return cachedSharingPolicy;
   }
@@ -1104,12 +1093,12 @@ function getDefaultSharingPolicy(): SharingPolicy {
       return cachedSharingPolicy;
     }
 
-    log.warn(
+    logDriveService.warn(
       `[SHARING] Unrecognized sharing policy "${rawPolicy}", falling back to "${DEFAULT_SHARING_POLICY}"`,
     );
     cachedSharingPolicy = DEFAULT_SHARING_POLICY;
   } catch (error) {
-    log.warn(`[SHARING] Failed to read sharing policy: ${error.message}`);
+    logDriveService.warn(`[SHARING] Failed to read sharing policy: ${error.message}`);
     cachedSharingPolicy = DEFAULT_SHARING_POLICY;
   }
 
@@ -1119,7 +1108,6 @@ function getDefaultSharingPolicy(): SharingPolicy {
 function applyDefaultSharing(
   target: GoogleAppsScript.Drive.Folder | GoogleAppsScript.Drive.File | null,
 ): void {
-  const log = getScopedLogger("DriveService");
   if (!target) {
     return;
   }
@@ -1139,7 +1127,7 @@ function applyDefaultSharing(
       applySpreadsheetSharingToTarget(target);
     }
   } catch (error) {
-    log.warn(
+    logDriveService.warn(
       `[SHARING] Failed to apply ${policy} sharing to ${target.getName ? target.getName() : "target"}: ${error.message}`,
     );
   }
@@ -1148,7 +1136,6 @@ function applyDefaultSharing(
 function applySpreadsheetSharingToTarget(
   target: GoogleAppsScript.Drive.Folder | GoogleAppsScript.Drive.File,
 ): void {
-  const log = getScopedLogger("DriveService");
   try {
     const spreadsheetId = SpreadsheetApp.getActiveSpreadsheet().getId();
     const spreadsheetFile = DriveApp.getFileById(spreadsheetId);
@@ -1156,7 +1143,7 @@ function applySpreadsheetSharingToTarget(
     const permission = spreadsheetFile.getSharingPermission();
     target.setSharing(access, permission);
   } catch (error) {
-    log.warn(`[SHARING] Unable to inherit spreadsheet sharing: ${error.message}`);
+    logDriveService.warn(`[SHARING] Unable to inherit spreadsheet sharing: ${error.message}`);
   }
 }
 
@@ -1192,8 +1179,7 @@ function logIconCacheStats(
   stats: IconCacheStats,
   shouldWriteToDrive: boolean,
 ): void {
-  const log = getScopedLogger("DriveService");
-  log.info(
+  logDriveService.info(
     `[ICON] Cache summary (${shouldWriteToDrive ? "Drive" : "In-memory"} mode): reused=${stats.reusedFromCache}, driveWrites=${stats.driveWrites}, inlineUrls=${stats.inMemoryUrls}, fallbacks=${stats.generatedFallbacks}`,
   );
 }
@@ -1222,7 +1208,6 @@ function getOrCreateSubFolder(
 }
 
 function deduplicateFolderFilesByName(folder: GoogleAppsScript.Drive.Folder): void {
-  const log = getScopedLogger("DriveService");
   const seen: Record<string, GoogleAppsScript.Drive.File> = {};
   const duplicates: GoogleAppsScript.Drive.File[] = [];
   const files = folder.getFiles();
@@ -1238,11 +1223,11 @@ function deduplicateFolderFilesByName(folder: GoogleAppsScript.Drive.Folder): vo
 
   duplicates.forEach((file) => {
     try {
-      log.info(`[ICON] Removing duplicate file from Drive: ${file.getName()} (${file.getId()})`);
+      logDriveService.info(`[ICON] Removing duplicate file from Drive: ${file.getName()} (${file.getId()})`);
       folder.removeFile(file);
       file.setTrashed(true);
     } catch (error) {
-      log.warn(`[ICON] Failed to remove duplicate file ${file.getId()}: ${error.message}`);
+      logDriveService.warn(`[ICON] Failed to remove duplicate file ${file.getId()}: ${error.message}`);
     }
   });
 }
@@ -1257,7 +1242,6 @@ function resetIconHashTracking(): void {
 }
 
 function getIconHashCache(): Record<string, IconHashMetadata> {
-  const log = getScopedLogger("DriveService");
   if (iconHashCache) {
     return iconHashCache;
   }
@@ -1271,7 +1255,7 @@ function getIconHashCache(): Record<string, IconHashMetadata> {
       try {
         cache[key] = JSON.parse(properties[key]) as IconHashMetadata;
       } catch (error) {
-        log.warn(`[ICON] Failed to parse icon hash metadata for key "${key}": ${error.message}`);
+        logDriveService.warn(`[ICON] Failed to parse icon hash metadata for key "${key}": ${error.message}`);
       }
     });
 
@@ -1310,7 +1294,6 @@ function pruneUnusedIconHashEntries(): void {
 }
 
 function clearIconHashCache(): void {
-  const log = getScopedLogger("DriveService");
   const propertiesService = PropertiesService.getScriptProperties();
   const keys = Object.keys(propertiesService.getProperties()).filter((key) =>
     key.startsWith(ICON_HASH_PROPERTY_PREFIX),
@@ -1321,7 +1304,7 @@ function clearIconHashCache(): void {
   });
 
   resetIconHashTracking();
-  log.info("[ICON] Cleared icon hash cache");
+  logDriveService.info("[ICON] Cleared icon hash cache");
 }
 
 function savePresets(
@@ -1424,23 +1407,22 @@ function saveMetadataAndPackage(
  * @param folderId - The ID of the folder to delete
  */
 function cleanupDriveFolder(folderId: string | null): void {
-  const log = getScopedLogger("DriveService");
   if (!folderId) {
-    log.info("[CLEANUP] No folder ID provided, skipping cleanup");
+    logDriveService.info("[CLEANUP] No folder ID provided, skipping cleanup");
     return;
   }
 
   try {
-    log.info("[CLEANUP] Attempting to delete folder with ID:", folderId);
+    logDriveService.info("[CLEANUP] Attempting to delete folder with ID:", folderId);
     const folder = DriveApp.getFolderById(folderId);
     const folderName = folder.getName();
 
     // Move to trash instead of permanent delete
     folder.setTrashed(true);
 
-    log.info(`[CLEANUP] ✅ Successfully trashed folder: ${folderName} (ID: ${folderId})`);
+    logDriveService.info(`[CLEANUP] ✅ Successfully trashed folder: ${folderName} (ID: ${folderId})`);
   } catch (error) {
     // Log error but don't throw - cleanup failure shouldn't block error handling
-    log.error("[CLEANUP] ⚠️  Failed to cleanup folder:", error.message);
+    logDriveService.error("[CLEANUP] ⚠️  Failed to cleanup folder:", error.message);
   }
 }

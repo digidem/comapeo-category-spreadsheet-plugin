@@ -1,6 +1,7 @@
 /// <reference path="../loggingHelpers.ts" />
 /// <reference path="../types.ts" />
 
+const logProcessTranslations = getScopedLogger("ProcessTranslations");
 
 function normalizeComparisonKey(value: unknown): string {
   if (typeof value === "string") {
@@ -64,7 +65,7 @@ function resolvePresetForTranslationRow(
 
   if (fallbackPreset) {
     const debugValue = primaryCell || "(empty primary cell)";
-    log.warn(
+    logProcessTranslations.warn(
       `⚠️  Could not match category translation row ${translationIndex + 2} using value "${debugValue}". Falling back to row order.`,
     );
   }
@@ -83,11 +84,10 @@ function buildColumnMapForSheet(sheetName: string): {
   targetLanguages: string[];
   columnToLanguageMap: Record<number, string>;
 } {
-  const log = getScopedLogger('ProcessTranslations');
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
 
   if (!sheet) {
-    log.warn(`⏭️  Sheet "${sheetName}" not found - using only primary language`);
+    logProcessTranslations.warn(`⏭️  Sheet "${sheetName}" not found - using only primary language`);
     const primaryLanguage = getPrimaryLanguage();
     return {
       targetLanguages: [primaryLanguage.code],
@@ -99,7 +99,7 @@ function buildColumnMapForSheet(sheetName: string): {
 
   // Guard: Skip if sheet is empty or has no columns
   if (lastColumn === 0) {
-    log.warn(`⏭️  Sheet "${sheetName}" is empty - using only primary language`);
+    logProcessTranslations.warn(`⏭️  Sheet "${sheetName}" is empty - using only primary language`);
     const primaryLanguage = getPrimaryLanguage();
     return {
       targetLanguages: [primaryLanguage.code],
@@ -123,30 +123,30 @@ function buildColumnMapForSheet(sheetName: string): {
   for (let i = languageStartIndex; i < headerRow.length; i++) {
     const header = headerRow[i]?.toString().trim();
     if (!header) {
-      log.warn(`⚠️  Empty header at column ${i + 1} in "${sheetName}" - skipping`);
+      logProcessTranslations.warn(`⚠️  Empty header at column ${i + 1} in "${sheetName}" - skipping`);
       continue;
     }
 
     const langCode = resolveHeaderCode(header);
     if (!langCode) {
-      log.warn(`⚠️  Could not parse language from header "${header}" at column ${i + 1} in "${sheetName}"`);
+      logProcessTranslations.warn(`⚠️  Could not parse language from header "${header}" at column ${i + 1} in "${sheetName}"`);
       continue;
     }
 
     const normalizedCode = langCode.toLowerCase();
     if (seenLanguages.has(normalizedCode)) {
-      log.warn(`⚠️  Duplicate language header "${header}" (${langCode}) in "${sheetName}" - skipping duplicate`);
+      logProcessTranslations.warn(`⚠️  Duplicate language header "${header}" (${langCode}) in "${sheetName}" - skipping duplicate`);
       continue;
     }
 
     seenLanguages.add(normalizedCode);
     targetLanguages.push(langCode);
     columnToLanguageMap[i] = langCode;
-    log.info(`[${sheetName}] Column ${i} (${header}) → ${langCode}`);
+    logProcessTranslations.info(`[${sheetName}] Column ${i} (${header}) → ${langCode}`);
   }
 
-  log.info(`[${sheetName}] Found ${targetLanguages.length} languages:`, targetLanguages);
-  log.info(`[${sheetName}] Column mapping:`, columnToLanguageMap);
+  logProcessTranslations.info(`[${sheetName}] Found ${targetLanguages.length} languages:`, targetLanguages);
+  logProcessTranslations.info(`[${sheetName}] Column mapping:`, columnToLanguageMap);
 
   return { targetLanguages, columnToLanguageMap };
 }
@@ -169,8 +169,7 @@ function buildColumnMapForSheet(sheetName: string): {
  * // Returns: { "en": {...}, "es": {...}, "fr": {...} }
  */
 function processTranslations(data, fields, presets) {
-  const log = getScopedLogger('ProcessTranslations');
-  log.info("Starting processTranslations...");
+  logProcessTranslations.info("Starting processTranslations...");
   const primaryLanguage = getPrimaryLanguage();
 
   // Build initial column map from Category Translations to determine available languages
@@ -181,7 +180,7 @@ function processTranslations(data, fields, presets) {
       initialMapping.targetLanguages[0] === getPrimaryLanguage().code) {
     const categorySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Category Translations");
     if (!categorySheet || categorySheet.getLastColumn() === 0) {
-      log.warn("⏭️  Category Translations sheet is empty - using only primary language");
+      logProcessTranslations.warn("⏭️  Category Translations sheet is empty - using only primary language");
       const messages: CoMapeoTranslations = Object.fromEntries(
         initialMapping.targetLanguages.map((lang) => [lang, {}]),
       );
@@ -195,15 +194,15 @@ function processTranslations(data, fields, presets) {
   );
 
   const translationSheets = sheets(true);
-  log.info("Processing translation sheets:", translationSheets);
+  logProcessTranslations.info("Processing translation sheets:", translationSheets);
   const presetLookup = buildPresetLookup(presets);
 
   for (const sheetName of translationSheets) {
-    log.info(`\nProcessing sheet: ${sheetName}`);
+    logProcessTranslations.info(`\nProcessing sheet: ${sheetName}`);
 
     // Guard check: Skip if translation sheet data doesn't exist
     if (!data[sheetName]) {
-      log.warn(`⏭️  Skipping sheet "${sheetName}" - sheet data not found (translation may have been skipped)`);
+      logProcessTranslations.warn(`⏭️  Skipping sheet "${sheetName}" - sheet data not found (translation may have been skipped)`);
       continue;
     }
 
@@ -211,7 +210,7 @@ function processTranslations(data, fields, presets) {
     const { targetLanguages, columnToLanguageMap } = buildColumnMapForSheet(sheetName);
 
     const translations = data[sheetName].slice(1);
-    log.info(`Found ${translations.length} translations`);
+    logProcessTranslations.info(`Found ${translations.length} translations`);
 
     // Validation: Check that data columns match expected language count
     if (translations.length > 0) {
@@ -219,24 +218,24 @@ function processTranslations(data, fields, presets) {
 
       // Missing columns is an ERROR - translations will be incomplete
       if (firstRowColumnCount < targetLanguages.length) {
-        log.error(`❌ MISSING COLUMNS in "${sheetName}":`, {
+        logProcessTranslations.error(`❌ MISSING COLUMNS in "${sheetName}":`, {
           expectedLanguages: targetLanguages.length,
           actualColumns: firstRowColumnCount,
           missingColumns: targetLanguages.length - firstRowColumnCount,
           targetLanguages: targetLanguages,
           firstRow: translations[0]
         });
-        log.error(`⚠️  Translation data incomplete - ${targetLanguages.length - firstRowColumnCount} language(s) missing!`);
-        log.error(`⚠️  Missing languages will have no translations for this sheet.`);
+        logProcessTranslations.error(`⚠️  Translation data incomplete - ${targetLanguages.length - firstRowColumnCount} language(s) missing!`);
+        logProcessTranslations.error(`⚠️  Missing languages will have no translations for this sheet.`);
       }
       // Extra columns is just INFO - likely metadata columns, will be ignored
       else if (firstRowColumnCount > targetLanguages.length) {
-        log.info(`ℹ️  Extra columns detected in "${sheetName}":`, {
+        logProcessTranslations.info(`ℹ️  Extra columns detected in "${sheetName}":`, {
           expectedLanguages: targetLanguages.length,
           actualColumns: firstRowColumnCount,
           extraColumns: firstRowColumnCount - targetLanguages.length,
         });
-        log.info(`ℹ️  Extra columns will be ignored (likely metadata). Translation processing continues normally.`);
+        logProcessTranslations.info(`ℹ️  Extra columns will be ignored (likely metadata). Translation processing continues normally.`);
       }
     }
 
@@ -249,7 +248,7 @@ function processTranslations(data, fields, presets) {
       const translation = translationRow.map((t) =>
         t === null || t === undefined ? "" : t.toString().trim(),
       );
-      log.info(
+      logProcessTranslations.info(
         `\nProcessing translation ${translationIndex + 1}/${translations.length}:`,
         translation,
       );
@@ -260,7 +259,7 @@ function processTranslations(data, fields, presets) {
 
         // Defensive check: skip if translation value is missing
         if (translationValue === undefined || translationValue === null) {
-          log.warn(`⚠️  Missing translation value at column ${colIdx} for language ${lang}`);
+          logProcessTranslations.warn(`⚠️  Missing translation value at column ${colIdx} for language ${lang}`);
           continue;
         }
 
@@ -283,7 +282,7 @@ function processTranslations(data, fields, presets) {
         }
 
         if (!item) {
-          log.warn(
+          logProcessTranslations.warn(
             `⚠️  Skipping translation row ${translationIndex + 2} in "${sheetName}" - no matching ${
               messageType === "fields" ? "field" : "preset"
             } found.`,
@@ -295,7 +294,7 @@ function processTranslations(data, fields, presets) {
             ? (item as CoMapeoPreset).icon
             : (item as CoMapeoField).tagKey;
 
-        log.info(
+        logProcessTranslations.info(
           `Processing ${messageType} for language: ${lang} (column ${colIdx}), key: ${key}`,
         );
 
@@ -305,25 +304,25 @@ function processTranslations(data, fields, presets) {
               message: translationValue,
               description: `Name for preset '${key}'`,
             };
-            log.info(`Added category translation for ${key}: "${translationValue}"`);
+            logProcessTranslations.info(`Added category translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Label Translations":
             messages[lang][`${messageType}.${key}.label`] = {
               message: translationValue,
               description: `Label for field '${key}'`,
             };
-            log.info(`Added label translation for ${key}: "${translationValue}"`);
+            logProcessTranslations.info(`Added label translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Helper Text Translations":
             messages[lang][`${messageType}.${key}.helperText`] = {
               message: translationValue,
               description: `Helper text for field '${key}'`,
             };
-            log.info(`Added helper text translation for ${key}: "${translationValue}"`);
+            logProcessTranslations.info(`Added helper text translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Option Translations": {
             const fieldType = getFieldType((item as CoMapeoField).type || "");
-            log.info(`Processing options for field type: ${fieldType}`);
+            logProcessTranslations.info(`Processing options for field type: ${fieldType}`);
 
             if (
               fieldType !== "number" &&
@@ -334,7 +333,7 @@ function processTranslations(data, fields, presets) {
               const options = translationValue
                 .split(",")
                 .map((opt) => opt.trim());
-              log.info(`Found ${options.length} options to process`);
+              logProcessTranslations.info(`Found ${options.length} options to process`);
 
               for (const [optionIndex, option] of options.entries()) {
                 if (item.options?.[optionIndex]) {
@@ -347,22 +346,22 @@ function processTranslations(data, fields, presets) {
                     description: `Option '${option}' for field '${(item as CoMapeoField).label}'`,
                   };
                   messages[lang][optionKey] = optionValue;
-                  log.info(`Added option translation: ${option} for ${key}`);
+                  logProcessTranslations.info(`Added option translation: ${option} for ${key}`);
                 }
               }
             }
             break;
           }
           default:
-            log.info(`Unhandled sheet name: ${sheetName}`);
+            logProcessTranslations.info(`Unhandled sheet name: ${sheetName}`);
             break;
         }
       }
     }
   }
 
-  log.info("\nTranslation processing complete");
-  log.info(
+  logProcessTranslations.info("\nTranslation processing complete");
+  logProcessTranslations.info(
     "Messages per language:",
     Object.keys(messages).map(
       (lang) => `${lang}: ${Object.keys(messages[lang]).length} messages`,
