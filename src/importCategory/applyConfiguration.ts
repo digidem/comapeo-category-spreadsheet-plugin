@@ -6,6 +6,8 @@
  * Calls applyMetadata, applyCategories, applyFields, and applyTranslations functions
  */
 
+const logApplyConfiguration = getScopedLogger("ApplyConfiguration");
+
 /**
  * Applies configuration data to the spreadsheet.
  * @param configData - Configuration data object
@@ -15,7 +17,7 @@ function applyConfigurationToSpreadsheet(
   configData: any,
   onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
 ) {
-  console.log("Applying configuration to spreadsheet...");
+  logApplyConfiguration.info("Applying configuration to spreadsheet...");
 
   if (onProgress) {
     onProgress({
@@ -33,7 +35,7 @@ function applyConfigurationToSpreadsheet(
       clearManagedSheetValidations(spreadsheet);
     }
   } catch (error) {
-    console.error("Error clearing managed validations:", error);
+    logApplyConfiguration.error("Error clearing managed validations:", error);
   }
 
   // Create or clear necessary sheets
@@ -52,7 +54,7 @@ function applyConfigurationToSpreadsheet(
     }
     applyMetadata(metadataSheet, configData.metadata);
   }
-  console.log(configData);
+  logApplyConfiguration.info("configData:", JSON.stringify(configData));
   // Apply categories (presets)
   if (configData.presets && configData.presets.length > 0) {
     if (onProgress) {
@@ -99,7 +101,7 @@ function applyConfigurationToSpreadsheet(
     );
   }
 
-  console.log("Configuration applied to spreadsheet successfully");
+  logApplyConfiguration.info("Configuration applied to spreadsheet successfully");
 
   // Add dropdowns after all data has been imported with a delay
   try {
@@ -111,7 +113,7 @@ function applyConfigurationToSpreadsheet(
       addAllDropdowns();
     }
   } catch (error) {
-    console.log(
+    logApplyConfiguration.info(
       "Note: Dropdowns not added. This is optional and won't affect the import.",
     );
   }
