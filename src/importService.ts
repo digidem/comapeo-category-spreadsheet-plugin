@@ -629,6 +629,7 @@ function validateBuildRequest(content: BuildRequest, options?: BuildValidationOp
 }
 
 function runStrictBuildValidations(buildRequest: BuildRequest): void {
+  const log = getScopedLogger("ImportService");
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -829,7 +830,7 @@ function runStrictBuildValidations(buildRequest: BuildRequest): void {
   }
 
   if (warnings.length > 0) {
-    warnings.forEach(warning => console.warn(`[Build Validation Warning] ${warning}`));
+    warnings.forEach(warning => log.warn(`[Build Validation Warning] ${warning}`));
   }
 
   if (errors.length > 0) {
@@ -907,13 +908,14 @@ function countTranslationEntries(translations: any): number {
 }
 
 function getByteLength(value: string): number {
+  const log = getScopedLogger("ImportService");
   const str = value || '';
   try {
     if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.newBlob === 'function') {
       return Utilities.newBlob(str).getBytes().length;
     }
   } catch (error) {
-    console.warn('Unable to calculate byte length via Utilities:', error);
+    log.warn('Unable to calculate byte length via Utilities:', error);
   }
 
   try {
@@ -922,7 +924,7 @@ function getByteLength(value: string): number {
       return maybeBuffer.byteLength(str, 'utf8');
     }
   } catch (error) {
-    console.warn('Unable to calculate byte length via Buffer:', error);
+    log.warn('Unable to calculate byte length via Buffer:', error);
   }
 
   let bytes = 0;
