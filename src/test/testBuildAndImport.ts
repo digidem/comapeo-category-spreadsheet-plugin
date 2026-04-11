@@ -3,7 +3,7 @@
  * Tests build flow (JSON payload, category ordering, API call) and import flow
  *
  * Run these tests from the Apps Script editor console:
- *   runAllTests();
+ *   runBuildAndImportTests();
  */
 
 // =============================================================================
@@ -1807,9 +1807,9 @@ function testOptionTranslationsWithLocalizedSeparators(): boolean {
 // Test Runner
 // =============================================================================
 
-function runAllTests(): void {
+function runBuildAndImportTests(): void {
   console.log("\n========================================");
-  console.log("CoMapeo Config v2.0.0 Test Suite");
+  console.log("CoMapeo Config v2.0.0 - Build & Import Tests");
   console.log("========================================\n");
 
   const tests = [
