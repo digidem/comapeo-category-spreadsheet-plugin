@@ -3,7 +3,6 @@
  * Keeping these in a single file avoids duplicate Apps Script globals.
  */
 
-const logPayloadBuilder = getScopedLogger("PayloadBuilder");
 
 /**
  * Creates a BuildRequest payload from spreadsheet data
@@ -40,7 +39,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
   const locales = buildLocales();
   const translations = buildTranslationsPayload(data, categories, fields);
 
-  logPayloadBuilder.info("Build payload summary", {
+  getScopedLogger("PayloadBuilder").info("Build payload summary", {
     categories: categories.length,
     fields: fields.length,
     icons: icons.length,
@@ -52,7 +51,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
   const categoryIds = categories.map((c) => c.id);
   setCategorySelection(categoryIds);
 
-  logPayloadBuilder.info(
+  getScopedLogger("PayloadBuilder").info(
     `Built payload with ${categories.length} categories, ${fields.length} fields, ${icons.length} icons`,
   );
 
@@ -74,7 +73,7 @@ function createBuildPayload(data: SheetData): BuildRequest {
       ? `<<${payload.icons.length} icons omitted from preview>>`
       : undefined,
   };
-  logPayloadBuilder.info(
+  getScopedLogger("PayloadBuilder").info(
     "[DEBUG] BuildRequest payload preview:",
     JSON.stringify(debugPayloadPreview, null, 2),
   );
@@ -107,7 +106,7 @@ function buildLocales(): string[] {
         }
       }
     } catch (error) {
-      logPayloadBuilder.warn(
+      getScopedLogger("PayloadBuilder").warn(
         "Failed to map primary language name to locale code:",
         error,
       );
@@ -129,7 +128,7 @@ function buildLocales(): string[] {
       }
     }
   } catch (error) {
-    logPayloadBuilder.warn(
+    getScopedLogger("PayloadBuilder").warn(
       "Falling back to Metadata primaryLanguage for locales:",
       error,
     );
@@ -243,7 +242,7 @@ function buildFields(data: SheetData): Field[] {
     detailsSheet =
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
   } catch (error) {
-    logPayloadBuilder.warn("Unable to fetch Details sheet for ID backfill:", error);
+    getScopedLogger("PayloadBuilder").warn("Unable to fetch Details sheet for ID backfill:", error);
   }
 
   // Use headers from data directly instead of fetching from sheet again
@@ -278,7 +277,7 @@ function buildFields(data: SheetData): Field[] {
     .map((row, index) => {
       const name = String(row[nameCol] || "").trim();
       if (!name) {
-        logPayloadBuilder.info(`Skipping Details row ${index + 2}: empty field name`);
+        getScopedLogger("PayloadBuilder").info(`Skipping Details row ${index + 2}: empty field name`);
         return null; // Skip blank rows
       }
 
@@ -318,7 +317,7 @@ function buildFields(data: SheetData): Field[] {
         (type === "selectOne" || type === "selectMultiple") &&
         (!options || options.length === 0)
       ) {
-        logPayloadBuilder.warn(
+        getScopedLogger("PayloadBuilder").warn(
           `Skipping Details row ${index + 2}: select field without options`,
         );
         return null;
@@ -341,7 +340,7 @@ function buildFields(data: SheetData): Field[] {
         }
 
         if (removedCount.count > 0) {
-          logPayloadBuilder.warn(
+          getScopedLogger("PayloadBuilder").warn(
             `Field "${name}" (row ${index + 2}): Removed ${removedCount.count} duplicate option value(s)`,
           );
           options = uniqueOptions;
@@ -379,7 +378,7 @@ function buildFields(data: SheetData): Field[] {
             detailsSheet!.getRange(write.row, idCol + 1).setValue(write.value);
           });
         } catch (err) {
-          logPayloadBuilder.warn(
+          getScopedLogger("PayloadBuilder").warn(
             "Failed to write auto-generated field IDs to Details sheet:",
             err,
           );
@@ -446,7 +445,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         .getBackgrounds();
     }
   } catch (e) {
-    logPayloadBuilder.warn(
+    getScopedLogger("PayloadBuilder").warn(
       "Could not fetch display values or backgrounds from sheet (might be running in test/mock mode):",
       e,
     );
@@ -518,7 +517,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
       const name = String(getVal(nameCol) || "").trim();
       if (!name) {
-        logPayloadBuilder.info(
+        getScopedLogger("PayloadBuilder").info(
           `Skipping Categories row ${index + 2}: empty category name`,
         );
         return null; // Skip blank rows
@@ -557,7 +556,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
         if (!trimmedRaw) {
           if (AUTO_CREATED_APPLIES_COLUMN && index === 0 && categoriesSheet) {
-            logPayloadBuilder.warn(
+            getScopedLogger("PayloadBuilder").warn(
               `Auto-created Applies column: defaulting category row ${index + 2} to track + observation.`,
             );
             appliesTo = ["track", "observation"];
@@ -566,7 +565,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
                 .getRange(index + 2, appliesCol + 1)
                 .setValue("track, observation");
             } catch (seedError) {
-              logPayloadBuilder.warn(
+              getScopedLogger("PayloadBuilder").warn(
                 "Failed to seed Applies cell during auto-create fallback:",
                 seedError,
               );
@@ -630,7 +629,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
               fieldNameToId.get(name.toLowerCase()) ||
               slugify(name);
             if (!id) {
-              logPayloadBuilder.info(
+              getScopedLogger("PayloadBuilder").info(
                 `DEBUG: Could not map field token '${name}' to an ID. Available keys sample:`,
                 Array.from(fieldNameToId.keys()).slice(0, 5),
               );
@@ -683,7 +682,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         );
       }
     } catch (error) {
-      logPayloadBuilder.warn("Unable to show missing observation alert:", error);
+      getScopedLogger("PayloadBuilder").warn("Unable to show missing observation alert:", error);
     }
     throw new Error(message);
   }
@@ -694,7 +693,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
 
     // UX improvement: if the Applies column is missing, auto-create + seed it instead of failing hard
     if (appliesColumnMissing || wasAutoCreated) {
-      logPayloadBuilder.warn(
+      getScopedLogger("PayloadBuilder").warn(
         "Applies column missing or newly created; seeding first category with track + observation.",
       );
 
@@ -712,7 +711,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
               seedCell.setValue("track, observation");
             }
           } catch (seedError) {
-            logPayloadBuilder.warn(
+            getScopedLogger("PayloadBuilder").warn(
               "Unable to seed Applies column default value:",
               seedError,
             );
@@ -732,10 +731,10 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
             8,
           );
         } catch (toastError) {
-          logPayloadBuilder.warn("Unable to display Applies column toast:", toastError);
+          getScopedLogger("PayloadBuilder").warn("Unable to display Applies column toast:", toastError);
         }
       } catch (repairError) {
-        logPayloadBuilder.warn(
+        getScopedLogger("PayloadBuilder").warn(
           "Auto-create Applies column failed; falling back to validation error.",
           repairError,
         );
@@ -756,7 +755,7 @@ Tip: mark the categories that should appear in the track viewer with "track" (yo
           );
         }
       } catch (error) {
-        logPayloadBuilder.warn("Unable to show missing track alert:", error);
+        getScopedLogger("PayloadBuilder").warn("Unable to show missing track alert:", error);
       }
       throw new Error(message);
     }
@@ -951,7 +950,7 @@ function decodeDataSvg(dataUri: string): string | null {
     const payload = dataUri.substring(commaIndex + 1);
     return decodeURIComponent(payload);
   } catch (err) {
-    logPayloadBuilder.warn("Failed to decode data URI icon:", err);
+    getScopedLogger("PayloadBuilder").warn("Failed to decode data URI icon:", err);
     return null;
   }
 }
@@ -976,10 +975,10 @@ function loadDriveSvg(url: string): string | null {
       return text.trim();
     }
 
-    logPayloadBuilder.warn(`Drive icon ${fileId} rejected: mime=${mime}`);
+    getScopedLogger("PayloadBuilder").warn(`Drive icon ${fileId} rejected: mime=${mime}`);
     return null;
   } catch (err) {
-    logPayloadBuilder.warn(`Failed to inline Drive icon ${url}:`, err);
+    getScopedLogger("PayloadBuilder").warn(`Failed to inline Drive icon ${url}:`, err);
     return null;
   }
 }
@@ -1158,12 +1157,12 @@ function buildTranslationsPayload(
 
   // If no translation sheets found with languages, return empty translations
   if (allLangs.size === 0) {
-    logPayloadBuilder.info("No translation sheets found with language columns");
+    getScopedLogger("PayloadBuilder").info("No translation sheets found with language columns");
     return translations;
   }
 
   const langs = Array.from(allLangs);
-  logPayloadBuilder.info(`Found ${langs.length} languages for translations:`, langs);
+  getScopedLogger("PayloadBuilder").info(`Found ${langs.length} languages for translations:`, langs);
 
   // Initialize translations structure
   // Process category translations - match by name to handle blank rows

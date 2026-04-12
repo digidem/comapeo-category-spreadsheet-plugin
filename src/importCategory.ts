@@ -1,5 +1,4 @@
 // Main entry point for the import category functionality
-const logImportCategory = getScopedLogger("ImportCategory");
 
 /**
  * Extracts configuration data from files.
@@ -16,11 +15,11 @@ function extractConfigurationData(
   tempFolder?: GoogleAppsScript.Drive.Folder,
   options?: any,
 ): any {
-  logImportCategory.info(
+  getScopedLogger("ImportCategory").info(
     `Extracting configuration data from ${files ? files.length : "undefined"} files`,
   );
   if (options) {
-    logImportCategory.info(`Using options: ${JSON.stringify(options)}`);
+    getScopedLogger("ImportCategory").info(`Using options: ${JSON.stringify(options)}`);
   }
 
   if (!files || !Array.isArray(files) || files.length === 0) {
@@ -60,7 +59,7 @@ function processImportedCategoryFile(
   base64Data: string,
 ): { success: boolean; message: string; details?: any } {
   try {
-    logImportCategory.info(`Starting import of file: ${fileName}`);
+    getScopedLogger("ImportCategory").info(`Starting import of file: ${fileName}`);
 
     // Decode the base64 data
     const blob = Utilities.newBlob(
@@ -68,7 +67,7 @@ function processImportedCategoryFile(
       "application/octet-stream",
       fileName,
     );
-    logImportCategory.info(`Decoded file size: ${blob.getBytes().length} bytes`);
+    getScopedLogger("ImportCategory").info(`Decoded file size: ${blob.getBytes().length} bytes`);
 
     // Extract the archive using the shared extractor
     const extractionResult = extractAndValidateFile(fileName, blob);
@@ -93,7 +92,7 @@ function processImportedCategoryFile(
       try {
         extractionResult.tempFolder.setTrashed(true);
       } catch (error) {
-        logImportCategory.warn("Error cleaning up temporary folder:", error);
+        getScopedLogger("ImportCategory").warn("Error cleaning up temporary folder:", error);
       }
     }
 
@@ -109,7 +108,7 @@ function processImportedCategoryFile(
       warnings: extractionResult.validationWarnings || [],
     };
   } catch (error) {
-    logImportCategory.error("Error processing imported file:", error);
+    getScopedLogger("ImportCategory").error("Error processing imported file:", error);
     return {
       success: false,
       message:

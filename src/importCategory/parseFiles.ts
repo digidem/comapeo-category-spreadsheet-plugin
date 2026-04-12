@@ -7,7 +7,6 @@
  * Uses the slugify helpers from utils.ts
  */
 
-const logParseFiles = getScopedLogger("ParseFiles");
 
 /**
  * Restructures flat translation keys into nested object structure.
@@ -18,7 +17,7 @@ const logParseFiles = getScopedLogger("ParseFiles");
  */
 function restructureTranslations(flatMessages: any): any {
 	if (!flatMessages || typeof flatMessages !== "object") {
-		logParseFiles.warn("Invalid flatMessages object, returning empty structure");
+		getScopedLogger("ParseFiles").warn("Invalid flatMessages object, returning empty structure");
 		return {};
 	}
 
@@ -119,7 +118,7 @@ function restructureTranslations(flatMessages: any): any {
 	for (const lang of Object.keys(flatMessages)) {
 		const langMessages = flatMessages[lang];
 		if (!langMessages || typeof langMessages !== "object") {
-			logParseFiles.warn(`Invalid messages for language: ${lang}`);
+			getScopedLogger("ParseFiles").warn(`Invalid messages for language: ${lang}`);
 			continue;
 		}
 
@@ -227,11 +226,11 @@ function restructureTranslations(flatMessages: any): any {
 		if (hasPresets || hasFields) {
 			restructured[lang] = langResult;
 		} else {
-			logParseFiles.info(`Skipping language ${lang} with no translation values`);
+			getScopedLogger("ParseFiles").info(`Skipping language ${lang} with no translation values`);
 		}
 	}
 
-	logParseFiles.info(
+	getScopedLogger("ParseFiles").info(
 		`Restructured translations for ${Object.keys(restructured).length} languages`,
 	);
 	return restructured;
@@ -251,7 +250,7 @@ function parseExtractedFiles(
 ): any {
 	// Handle undefined or empty files array
 	if (!files || !Array.isArray(files)) {
-		logParseFiles.info("No files to parse or files is not an array");
+		getScopedLogger("ParseFiles").info("No files to parse or files is not an array");
 		return {
 			metadata: { name: "Empty Configuration" },
 			presets: [],
@@ -261,7 +260,7 @@ function parseExtractedFiles(
 		};
 	}
 
-	logParseFiles.info(`Parsing ${files.length} extracted files...`);
+	getScopedLogger("ParseFiles").info(`Parsing ${files.length} extracted files...`);
 
 	// Initialize configuration data
 	const configData: any = {
@@ -275,14 +274,14 @@ function parseExtractedFiles(
 	// Process each file
 	files.forEach((file) => {
 		const fileName = file.getName();
-		logParseFiles.info(`Processing file: ${fileName}`);
+		getScopedLogger("ParseFiles").info(`Processing file: ${fileName}`);
 
 		try {
 			// Parse metadata.json
 			if (fileName === "metadata.json") {
 				const content = JSON.parse(file.getDataAsString());
 				configData.metadata = content;
-				logParseFiles.info("Parsed metadata.json:", configData.metadata);
+				getScopedLogger("ParseFiles").info("Parsed metadata.json:", configData.metadata);
 			}
 
 			// Parse presets.json (contains categories and fields)
@@ -376,7 +375,7 @@ function parseExtractedFiles(
 					}
 				}
 
-				logParseFiles.info(
+				getScopedLogger("ParseFiles").info(
 					`Parsed presets.json: ${configData.presets.length} presets, ${configData.fields.length} fields`,
 				);
 			}
@@ -386,26 +385,26 @@ function parseExtractedFiles(
 				const content = JSON.parse(file.getDataAsString());
 				// Restructure flat translation keys to nested format
 				configData.messages = restructureTranslations(content);
-				logParseFiles.info(
+				getScopedLogger("ParseFiles").info(
 					`Parsed and restructured translations.json: ${Object.keys(content).length} languages`,
 				);
 			}
 
 			// Process icons.svg file
 			else if (fileName === "icons.svg") {
-				logParseFiles.info("Found icons.svg file, will process sprite");
+				getScopedLogger("ParseFiles").info("Found icons.svg file, will process sprite");
 				// Store the file for later processing
 				configData.iconsSvgFile = file;
 			}
 			// Process icons.png sprite file
 			else if (fileName === "icons.png") {
-				logParseFiles.info("Found PNG sprite file (icons.png)");
+				getScopedLogger("ParseFiles").info("Found PNG sprite file (icons.png)");
 				// Store for detection, but cannot extract without external API
 				configData.iconsPngFile = file;
 			}
 			// Process icons.json metadata file
 			else if (fileName === "icons.json") {
-				logParseFiles.info("Found icon metadata file (icons.json)");
+				getScopedLogger("ParseFiles").info("Found icon metadata file (icons.json)");
 				// Contains coordinates for PNG sprite extraction
 				configData.iconsJsonFile = file;
 			}
@@ -421,18 +420,18 @@ function parseExtractedFiles(
 				// Phase 1 (Primary): processIconSpriteBlob() for SVG sprite extraction
 				// Phase 2 (Fallback): extractPngIcons() for PNG files in icons/ directory
 				// Adding placeholder entries here would block actual extraction
-				logParseFiles.info(`Detected individual icon file: ${fileName} (will be processed later)`);
+				getScopedLogger("ParseFiles").info(`Detected individual icon file: ${fileName} (will be processed later)`);
 			}
 		} catch (error) {
-			logParseFiles.warn(`Error processing file ${fileName}:`, error);
+			getScopedLogger("ParseFiles").warn(`Error processing file ${fileName}:`, error);
 		}
 	});
 
 	// Try to extract SVG icons first (preferred format for scalability and display)
-	logParseFiles.info("=== ICON EXTRACTION PHASE 1: SVG Sprite (Primary) ===");
+	getScopedLogger("ParseFiles").info("=== ICON EXTRACTION PHASE 1: SVG Sprite (Primary) ===");
 	if (configData.iconsSvgFile) {
-		logParseFiles.info("Processing icons.svg sprite file");
-		logParseFiles.info(`Icons before SVG extraction: ${configData.icons.length}`);
+		getScopedLogger("ParseFiles").info("Processing icons.svg sprite file");
+		getScopedLogger("ParseFiles").info(`Icons before SVG extraction: ${configData.icons.length}`);
 		try {
 			// Process the SVG sprite and get icon objects with URLs
 			// processIconSpriteBlob returns { icons: [...], errors: [...] }
@@ -441,13 +440,13 @@ function parseExtractedFiles(
 				configData.iconsSvgFile,
 			);
 			const extractedIcons = spriteResult.icons || [];
-			logParseFiles.info(`✓ Extracted ${extractedIcons.length} icons from SVG sprite`);
+			getScopedLogger("ParseFiles").info(`✓ Extracted ${extractedIcons.length} icons from SVG sprite`);
 
 			// Log any errors that occurred during extraction
 			if (spriteResult.errors && spriteResult.errors.length > 0) {
-				logParseFiles.warn(`⚠️ ${spriteResult.errors.length} icon(s) failed to extract:`);
+				getScopedLogger("ParseFiles").warn(`⚠️ ${spriteResult.errors.length} icon(s) failed to extract:`);
 				spriteResult.errors.forEach((err) => {
-					logParseFiles.warn(`  - ${err.symbolId}: ${err.error}`);
+					getScopedLogger("ParseFiles").warn(`  - ${err.symbolId}: ${err.error}`);
 				});
 			}
 
@@ -460,7 +459,7 @@ function parseExtractedFiles(
 				});
 
 				if (existingIconNames.size > 0) {
-					logParseFiles.info(`Existing icon names: ${Array.from(existingIconNames).join(", ")}`);
+					getScopedLogger("ParseFiles").info(`Existing icon names: ${Array.from(existingIconNames).join(", ")}`);
 				}
 
 				// Add SVG icons (they now take precedence)
@@ -471,35 +470,35 @@ function parseExtractedFiles(
 						if (!existingIconNames.has(icon.name)) {
 							configData.icons.push(icon);
 							svgAdded++;
-							logParseFiles.info(`  ✓ Added SVG icon: ${icon.name} (URL: ${icon.svg.substring(0, 50)}...)`);
+							getScopedLogger("ParseFiles").info(`  ✓ Added SVG icon: ${icon.name} (URL: ${icon.svg.substring(0, 50)}...)`);
 						} else {
 							svgSkipped++;
-							logParseFiles.info(`  ⊘ Skipped duplicate SVG icon: ${icon.name}`);
+							getScopedLogger("ParseFiles").info(`  ⊘ Skipped duplicate SVG icon: ${icon.name}`);
 						}
 					},
 				);
 
-				logParseFiles.info(`Added ${svgAdded} new SVG icons${svgSkipped > 0 ? `, skipped ${svgSkipped} duplicates` : ""}`);
-				logParseFiles.info(`Total icons after SVG processing: ${configData.icons.length}`);
+				getScopedLogger("ParseFiles").info(`Added ${svgAdded} new SVG icons${svgSkipped > 0 ? `, skipped ${svgSkipped} duplicates` : ""}`);
+				getScopedLogger("ParseFiles").info(`Total icons after SVG processing: ${configData.icons.length}`);
 			}
 		} catch (error) {
-			logParseFiles.error("Error processing icons.svg:", error);
+			getScopedLogger("ParseFiles").error("Error processing icons.svg:", error);
 		}
 
 		// Remove the temporary file reference
 		delete configData.iconsSvgFile;
 	} else {
-		logParseFiles.info("No icons.svg file found, will try PNG files");
+		getScopedLogger("ParseFiles").info("No icons.svg file found, will try PNG files");
 	}
 
 	// Fall back to PNG icons from icons/ directory if SVG extraction didn't find any
-	logParseFiles.info("=== ICON EXTRACTION PHASE 2: PNG Files (Fallback) ===");
-	logParseFiles.info(`Icons before PNG extraction: ${configData.icons.length}`);
+	getScopedLogger("ParseFiles").info("=== ICON EXTRACTION PHASE 2: PNG Files (Fallback) ===");
+	getScopedLogger("ParseFiles").info(`Icons before PNG extraction: ${configData.icons.length}`);
 	if (hasPngIconsDirectory(tempFolder)) {
-		logParseFiles.info("Found icons/ directory, extracting PNG icons");
+		getScopedLogger("ParseFiles").info("Found icons/ directory, extracting PNG icons");
 		try {
 			const pngIcons = extractPngIcons(tempFolder, configData.presets, onProgress);
-			logParseFiles.info(`✓ Extracted ${pngIcons.length} PNG icons`);
+			getScopedLogger("ParseFiles").info(`✓ Extracted ${pngIcons.length} PNG icons`);
 
 			if (pngIcons.length > 0) {
 				// Create a map of existing icon names to avoid duplicates
@@ -509,7 +508,7 @@ function parseExtractedFiles(
 				});
 
 				if (existingIconNames.size > 0) {
-					logParseFiles.info(`Existing icon names (SVG takes precedence): ${Array.from(existingIconNames).join(", ")}`);
+					getScopedLogger("ParseFiles").info(`Existing icon names (SVG takes precedence): ${Array.from(existingIconNames).join(", ")}`);
 				}
 
 				// Add PNG icons that don't already exist (SVG icons take precedence)
@@ -521,51 +520,51 @@ function parseExtractedFiles(
 							configData.icons.push(icon);
 							existingIconNames.add(icon.name);
 							pngAdded++;
-							logParseFiles.info(`  ✓ Added PNG icon: ${icon.name} (URL: ${icon.svg.substring(0, 50)}...)`);
+							getScopedLogger("ParseFiles").info(`  ✓ Added PNG icon: ${icon.name} (URL: ${icon.svg.substring(0, 50)}...)`);
 						} else {
 							pngSkipped++;
-							logParseFiles.info(`  ⊘ Skipped PNG icon (SVG exists): ${icon.name}`);
+							getScopedLogger("ParseFiles").info(`  ⊘ Skipped PNG icon (SVG exists): ${icon.name}`);
 						}
 					},
 				);
 
-				logParseFiles.info(`Added ${pngAdded} new PNG icons${pngSkipped > 0 ? `, skipped ${pngSkipped} (SVG priority)` : ""}`);
-				logParseFiles.info(`Total icons after PNG extraction: ${configData.icons.length}`);
+				getScopedLogger("ParseFiles").info(`Added ${pngAdded} new PNG icons${pngSkipped > 0 ? `, skipped ${pngSkipped} (SVG priority)` : ""}`);
+				getScopedLogger("ParseFiles").info(`Total icons after PNG extraction: ${configData.icons.length}`);
 			}
 		} catch (error) {
-			logParseFiles.error("Error extracting PNG icons:", error);
+			getScopedLogger("ParseFiles").error("Error extracting PNG icons:", error);
 		}
 	} else {
-		logParseFiles.info("No icons/ directory found, PNG extraction skipped");
+		getScopedLogger("ParseFiles").info("No icons/ directory found, PNG extraction skipped");
 	}
 
 	// Check if PNG sprite was detected but not extracted
-	logParseFiles.info("=== ICON EXTRACTION COMPLETE ===");
-	logParseFiles.info(`Final icon count: ${configData.icons.length}`);
+	getScopedLogger("ParseFiles").info("=== ICON EXTRACTION COMPLETE ===");
+	getScopedLogger("ParseFiles").info(`Final icon count: ${configData.icons.length}`);
 
 	if (configData.icons.length === 0) {
 		if (configData.iconsPngFile) {
-			logParseFiles.warn("⚠️ PNG SPRITE DETECTED BUT CANNOT BE EXTRACTED");
-			logParseFiles.warn("   Google Apps Script cannot parse PNG sprites (icons.png)");
-			logParseFiles.warn("   Reason: No image processing libraries available");
-			logParseFiles.warn("");
-			logParseFiles.warn("   Options:");
-			logParseFiles.warn("   1. Use config with individual PNG files in icons/ directory");
-			logParseFiles.warn("   2. Use config with SVG sprite (icons.svg)");
-			logParseFiles.warn("   3. Contact support about external API for PNG extraction");
+			getScopedLogger("ParseFiles").warn("⚠️ PNG SPRITE DETECTED BUT CANNOT BE EXTRACTED");
+			getScopedLogger("ParseFiles").warn("   Google Apps Script cannot parse PNG sprites (icons.png)");
+			getScopedLogger("ParseFiles").warn("   Reason: No image processing libraries available");
+			getScopedLogger("ParseFiles").warn("");
+			getScopedLogger("ParseFiles").warn("   Options:");
+			getScopedLogger("ParseFiles").warn("   1. Use config with individual PNG files in icons/ directory");
+			getScopedLogger("ParseFiles").warn("   2. Use config with SVG sprite (icons.svg)");
+			getScopedLogger("ParseFiles").warn("   3. Contact support about external API for PNG extraction");
 
 			if (configData.iconsJsonFile) {
-				logParseFiles.warn("   Note: icons.json metadata detected but unusable without PNG extraction");
+				getScopedLogger("ParseFiles").warn("   Note: icons.json metadata detected but unusable without PNG extraction");
 			}
 		} else {
-			logParseFiles.warn("⚠️ NO ICONS FOUND IN CONFIGURATION");
-			logParseFiles.warn("   Expected one of:");
-			logParseFiles.warn("   - icons/ directory with individual PNG files");
-			logParseFiles.warn("   - icons.svg sprite file");
-			logParseFiles.warn("   Please check configuration file structure");
+			getScopedLogger("ParseFiles").warn("⚠️ NO ICONS FOUND IN CONFIGURATION");
+			getScopedLogger("ParseFiles").warn("   Expected one of:");
+			getScopedLogger("ParseFiles").warn("   - icons/ directory with individual PNG files");
+			getScopedLogger("ParseFiles").warn("   - icons.svg sprite file");
+			getScopedLogger("ParseFiles").warn("   Please check configuration file structure");
 		}
 	} else {
-		logParseFiles.info(`✓ Successfully extracted ${configData.icons.length} icon(s)`);
+		getScopedLogger("ParseFiles").info(`✓ Successfully extracted ${configData.icons.length} icon(s)`);
 	}
 
 	// Clean up temporary file references

@@ -16,14 +16,13 @@ const MAX_COMAPEOCAT_SIZE = 10 * 1024 * 1024;
 /** ZIP file signature bytes */
 const ZIP_SIGNATURE = [0x50, 0x4B, 0x03, 0x04];
 
-const log = getScopedLogger("ImportService");
 
 // =============================================================================
 // Import Dialog HTML Builder
 // =============================================================================
 
 /**
- * Builds the CSS styles for the import dialog.
+ * Builds the CSS styles for the import diagetScopedLogger("ImportService").
  * Extracted for maintainability and readability.
  */
 function buildImportDialogStyles(): string {
@@ -228,7 +227,7 @@ function buildImportDialogStyles(): string {
 }
 
 /**
- * Builds the HTML body for the import dialog.
+ * Builds the HTML body for the import diagetScopedLogger("ImportService").
  */
 function buildImportDialogBody(): string {
   return `
@@ -288,7 +287,7 @@ function buildImportDialogBody(): string {
 }
 
 /**
- * Builds the JavaScript for the import dialog.
+ * Builds the JavaScript for the import diagetScopedLogger("ImportService").
  * Note: Real-time progress updates from server to client are not possible in Apps Script.
  * We show an indeterminate progress indicator instead.
  */
@@ -492,7 +491,7 @@ function buildImportDialogScript(): string {
 }
 
 /**
- * Builds the complete HTML for the import dialog.
+ * Builds the complete HTML for the import diagetScopedLogger("ImportService").
  */
 function buildImportDialogHtml(): string {
   return `<!DOCTYPE html>
@@ -831,7 +830,7 @@ function runStrictBuildValidations(buildRequest: BuildRequest): void {
   }
 
   if (warnings.length > 0) {
-    warnings.forEach(warning => log.warn(`[Build Validation Warning] ${warning}`));
+    warnings.forEach(warning => getScopedLogger("ImportService").warn(`[Build Validation Warning] ${warning}`));
   }
 
   if (errors.length > 0) {
@@ -915,7 +914,7 @@ function getByteLength(value: string): number {
       return Utilities.newBlob(str).getBytes().length;
     }
   } catch (error) {
-    log.warn('Unable to calculate byte length via Utilities:', error);
+    getScopedLogger("ImportService").warn('Unable to calculate byte length via Utilities:', error);
   }
 
   try {
@@ -924,7 +923,7 @@ function getByteLength(value: string): number {
       return maybeBuffer.byteLength(str, 'utf8');
     }
   } catch (error) {
-    log.warn('Unable to calculate byte length via Buffer:', error);
+    getScopedLogger("ImportService").warn('Unable to calculate byte length via Buffer:', error);
   }
 
   let bytes = 0;

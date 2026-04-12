@@ -8,15 +8,14 @@ let locale = supportedLocales.includes(activeUserLocale)
   ? activeUserLocale
   : defaultLocale;
 
-const logMenu = getScopedLogger("Menu");
 
 function onOpen() {
   // Log version info to Apps Script console
   // VERSION and COMMIT constants are defined in src/version.ts
   if (typeof VERSION !== 'undefined' && typeof COMMIT !== 'undefined') {
-    logMenu.info(`CoMapeo Config Spreadsheet Plugin v${VERSION} (${COMMIT})`);
+    getScopedLogger("Menu").info(`CoMapeo Config Spreadsheet Plugin v${VERSION} (${COMMIT})`);
     if (typeof getVersionInfo !== 'undefined') {
-      logMenu.info(`Full version: ${getVersionInfo()}`);
+      getScopedLogger("Menu").info(`Full version: ${getVersionInfo()}`);
     }
   }
   const ui = SpreadsheetApp.getUi();

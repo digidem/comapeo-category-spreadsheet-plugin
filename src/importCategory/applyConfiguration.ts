@@ -6,7 +6,6 @@
  * Calls applyMetadata, applyCategories, applyFields, and applyTranslations functions
  */
 
-const logApplyConfiguration = getScopedLogger("ApplyConfiguration");
 
 /**
  * Applies configuration data to the spreadsheet.
@@ -17,7 +16,7 @@ function applyConfigurationToSpreadsheet(
   configData: any,
   onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
 ) {
-  logApplyConfiguration.info("Applying configuration to spreadsheet...");
+  getScopedLogger("ApplyConfiguration").info("Applying configuration to spreadsheet...");
 
   if (onProgress) {
     onProgress({
@@ -35,7 +34,7 @@ function applyConfigurationToSpreadsheet(
       clearManagedSheetValidations(spreadsheet);
     }
   } catch (error) {
-    logApplyConfiguration.error("Error clearing managed validations:", error);
+    getScopedLogger("ApplyConfiguration").error("Error clearing managed validations:", error);
   }
 
   // Create or clear necessary sheets
@@ -54,7 +53,7 @@ function applyConfigurationToSpreadsheet(
     }
     applyMetadata(metadataSheet, configData.metadata);
   }
-  logApplyConfiguration.debug("configData keys:", Object.keys(configData).join(", "));
+  getScopedLogger("ApplyConfiguration").debug("configData keys:", Object.keys(configData).join(", "));
   // Apply categories (presets)
   if (configData.presets && configData.presets.length > 0) {
     if (onProgress) {
@@ -101,7 +100,7 @@ function applyConfigurationToSpreadsheet(
     );
   }
 
-  logApplyConfiguration.info("Configuration applied to spreadsheet successfully");
+  getScopedLogger("ApplyConfiguration").info("Configuration applied to spreadsheet successfully");
 
   // Add dropdowns after all data has been imported with a delay
   try {
@@ -113,7 +112,7 @@ function applyConfigurationToSpreadsheet(
       addAllDropdowns();
     }
   } catch (error) {
-    logApplyConfiguration.info(
+    getScopedLogger("ApplyConfiguration").info(
       "Note: Dropdowns not added. This is optional and won't affect the import.",
     );
   }

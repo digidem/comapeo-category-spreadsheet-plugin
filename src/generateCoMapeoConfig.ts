@@ -2,7 +2,6 @@
  * Generates a CoMapeo configuration file from the spreadsheet data.
  * v2.0.0 - Uses JSON-only API, no ZIP workflow
  */
-const logGenerateConfig = getScopedLogger("GenerateConfig");
 
 function generateCoMapeoConfig() {
   let processingDialogOpen = false;
@@ -13,7 +12,7 @@ function generateCoMapeoConfig() {
       try {
         closeProcessingModalDialog();
       } catch (closeError) {
-        logGenerateConfig.warn("Unable to close processing dialog:", closeError);
+        getScopedLogger("GenerateConfig").warn("Unable to close processing dialog:", closeError);
       }
     }
   };
@@ -22,13 +21,13 @@ function generateCoMapeoConfig() {
     // Step 1: Initialize
     showProcessingModalDialog(processingDialogTexts[0][locale]);
     processingDialogOpen = true;
-    logGenerateConfig.info("Generating CoMapeo config v2.0.0...");
+    getScopedLogger("GenerateConfig").info("Generating CoMapeo config v2.0.0...");
 
     // Step 1.5: Migrate old spreadsheet format if needed
     migrateSpreadsheetFormat();
 
     // Step 1.6: Check for translation sheet mismatches BEFORE linting
-    logGenerateConfig.info("Checking translation sheet consistency...");
+    getScopedLogger("GenerateConfig").info("Checking translation sheet consistency...");
     const mismatchResult = detectTranslationMismatches();
 
     if (mismatchResult && mismatchResult.hasMismatches) {
@@ -77,12 +76,12 @@ function generateCoMapeoConfig() {
         };
         showProcessingModalDialog(fixingDialogText[locale]);
         processingDialogOpen = true;
-        logGenerateConfig.info("Fixing translation mismatches...");
+        getScopedLogger("GenerateConfig").info("Fixing translation mismatches...");
         fixTranslationMismatches(true, mismatchResult); // Pass pre-detected mismatch data
-        logGenerateConfig.info("Translation fixes applied, continuing with generation...");
+        getScopedLogger("GenerateConfig").info("Translation fixes applied, continuing with generation...");
       } else {
         // Abort - run linting to highlight issues in red
-        logGenerateConfig.info(
+        getScopedLogger("GenerateConfig").info(
           "User chose to abort. Running linting to highlight issues...",
         );
         lintAllSheets(false); // This will highlight mismatches in bright red
@@ -95,7 +94,7 @@ function generateCoMapeoConfig() {
     }
 
     // Step 2: Lint (passing false to prevent UI alerts)
-    logGenerateConfig.info("Linting CoMapeo config...");
+    getScopedLogger("GenerateConfig").info("Linting CoMapeo config...");
     showProcessingModalDialog(processingDialogTexts[2][locale]);
     processingDialogOpen = true;
     lintAllSheets(false);
@@ -108,16 +107,16 @@ function generateCoMapeoConfig() {
     // Step 4: Create build payload (JSON)
     showProcessingModalDialog(processingDialogTexts[4][locale]);
     processingDialogOpen = true;
-    logGenerateConfig.info("Creating build payload...");
+    getScopedLogger("GenerateConfig").info("Creating build payload...");
     const buildRequest = createBuildPayload(data);
 
     // Log category selection for verification
-    logGenerateConfig.info("Category selection order:", getCategorySelection());
+    getScopedLogger("GenerateConfig").info("Category selection order:", getCategorySelection());
 
     // Step 5: Send to API (JSON mode)
     showProcessingModalDialog(processingDialogTexts[5][locale]);
     processingDialogOpen = true;
-    logGenerateConfig.info("Sending JSON request to API...");
+    getScopedLogger("GenerateConfig").info("Sending JSON request to API...");
     const configUrl = sendBuildRequest(buildRequest);
 
     // Step 6: Show success dialog
@@ -126,7 +125,7 @@ function generateCoMapeoConfig() {
     closeProcessingDialogIfOpen();
     showConfigurationGeneratedDialog(configUrl);
   } catch (error) {
-    logGenerateConfig.error("Error generating CoMapeo config:", error);
+    getScopedLogger("GenerateConfig").error("Error generating CoMapeo config:", error);
     closeProcessingDialogIfOpen();
 
     const ui = SpreadsheetApp.getUi();
@@ -146,7 +145,7 @@ function generateCoMapeoConfig() {
  * delegates to the standard generator while keeping the menu entry alive.
  */
 function generateCoMapeoConfigWithDriveWrites(): void {
-  logGenerateConfig.info(
+  getScopedLogger("GenerateConfig").info(
     "Debug build (Drive writes disabled in v2) - running standard generator.",
   );
   generateCoMapeoConfig();
