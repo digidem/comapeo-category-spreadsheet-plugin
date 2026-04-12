@@ -20,4 +20,4 @@ Changes to these files have the widest blast radius across the codebase:
 - `package/src/lib/utils.js` — imported by **7** files
 
 ---
-_Back to [index.md](./index.md) · Generated 2026-04-11_
+_Back to [index.md](./index.md) · Generated 2026-04-12_

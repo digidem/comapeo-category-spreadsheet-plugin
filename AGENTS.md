@@ -53,6 +53,9 @@
 | `bunx biome lint --write --unsafe .` | Format and lint code. **Run before pushing.** |
 | `bun run scripts/generate-fixture.ts` | Regenerate fixture data for manual checks. |
 
+### Testing Deployment
+When asked to "push for testing" or "deploy for testing", the target is the **"CoMapeo Category Generator"** Google Apps Script project. Use `npm run push` (runs linting + version bump + `clasp push`) to deploy there.
+
 ### Code Style
 *   **Formatting:** 2-space indent, semicolons, double quotes (per Biome config).
 *   **Naming:** `verbNoun` for functions, `PascalCase` for types/interfaces, `camelCase` for variables.
