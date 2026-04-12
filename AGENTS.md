@@ -9,6 +9,7 @@
     *   **Syntax:** Use `export` keywords *only* for local TypeScript tooling/type-checking. Do **not** use `import { x } from './y'` in source files. Reference global variables directly.
     *   **Guards:** Use `typeof` checks for optional global references (e.g., `if (typeof VERSION !== 'undefined')`).
     *   **APIs:** Use `SpreadsheetApp`, `DriveApp`, `LanguageApp`, `UrlFetchApp`, `PropertiesService`, `CacheService`.
+    *   **Logger load order:** Never call `getScopedLogger()` at module scope. GAS concatenates files alphabetically; `loggingHelpers.ts` is position 45, after all `src/` files. Use inline `getScopedLogger("Scope").method()` at each call site — it caches internally so repeated calls are cheap.
 
 2.  **State Management:**
     *   Global variables do **not** persist between `google.script.run` calls.
