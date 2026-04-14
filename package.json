@@ -12,6 +12,7 @@
     "push:one": "npm run version:update && bash src/scripts/push-one.sh",
     "fixture": "bun run scripts/generate-fixture.ts"
   },
+  "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
     "@types/google-apps-script": "^2.0.8",

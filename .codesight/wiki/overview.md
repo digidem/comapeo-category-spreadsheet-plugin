@@ -6,7 +6,9 @@
 
 ## Scale
 
-6 middleware layers
+17 library files · 6 middleware layers
+
+**Libraries:** 17 files — see [libraries.md](./libraries.md)
 
 ## High-Impact Files
 
@@ -20,4 +22,4 @@ Changes to these files have the widest blast radius across the codebase:
 - `package/src/lib/utils.js` — imported by **7** files
 
 ---
-_Back to [index.md](./index.md) · Generated 2026-04-12_
+_Back to [index.md](./index.md) · Generated 2026-04-14_
