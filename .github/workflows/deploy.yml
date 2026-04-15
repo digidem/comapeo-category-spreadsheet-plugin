@@ -43,7 +43,7 @@ jobs:
         id: set-matrix
         run: |
           MATRIX=$(jq -c '. as $arr | {scripts: [range(0; $arr|length) | {index: ., name: $arr[.].name}]}' /tmp/.clasp.all.json)
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   deploy:
     runs-on: ubuntu-latest
@@ -116,12 +116,7 @@ jobs:
           fi
           echo "::add-mask::$SCRIPT_ID"
           echo "Deploying to ${{ matrix.name }}"
-          cat > .clasp.json <<EOF
-{
-  "scriptId": "$SCRIPT_ID",
-  "rootDir": "./"
-}
-EOF
+          jq -n --arg id "$SCRIPT_ID" '{"scriptId": $id, "rootDir": "./"}' > .clasp.json
           clasp push -f
 
       - name: Deploy Script
