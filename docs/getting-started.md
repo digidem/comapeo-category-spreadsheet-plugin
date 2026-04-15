@@ -62,7 +62,7 @@ See [Categories sheet tasks](how-to/categories-sheet-tasks.md#set-applies-values
 
 ## Step 6: Add icons
 
-Paste inline SVG from https://icons.earthdefenderstoolkit.com into **Icon** (column B).
+Paste inline SVG from <https://icons.earthdefenderstoolkit.com> into **Icon** (column B).
 
 See [Categories sheet tasks](how-to/categories-sheet-tasks.md#add-icons) for all supported formats.
 

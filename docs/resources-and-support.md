@@ -2,11 +2,11 @@
 
 ## Resources
 
-- Earth Defenders Toolkit Icon Editor: https://icons.earthdefenderstoolkit.com
-- CoMapeo documentation: https://docs.comapeo.app/
-- Google Sheets help: https://support.google.com/docs/
-- Template spreadsheet: https://docs.google.com/spreadsheets/d/1bvtbSijac5SPz-pBbeLBhKby6eDefwweLEBmjAOZnlk/edit?usp=drivesdk
-- Plugin repository: https://github.com/digidem/comapeo-config-spreadsheet-plugin
+- Earth Defenders Toolkit Icon Editor: <https://icons.earthdefenderstoolkit.com>
+- CoMapeo documentation: <https://docs.comapeo.app/>
+- Google Sheets help: <https://support.google.com/docs/>
+- Template spreadsheet: <https://docs.google.com/spreadsheets/d/1bvtbSijac5SPz-pBbeLBhKby6eDefwweLEBmjAOZnlk/edit?usp=drivesdk>
+- Plugin repository: <https://github.com/digidem/comapeo-config-spreadsheet-plugin>
 
 ## Support
 

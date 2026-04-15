@@ -27,7 +27,7 @@ Example: `Name, Width, Condition`
 
 ### Inline SVG (recommended)
 
-1. Go to https://icons.earthdefenderstoolkit.com
+1. Go to <https://icons.earthdefenderstoolkit.com>
 2. Search for a category name (e.g., `river`, `building`).
 3. Choose an icon and color.
 4. Click **Copy SVG**.
@@ -36,7 +36,7 @@ Example: `Name, Width, Condition`
 ### Alternative: plain text lookup
 
 1. Type a simple keyword in the **Icon** column (e.g., `river`, `forest`).
-2. During export, the plugin searches https://icons.earthdefenderstoolkit.com.
+2. During export, the plugin searches <https://icons.earthdefenderstoolkit.com>.
 
 Faster, but can return less accurate matches.
 
@@ -50,7 +50,7 @@ Tips:
 
 - Search works best with common English terms (e.g., `river`, `building`).
 - Requires an internet connection for the icon API.
-- You can edit icons afterward at https://icons.earthdefenderstoolkit.com.
+- You can edit icons afterward at <https://icons.earthdefenderstoolkit.com>.
 
 ### Supported formats
 

@@ -4,7 +4,7 @@ Create, edit, and share CoMapeo category sets directly in Google Sheets.
 
 ## Quick start
 
-1. Copy the template spreadsheet: https://docs.google.com/spreadsheets/d/1bvtbSijac5SPz-pBbeLBhKby6eDefwweLEBmjAOZnlk/edit?usp=drivesdk
+1. Copy the template spreadsheet: <https://docs.google.com/spreadsheets/d/1bvtbSijac5SPz-pBbeLBhKby6eDefwweLEBmjAOZnlk/edit?usp=drivesdk>
 2. Follow the guide: [Getting started](getting-started.md)
 3. Validate your data: [Run linting](how-to/export-and-share.md#run-linting)
 4. Generate and share: [Generate a config](how-to/export-and-share.md#generate-a-config)

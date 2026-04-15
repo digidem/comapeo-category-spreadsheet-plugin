@@ -31,7 +31,7 @@ Quick links: [User Docs](docs/index.md) | [Internal Docs](context/README.md) | [
 - **Build**: Generate `.comapeocat` files from spreadsheet data.
 - **Import**: Load existing `.comapeocat` or `.mapeosettings` files for editing.
 - **Auto-translation**: Automatically translate categories and fields using Google Translate.
-- **Icon generation**: Generate icons using https://icons.earthdefenderstoolkit.com or provide your own SVG/PNG icons.
+- **Icon generation**: Generate icons using <https://icons.earthdefenderstoolkit.com> or provide your own SVG/PNG icons.
 - **Validation**: Comprehensive linting and validation of spreadsheet data.
 - **Dual-name language support**: Set primary language using English OR native names (e.g., "Portuguese" or "Português").
 

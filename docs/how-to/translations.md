@@ -41,6 +41,6 @@ See [Translation sheets](../reference/translation-sheets.md) for the full format
 
 ## Find language codes
 
-- SIL ISO 639-3: https://iso639-3.sil.org/
-- Ethnologue: https://www.ethnologue.com/
-- Glottolog: https://glottolog.org/
+- SIL ISO 639-3: <https://iso639-3.sil.org/>
+- Ethnologue: <https://www.ethnologue.com/>
+- Glottolog: <https://glottolog.org/>

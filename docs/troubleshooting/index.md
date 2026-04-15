@@ -18,7 +18,7 @@ Other checks:
 
 ## Icons not working
 
-- Best results: paste inline SVG from https://icons.earthdefenderstoolkit.com.
+- Best results: paste inline SVG from <https://icons.earthdefenderstoolkit.com>.
 - Plain text keywords (e.g., `river`) are accepted but may be less accurate.
 - For Drive URLs, confirm the format and permissions:
   - `https://drive.google.com/file/d/FILE_ID/view`
