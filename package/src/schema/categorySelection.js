@@ -11,9 +11,8 @@ export const CategorySelectionSchema = v.pipe(
 			DOCUMENT_TYPES,
 			v.pipe(
 				v.array(v.pipe(v.string(), v.minLength(1))),
-				v.minLength(1),
 				v.description(
-					'List of category IDs in the order they should be shown to the user by default for this document type.',
+					'List of category IDs in the order they should be shown to the user by default for this document type. May be empty for document types with no categories.',
 				),
 			),
 		),

@@ -187,9 +187,11 @@ function extractPngIcons(
         if (existingFiles.hasNext()) {
           const existingFile = existingFiles.next();
           const oldSize = existingFile.getSize();
-          existingFile.setTrashed(true);
+          // Create the replacement BEFORE trashing the old file to avoid
+          // data loss if createFile() or getBlob() fails.
           const blob = foundFile.getBlob().setName(fileName);
           permanentFile = permanentIconsFolder.createFile(blob);
+          existingFile.setTrashed(true);
           const newSize = permanentFile.getSize();
           safePngDebugLog(`  ↻ Replaced existing "${fileName}": ${oldSize} → ${newSize} bytes`);
         } else {

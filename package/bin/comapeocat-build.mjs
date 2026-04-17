@@ -92,7 +92,7 @@ program
 						categorySelection = migrateDefaults(value)
 						break
 					case 'icon':
-						writer.addIcon(id, value)
+						await writer.addIcon(id, value)
 						break
 					case 'messages':
 						await writer.addTranslations(

@@ -613,17 +613,12 @@ function validateAppliesColumn(): void {
   );
 
   if (appliesColZeroBased === -1) {
-    // The Applies header was removed or renamed. Clear stale lint backgrounds
-    // on the entire sheet since we don't know which column previously held
-    // Applies artifacts. Font colors and notes were already handled above.
-    if (lastCol > 0) {
-      const headerRowRange = categoriesSheet.getRange(1, 1, 1, lastCol);
-      clearRangeBackgroundIfMatches(headerRowRange, LINT_WARNING_BACKGROUND_COLORS);
-      if (lastRow > 1) {
-        const bodyRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
-        clearRangeBackgroundIfMatches(bodyRange, LINT_WARNING_BACKGROUND_COLORS);
-      }
-    }
+    // The Applies header was removed or renamed. We've already cleared
+    // Applies-specific notes above. We intentionally do NOT clear backgrounds
+    // across the entire sheet here because other checks (validateCategoryIcons,
+    // field validation, etc.) may have set severity backgrounds that should be
+    // preserved. Stale Applies backgrounds will be naturally cleaned up on the
+    // next full lint cycle via the targeted clearLintArtifacts calls.
     const headerCell = categoriesSheet.getRange(1, 1);
     appendLintNote(
       headerCell,
@@ -2108,9 +2103,10 @@ function lintDetailsSheet(): void {
             const deduplicatedValue = uniqueEntries.join(", ");
             sheet.getRange(row, col).setValue(deduplicatedValue);
 
-            // Add warning note about removed duplicates
+            // Add warning note about removed duplicates (append to preserve
+            // any colon-ambiguity warning already on the cell)
             const cell = sheet.getRange(row, col);
-            setLintNote(
+            appendLintNote(
               cell,
               `Removed ${removedDuplicates.length} duplicate option(s): "${removedDuplicates.join('", "')}". Each option must produce a unique canonical value.`,
               "warning",
@@ -3566,7 +3562,8 @@ function lintMetadataSheet(): void {
 
     // Flag duplicate keys as a warning — the builder uses only the first row.
     const lowerKey = key.toLowerCase();
-    if (lowerKey && seenKeys.has(lowerKey)) {
+    const isDuplicate = lowerKey && seenKeys.has(lowerKey);
+    if (isDuplicate) {
       const cell = metadataSheet.getRange(row, 2);
       appendLintNote(
         cell,
@@ -3576,10 +3573,18 @@ function lintMetadataSheet(): void {
     }
     if (lowerKey) seenKeys.add(lowerKey);
 
-    if (key === "name" || key === "version") {
+    // Skip further validation for duplicate rows — the builder ignores them,
+    // so unsafe-char and language errors would be false positives.
+    if (isDuplicate) continue;
+
+    // Only validate "name" for unsafe characters.
+    // The export pipeline overwrites "version" with the current date
+    // (yy.MM.dd) before strict validation runs, so the sheet value is
+    // never used as-is and linting it would produce false errors.
+    if (key === "name") {
       if (STRICT_UNSAFE_PATTERN.test(value)) {
         const cell = metadataSheet.getRange(row, 2);
-        setLintNote(
+        appendLintNote(
           cell,
           `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
           "error",
@@ -3592,7 +3597,7 @@ function lintMetadataSheet(): void {
       const validation = validateLanguageName(value);
       if (!validation.valid) {
         const cell = metadataSheet.getRange(row, 2);
-        setLintNote(
+        appendLintNote(
           cell,
           `Metadata primaryLanguage: ${validation.error || "Unknown error"}`,
           "error",
