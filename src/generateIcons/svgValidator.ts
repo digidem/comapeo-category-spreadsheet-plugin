@@ -8,7 +8,7 @@
 /**
  * Result of an SVG validation operation
  */
-interface ValidationResult {
+interface SvgValidationResult {
   /** Whether validation passed */
   valid: boolean;
 
@@ -30,7 +30,7 @@ interface ValidationResult {
  * @param svgContent - The SVG string to validate
  * @returns Validation result with details
  */
-function validateSvgFormat(svgContent: string): ValidationResult {
+function validateSvgFormat(svgContent: string): SvgValidationResult {
   if (!svgContent || svgContent.trim() === "") {
     return {
       valid: false,
@@ -122,7 +122,7 @@ function validateSvgFormat(svgContent: string): ValidationResult {
  * @param fileId - The Google Drive file ID
  * @returns Validation result with file details
  */
-function validateDriveAccess(fileId: string): ValidationResult {
+function validateDriveAccess(fileId: string): SvgValidationResult {
   if (!fileId || fileId.trim() === "") {
     return {
       valid: false,
@@ -186,7 +186,7 @@ function validateDriveAccess(fileId: string): ValidationResult {
  * @param iconUrl - The URL, data URI, or search term to validate
  * @returns Validation result with URL details
  */
-function validateIconUrl(iconUrl: string): ValidationResult {
+function validateIconUrl(iconUrl: string): SvgValidationResult {
   if (!iconUrl || iconUrl.trim() === "") {
     return {
       valid: false,
@@ -259,7 +259,7 @@ function validateIconUrl(iconUrl: string): ValidationResult {
  * @param svgContent - The SVG content to validate
  * @returns Validation result with content analysis
  */
-function validateSvgContent(svgContent: string): ValidationResult {
+function validateSvgContent(svgContent: string): SvgValidationResult {
   // First run basic format validation
   const formatValidation = validateSvgFormat(svgContent);
   if (!formatValidation.valid) {
@@ -349,7 +349,7 @@ function validateSvgContent(svgContent: string): ValidationResult {
  * @param cellValue - The value from the spreadsheet cell
  * @returns Validation result with cell type info
  */
-function validateCellIcon(cellValue: any): ValidationResult {
+function validateCellIcon(cellValue: any): SvgValidationResult {
   if (!cellValue) {
     return {
       valid: false,

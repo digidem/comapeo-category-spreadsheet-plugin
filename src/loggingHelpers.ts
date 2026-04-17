@@ -23,7 +23,6 @@ type AppLoggerGlobal = {
 };
 
 declare const AppLogger: AppLoggerGlobal | undefined;
-
 const fallbackLoggerCache: Record<string, ScopedLogger> = {};
 
 /**
@@ -37,6 +36,14 @@ const fallbackLoggerCache: Record<string, ScopedLogger> = {};
 function getScopedLogger(scope: string): ScopedLogger {
   if (typeof AppLogger !== "undefined" && AppLogger && typeof AppLogger.scope === "function") {
     return AppLogger.scope(scope);
+  }
+
+  if (
+    typeof AppAppLogger !== "undefined" &&
+    AppAppLogger &&
+    typeof AppAppLogger.scope === "function"
+  ) {
+    return AppAppLogger.scope(scope);
   }
 
   if (!fallbackLoggerCache[scope]) {
@@ -73,4 +80,3 @@ function createFallbackLogger(scope: string): ScopedLogger {
     },
   };
 }
-

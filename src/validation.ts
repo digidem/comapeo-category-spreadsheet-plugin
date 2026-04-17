@@ -26,7 +26,7 @@ const VALID_FIELD_TYPES = [
   "selectOne",
   "selectMultiple",
 ] as const;
-type FieldType = (typeof VALID_FIELD_TYPES)[number];
+type ValidFieldType = (typeof VALID_FIELD_TYPES)[number];
 
 /**
  * Valid geometry types for CoMapeo presets
@@ -117,7 +117,7 @@ function findClosestMatches(
 /**
  * Validation result interface
  */
-interface ValidationResult {
+interface SheetValidationResult {
   valid: boolean;
   error?: string;
   warnings?: string[];
@@ -137,7 +137,7 @@ interface ValidationResult {
 function validateLanguageCode(
   languageCode: string,
   supportedLanguages: LanguageMap,
-): ValidationResult {
+): SheetValidationResult {
   if (!languageCode || languageCode.trim() === "") {
     return {
       valid: false,
@@ -217,7 +217,7 @@ function clearLanguageNamesCache(): void {
  */
 function validateLanguageName(
   languageName: string,
-): ValidationResult & { code?: string } {
+): SheetValidationResult & { code?: string } {
   if (!languageName || languageName.trim() === "") {
     return {
       valid: false,
@@ -285,7 +285,7 @@ function validateLanguageName(
  * Validates the primary language value (Metadata!primaryLanguage preferred,
  * Categories!A1 fallback). Supports English and native names.
  */
-function validatePrimaryLanguage(primaryLanguage: string): ValidationResult {
+function validatePrimaryLanguage(primaryLanguage: string): SheetValidationResult {
   const result = validateLanguageName(primaryLanguage);
 
   if (!result.valid) {
@@ -308,7 +308,7 @@ function validatePrimaryLanguage(primaryLanguage: string): ValidationResult {
  * validateFieldType("Text") // { valid: true }
  * validateFieldType("Invalid") // { valid: false, error: "..." }
  */
-function validateFieldType(typeString: string): ValidationResult {
+function validateFieldType(typeString: string): SheetValidationResult {
   if (!typeString || typeString.trim() === "") {
     return {
       valid: false,
@@ -345,7 +345,7 @@ function validateFieldType(typeString: string): ValidationResult {
 function validateUniqueOptionValues(
   optionsString: string,
   fieldKey?: string,
-): ValidationResult {
+): SheetValidationResult {
   const options = optionsString
     .split(",")
     .map((opt) => opt.trim())
@@ -399,7 +399,7 @@ function validateFieldOptions(
   fieldType: string,
   optionsString: string,
   fieldKey?: string,
-): ValidationResult {
+): SheetValidationResult {
   const type = getFieldType(fieldType);
 
   // Text and number fields don't need options
@@ -446,7 +446,7 @@ function validateFieldOptions(
 function validateFieldDefinition(
   fieldData: FieldRow,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   const warnings: string[] = [];
 
   // Validate field name (column A)
@@ -502,7 +502,7 @@ function validateFieldDefinition(
 function validateCategoryName(
   categoryName: string,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   if (!categoryName || String(categoryName).trim() === "") {
     return {
       valid: false,
@@ -523,7 +523,7 @@ function validateCategoryName(
 function validateCategoryDefinition(
   categoryData: CategoryRow,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   const warnings: string[] = [];
 
   // Validate category name (column A)
@@ -558,7 +558,7 @@ function validateCategoryDefinition(
  * @param data - The SheetData object containing all sheet data
  * @returns Validation result with all errors and warnings
  */
-function validateSheetData(data: SheetData): ValidationResult {
+function validateSheetData(data: SheetData): SheetValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -617,7 +617,7 @@ function validateSheetData(data: SheetData): ValidationResult {
  * @param config - The CoMapeoConfig object to validate
  * @returns Validation result indicating schema compliance
  */
-function validateConfigSchema(config: CoMapeoConfig): ValidationResult {
+function validateConfigSchema(config: CoMapeoConfig): SheetValidationResult {
   const errors: string[] = [];
 
   // Validate required top-level properties

@@ -113,54 +113,51 @@ function extractJsonArchive(
  */
 function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>): string {
   const safeIcons = Array.isArray(icons) ? icons : [];
-  const root = XmlService.createElement("svg").setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const extractSymbolMarkup = (icon: { name?: string; svg?: string }): string | null => {
+    if (!icon || !icon.name || !icon.svg) {
+      return null;
+    }
 
-  const parseSvgChildren = (rawSvg: string) => {
-    const trimmed = (rawSvg || "").trim();
-    const hasSvgRoot = /^<\s*svg[\s>]/i.test(trimmed);
-    const wrapped = hasSvgRoot ? trimmed : `<svg>${trimmed}</svg>`;
+    const trimmed = icon.svg.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const hasWrappedRoot = /^<\s*(svg|symbol)\b/i.test(trimmed);
+    const wrapped = hasWrappedRoot ? trimmed : `<svg>${trimmed}</svg>`;
 
     try {
       const doc = XmlService.parse(wrapped);
       const rootEl = doc.getRootElement();
-      const sourceEl = rootEl.getName().toLowerCase() === "symbol" ? rootEl : rootEl;
-      const viewBox = sourceEl.getAttribute("viewBox")?.getValue();
-      const children = sourceEl.getChildren();
-
-      return {
-        viewBox,
-        contents: children.length > 0 ? children.map((child) => child.clone()) : [XmlService.createText(sourceEl.getText() || "")]
-      };
+      const rootName = rootEl.getName().toLowerCase();
+      const viewBox = rootEl.getAttribute("viewBox")?.getValue();
+      const body = rootName === "symbol" || rootName === "svg"
+        ? trimmed.replace(/^<\s*(svg|symbol)\b[\s\S]*?>/i, "").replace(/<\s*\/\s*(svg|symbol)\s*>$/i, "").trim()
+        : trimmed;
+      const attrs = viewBox ? ` viewBox="${viewBox.replace(/"/g, "&quot;")}"` : "";
+      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}"${attrs}>${body}</symbol>`;
     } catch (error) {
       console.warn("Failed to parse icon SVG with XmlService, falling back to raw string:", error);
-      return { viewBox: undefined, contents: [XmlService.createText(trimmed)] };
+      // Keep the fallback XML-safe: escape the raw body as text content so one
+      // malformed icon cannot break XmlService.parse() on the entire sprite.
+      const body = trimmed
+        .replace(/^<\s*svg\b[\s\S]*?>/i, "")
+        .replace(/<\s*\/\s*svg\s*>$/i, "")
+        .trim();
+      const escapedBody = body
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}">${escapedBody}</symbol>`;
     }
   };
 
-  safeIcons.forEach((icon) => {
-    if (!icon || !icon.name || !icon.svg) {
-      return;
-    }
+  const symbols = safeIcons
+    .map(extractSymbolMarkup)
+    .filter((symbol): symbol is string => Boolean(symbol));
 
-    const symbolEl = XmlService.createElement("symbol").setAttribute("id", icon.name);
-    const { viewBox, contents } = parseSvgChildren(icon.svg);
-
-    if (viewBox) {
-      symbolEl.setAttribute("viewBox", viewBox);
-    }
-
-    contents.forEach((content) => {
-      if (content.getType() === XmlService.ContentType.TEXT && !(content as GoogleAppsScript.XML_Service.Text).getText()) {
-        return;
-      }
-      symbolEl.addContent(content);
-    });
-
-    root.addContent(symbolEl);
-  });
-
-  const doc = XmlService.createDocument(root);
-  return XmlService.getPrettyFormat().setOmitDeclaration(true).setIndent("  ").format(doc);
+  return `<svg xmlns="http://www.w3.org/2000/svg">${symbols.join("")}</svg>`;
 }
 
 /**

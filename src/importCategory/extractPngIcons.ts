@@ -5,7 +5,7 @@
 /**
  * Safe debug logger that falls back to console.log if debugLog is not available
  */
-function safeDebugLog(message: string) {
+function safePngDebugLog(message: string) {
   // Try debug logger first
   try {
     if (typeof debugLog === "function") {
@@ -33,7 +33,7 @@ function extractPngIcons(
   onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
 ): { name: string; svg: string; id: string }[] {
   try {
-    safeDebugLog("Extracting PNG icons from temp folder");
+    safePngDebugLog("Extracting PNG icons from temp folder");
 
     // Get permanent config folder for icon storage
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -42,17 +42,17 @@ function extractPngIcons(
       .next();
     const configFolderName = slugify(spreadsheet.getName());
 
-    safeDebugLog(`Looking for config folder: ${configFolderName}`);
+    safePngDebugLog(`Looking for config folder: ${configFolderName}`);
 
     // Find or create config folder
     let configFolder: GoogleAppsScript.Drive.Folder;
     const configFolders = parentFolder.getFoldersByName(configFolderName);
     if (configFolders.hasNext()) {
       configFolder = configFolders.next();
-      safeDebugLog(`Using existing config folder: ${configFolder.getName()}`);
+      safePngDebugLog(`Using existing config folder: ${configFolder.getName()}`);
     } else {
       configFolder = parentFolder.createFolder(configFolderName);
-      safeDebugLog(`Created new config folder: ${configFolder.getName()}`);
+      safePngDebugLog(`Created new config folder: ${configFolder.getName()}`);
     }
 
     // Find or create permanent icons folder
@@ -60,23 +60,23 @@ function extractPngIcons(
     const iconsFolders = configFolder.getFoldersByName("icons");
     if (iconsFolders.hasNext()) {
       permanentIconsFolder = iconsFolders.next();
-      safeDebugLog(
+      safePngDebugLog(
         `Using existing icons folder: ${permanentIconsFolder.getName()}`,
       );
     } else {
       permanentIconsFolder = configFolder.createFolder("icons");
-      safeDebugLog(`Created new icons folder: ${permanentIconsFolder.getName()}`);
+      safePngDebugLog(`Created new icons folder: ${permanentIconsFolder.getName()}`);
     }
 
     // Look for icons/ subdirectory in temp folder
     const tempIconsFolders = tempFolder.getFoldersByName("icons");
     if (!tempIconsFolders.hasNext()) {
-      safeDebugLog("No icons/ directory found in temp folder");
+      safePngDebugLog("No icons/ directory found in temp folder");
       return [];
     }
 
     const tempIconsFolder = tempIconsFolders.next();
-    safeDebugLog(`Found icons folder in temp: ${tempIconsFolder.getName()}`);
+    safePngDebugLog(`Found icons folder in temp: ${tempIconsFolder.getName()}`);
 
     // Extract icon names from presets
     const iconNames = new Set<string>();
@@ -86,10 +86,10 @@ function extractPngIcons(
       }
     });
 
-    safeDebugLog(`Looking for ${iconNames.size} icon(s): ${Array.from(iconNames).join(", ")}`);
+    safePngDebugLog(`Looking for ${iconNames.size} icon(s): ${Array.from(iconNames).join(", ")}`);
 
     // Build a file index for O(1) lookup instead of O(n) getFilesByName() calls
-    safeDebugLog("Indexing icon files for fast lookup...");
+    safePngDebugLog("Indexing icon files for fast lookup...");
     if (onProgress) {
       onProgress({
         percent: 40,
@@ -108,7 +108,7 @@ function extractPngIcons(
       totalFiles++;
     }
 
-    safeDebugLog(`Indexed ${totalFiles} files. Starting icon extraction...`);
+    safePngDebugLog(`Indexed ${totalFiles} files. Starting icon extraction...`);
     if (onProgress) {
       onProgress({
         percent: 45,
@@ -128,7 +128,7 @@ function extractPngIcons(
     const total = iconNames.size;
     const failedIcons: { name: string; error: string }[] = [];
 
-    safeDebugLog(`\n=== PNG ICON EXTRACTION (${total} icons) ===`);
+    safePngDebugLog(`\n=== PNG ICON EXTRACTION (${total} icons) ===`);
 
     iconNames.forEach((iconName) => {
       processed++;
@@ -138,7 +138,7 @@ function extractPngIcons(
 
       // Log progress every 5 icons to show we're making progress
       if (processed % 5 === 0 || processed === total) {
-        safeDebugLog(
+        safePngDebugLog(
           `Extracting icons: ${processed}/${total} (${Math.round((processed / total) * 100)}%)`,
         );
         if (onProgress) {
@@ -176,7 +176,7 @@ function extractPngIcons(
         return; // Skip this icon
       }
 
-      safeDebugLog(`  ✓ Found PNG for "${iconName}": ${foundPattern}`);
+      safePngDebugLog(`  ✓ Found PNG for "${iconName}": ${foundPattern}`);
 
       // Copy to permanent folder
       try {
@@ -185,16 +185,18 @@ function extractPngIcons(
         let permanentFile: GoogleAppsScript.Drive.File;
 
         if (existingFiles.hasNext()) {
-          permanentFile = existingFiles.next();
-          const oldSize = permanentFile.getSize();
-          permanentFile.setContent(foundFile.getBlob());
+          const existingFile = existingFiles.next();
+          const oldSize = existingFile.getSize();
+          existingFile.setTrashed(true);
+          const blob = foundFile.getBlob().setName(fileName);
+          permanentFile = permanentIconsFolder.createFile(blob);
           const newSize = permanentFile.getSize();
-          safeDebugLog(`  ↻ Updated existing "${fileName}": ${oldSize} → ${newSize} bytes`);
+          safePngDebugLog(`  ↻ Replaced existing "${fileName}": ${oldSize} → ${newSize} bytes`);
         } else {
           const blob = foundFile.getBlob().setName(fileName);
           permanentFile = permanentIconsFolder.createFile(blob);
           const fileSize = permanentFile.getSize();
-          safeDebugLog(`  ✓ Created "${fileName}": ${fileSize} bytes`);
+          safePngDebugLog(`  ✓ Created "${fileName}": ${fileSize} bytes`);
         }
 
         // Verify file was created/updated successfully
@@ -205,7 +207,7 @@ function extractPngIcons(
         }
 
         const iconUrl = permanentFile.getUrl();
-        safeDebugLog(`  ✓ URL: ${iconUrl.substring(0, 60)}...`);
+        safePngDebugLog(`  ✓ URL: ${iconUrl.substring(0, 60)}...`);
 
         iconObjects.push({
           name: iconName,
@@ -220,19 +222,19 @@ function extractPngIcons(
     });
 
     // Report extraction results
-    safeDebugLog(`\n=== PNG EXTRACTION RESULTS ===`);
-    safeDebugLog(`✓ Successfully extracted: ${iconObjects.length}/${total} icons`);
+    safePngDebugLog(`\n=== PNG EXTRACTION RESULTS ===`);
+    safePngDebugLog(`✓ Successfully extracted: ${iconObjects.length}/${total} icons`);
     if (failedIcons.length > 0) {
-      safeDebugLog(`❌ Failed to extract: ${failedIcons.length}/${total} icons`);
-      safeDebugLog(`\n=== FAILED PNG ICONS ===`);
+      safePngDebugLog(`❌ Failed to extract: ${failedIcons.length}/${total} icons`);
+      safePngDebugLog(`\n=== FAILED PNG ICONS ===`);
       failedIcons.forEach((failed, index) => {
-        safeDebugLog(`  ${index + 1}. "${failed.name}": ${failed.error}`);
+        safePngDebugLog(`  ${index + 1}. "${failed.name}": ${failed.error}`);
       });
-      safeDebugLog(`=== END FAILED PNG ICONS ===`);
+      safePngDebugLog(`=== END FAILED PNG ICONS ===`);
     }
-    safeDebugLog(`=== END PNG EXTRACTION ===\n`);
+    safePngDebugLog(`=== END PNG EXTRACTION ===\n`);
 
-    safeDebugLog(
+    safePngDebugLog(
       `Successfully extracted ${iconObjects.length} PNG icon(s) to permanent folder`,
     );
     return iconObjects;

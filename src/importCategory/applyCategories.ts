@@ -6,7 +6,7 @@
 /**
  * Safe debug logger that falls back to console.log if debugLog is not available
  */
-function safeDebugLog(message: string) {
+function safeCategoryDebugLog(message: string) {
   // Try debug logger first
   try {
     if (typeof debugLog === "function") {
@@ -34,54 +34,54 @@ function applyCategories(
   fields: any[],
   icons: any[],
 ) {
-  safeDebugLog("=== APPLYING CATEGORIES TO SPREADSHEET ===");
-  safeDebugLog(`Applying ${presets.length} categories with ${icons.length} icons`);
+  safeCategoryDebugLog("=== APPLYING CATEGORIES TO SPREADSHEET ===");
+  safeCategoryDebugLog(`Applying ${presets.length} categories with ${icons.length} icons`);
 
   // Set headers (assuming English as primary language)
   sheet.getRange(1, 1, 1, 3).setValues([["English", "Icons", "Details"]]);
   sheet.getRange(1, 1, 1, 3).setFontWeight("bold");
 
   // Create a map of icon name to icon URL for quick lookup
-  safeDebugLog("Building icon map for lookup...");
-  safeDebugLog(`Processing ${icons.length} icon(s) from extraction...`);
+  safeCategoryDebugLog("Building icon map for lookup...");
+  safeCategoryDebugLog(`Processing ${icons.length} icon(s) from extraction...`);
   const iconMap = {};
   let overwriteCount = 0;
   for (const icon of icons) {
     if (icon.name && icon.svg) {
       if (iconMap[icon.name]) {
         overwriteCount++;
-        safeDebugLog(`  ⚠️  OVERWRITE: iconMap["${icon.name}"] was "${iconMap[icon.name].substring(0, 40)}..."`);
-        safeDebugLog(`              now replaced with "${icon.svg.substring(0, 40)}..."`);
+        safeCategoryDebugLog(`  ⚠️  OVERWRITE: iconMap["${icon.name}"] was "${iconMap[icon.name].substring(0, 40)}..."`);
+        safeCategoryDebugLog(`              now replaced with "${icon.svg.substring(0, 40)}..."`);
       } else {
-        safeDebugLog(`  ✓ Added: iconMap["${icon.name}"] = ${icon.svg.substring(0, 50)}...`);
+        safeCategoryDebugLog(`  ✓ Added: iconMap["${icon.name}"] = ${icon.svg.substring(0, 50)}...`);
       }
       iconMap[icon.name] = icon.svg;
     }
   }
-  safeDebugLog(`\n=== ICON MAP SUMMARY ===`);
-  safeDebugLog(`Processed ${icons.length} icons, created ${Object.keys(iconMap).length} map entries`);
+  safeCategoryDebugLog(`\n=== ICON MAP SUMMARY ===`);
+  safeCategoryDebugLog(`Processed ${icons.length} icons, created ${Object.keys(iconMap).length} map entries`);
   if (overwriteCount > 0) {
-    safeDebugLog(`⚠️  WARNING: ${overwriteCount} duplicate icon name(s) detected - entries were overwritten!`);
-    safeDebugLog(`This means ${icons.length - Object.keys(iconMap).length} icon(s) are hidden and won't appear in spreadsheet.`);
+    safeCategoryDebugLog(`⚠️  WARNING: ${overwriteCount} duplicate icon name(s) detected - entries were overwritten!`);
+    safeCategoryDebugLog(`This means ${icons.length - Object.keys(iconMap).length} icon(s) are hidden and won't appear in spreadsheet.`);
   } else {
-    safeDebugLog(`✓ All icons have unique names - no overwrites`);
+    safeCategoryDebugLog(`✓ All icons have unique names - no overwrites`);
   }
-  safeDebugLog(`=== END ICON MAP SUMMARY ===\n`);
+  safeCategoryDebugLog(`=== END ICON MAP SUMMARY ===\n`);
 
   // Prepare category rows
-  safeDebugLog("Matching icons to presets...");
+  safeCategoryDebugLog("Matching icons to presets...");
   const categoryRows = presets.map((preset) => {
     // Find matching icon
     const iconUrl = preset.icon ? iconMap[preset.icon] || "" : "";
 
     if (preset.icon) {
       if (iconUrl) {
-        safeDebugLog(`  ✓ Matched preset "${preset.name}" (icon: "${preset.icon}") → ${iconUrl.substring(0, 50)}...`);
+        safeCategoryDebugLog(`  ✓ Matched preset "${preset.name}" (icon: "${preset.icon}") → ${iconUrl.substring(0, 50)}...`);
       } else {
-        safeDebugLog(`  ✗ No icon found for preset "${preset.name}" (looking for icon: "${preset.icon}")`);
+        safeCategoryDebugLog(`  ✗ No icon found for preset "${preset.name}" (looking for icon: "${preset.icon}")`);
       }
     } else {
-      safeDebugLog(`  - Preset "${preset.name}" has no icon specified`);
+      safeCategoryDebugLog(`  - Preset "${preset.name}" has no icon specified`);
     }
 
     // Get fields as comma-separated string with actual Label values

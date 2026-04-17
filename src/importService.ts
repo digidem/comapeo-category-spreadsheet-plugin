@@ -1319,7 +1319,7 @@ function populateDetailsSheet(
 /**
  * Maps API field type to spreadsheet type character
  */
-function mapFieldTypeToChar(type: FieldType): string {
+function mapFieldTypeToChar(type: string): string {
   switch (type) {
     case 'text':
       return 't';

@@ -702,6 +702,7 @@ function saveExistingIconsToFolder(
       backgroundColor,
       true,
       zipBlobs,
+      undefined,
       iconStats,
     );
 

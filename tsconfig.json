@@ -1,6 +1,21 @@
 {
   "compilerOptions": {
-    "lib": ["esnext"],
-    "experimentalDecorators": true
-  }
+    "ignoreDeprecations": "6.0",
+    "target": "ES2020",
+    "module": "none",
+    "lib": ["es2020"],
+    "types": ["google-apps-script"],
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "useUnknownInCatchVariables": false
+  },
+  "include": ["index.ts", "src/**/*.ts"],
+  "exclude": [
+    "package/**",
+    "plans/**",
+    "src/scripts/**",
+    "src/test/**"
+  ]
 }

@@ -35,7 +35,7 @@ function extractConfigurationData(
  */
 function showImportCategoryDialog() {
   // Get dialog texts from the importCategory/dialogTexts.ts file
-  const title = importCategoryDialogTexts[locale].title;
+  const title = importCategoryDialogTexts[activeLocale].title;
 
   // Create HTML output using the function from importCategory/ui.ts
   const htmlOutput = HtmlService.createHtmlOutput(createImportCategoryHtml())
@@ -57,7 +57,7 @@ function showImportCategoryDialog() {
 function processImportedCategoryFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any } {
+): { success: boolean; message: string; details?: any; warnings?: string[] } {
   try {
     getScopedLogger("ImportCategory").info(`Starting import of file: ${fileName}`);
 
@@ -135,4 +135,11 @@ function extractMapeoConfigurationData(
  */
 function applyMapeoConfigurationToSpreadsheet(configData: any) {
   applyConfigurationToSpreadsheet(configData);
+}
+
+/**
+ * Applies raw JSON imports after normalizing them into the spreadsheet format.
+ */
+function applyMapeoJsonConfigToSpreadsheet(jsonData: any) {
+  applyConfigurationToSpreadsheet(normalizeConfig(jsonData));
 }
