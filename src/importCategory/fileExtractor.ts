@@ -134,8 +134,24 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
       const body = rootName === "symbol" || rootName === "svg"
         ? trimmed.replace(/^<\s*(svg|symbol)\b[\s\S]*?>/i, "").replace(/<\s*\/\s*(svg|symbol)\s*>$/i, "").trim()
         : trimmed;
+      // Preserve namespace attributes from the original root element (e.g.
+      // xmlns:xlink) so that inner markup referencing prefixed attributes
+      // remains valid after the root element is replaced with <symbol>.
+      const nsAttrs: string[] = [];
+      const rootAttrs = rootEl.getAttributes();
+      for (const attr of rootAttrs) {
+        const attrName = attr.getName();
+        const attrPrefix = attr.getNamespace()?.getPrefix();
+        // Keep xmlns:xxx declarations (namespace prefix declarations)
+        if (attrPrefix === "xmlns" || attrName === "xmlns" || attrName.startsWith("xmlns:")) {
+          const ns = attr.getNamespace();
+          const fullAttrName = ns?.getPrefix() ? `${ns.getPrefix()}:${attrName}` : attrName;
+          nsAttrs.push(`${fullAttrName}="${attr.getValue().replace(/"/g, "&quot;")}"`);
+        }
+      }
       const attrs = viewBox ? ` viewBox="${viewBox.replace(/"/g, "&quot;")}"` : "";
-      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}"${attrs}>${body}</symbol>`;
+      const nsAttrStr = nsAttrs.length > 0 ? ` ${nsAttrs.join(" ")}` : "";
+      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}"${attrs}${nsAttrStr}>${body}</symbol>`;
     } catch (error) {
       console.warn("Failed to parse icon SVG with XmlService, falling back to raw string:", error);
       // Keep the fallback XML-safe: escape the raw body as text content so one

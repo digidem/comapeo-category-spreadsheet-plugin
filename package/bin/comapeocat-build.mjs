@@ -44,7 +44,7 @@ program
 		process.cwd(),
 	)
 	.action(async (dir, { output, addCategoryIdTags, ...metadata }) => {
-		lint(dir).catch(handleError)
+		await lint(dir).catch(handleError)
 		const writeStream = output ? fs.createWriteStream(output) : process.stdout
 		const writer = new Writer()
 		const pipelinePromise = pipeline(writer.outputStream, writeStream).catch(

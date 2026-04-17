@@ -2408,10 +2408,13 @@ function checkCrossSheetIconCollisions(): void {
     // Mirror buildIconsFromSheet(): only category rows with a name and a
     // supported icon source contribute packaged icon assets.
     if (!name || !iconStr || !parseIconSource(iconStr)) continue;
+    // Mirror buildIconsFromSheet(): slugify(name) || `category-${index+1}`
+    // The builder falls back to `category-N` when slugify produces an empty
+    // string (e.g. non-Latin or punctuation-only names).
     const explicitCategoryId = catCategoryIdCol !== undefined
       ? String(catData[i][catCategoryIdCol] || "").trim()
       : "";
-    const categoryId = explicitCategoryId || slugify(name);
+    const categoryId = explicitCategoryId || slugify(name) || `category-${i + 1}`;
     // Builder uses iconIdCol ("icon id") when present, otherwise falls back to categoryId
     const explicitIconId = catIconIdCol !== undefined
       ? String(catData[i][catIconIdCol] || "").trim()
@@ -3549,8 +3552,10 @@ function lintMetadataSheet(): void {
 
   const data = metadataSheet.getRange(2, 1, lastRow - 1, 2).getValues();
 
-  // Track seen keys to detect duplicates. The builder only reads the first
-  // matching row for each key, so later duplicates are silently ignored.
+  // Track seen keys to detect duplicates. The builder uses exact key
+  // matching (sheetData[i][0] === key), so lint must do the same to
+  // avoid false-positive duplicate warnings on differently-cased keys
+  // (e.g. "PrimaryLanguage" vs "primaryLanguage" are distinct to the builder).
   const seenKeys = new Set<string>();
 
   for (let i = 0; i < data.length; i++) {
@@ -3561,8 +3566,8 @@ function lintMetadataSheet(): void {
     const row = i + 2;
 
     // Flag duplicate keys as a warning — the builder uses only the first row.
-    const lowerKey = key.toLowerCase();
-    const isDuplicate = lowerKey && seenKeys.has(lowerKey);
+    // Use exact key matching to match builder semantics.
+    const isDuplicate = key && seenKeys.has(key);
     if (isDuplicate) {
       const cell = metadataSheet.getRange(row, 2);
       appendLintNote(
@@ -3571,7 +3576,7 @@ function lintMetadataSheet(): void {
         "warning",
       );
     }
-    if (lowerKey) seenKeys.add(lowerKey);
+    if (key) seenKeys.add(key);
 
     // Skip further validation for duplicate rows — the builder ignores them,
     // so unsafe-char and language errors would be false positives.
@@ -3593,17 +3598,48 @@ function lintMetadataSheet(): void {
     }
 
     if (key === "primaryLanguage") {
-      // Validate language name using the same validator as the builder
-      const validation = validateLanguageName(value);
-      if (!validation.valid) {
+      // Validate language using the same normalization path as the builder.
+      // The builder's normalizeLocaleInput() first checks for ISO codes
+      // (e.g. "en", "pt-BR") via regex, then falls back to validateLanguageName()
+      // for display names (e.g. "English", "Português"). Lint must accept both.
+      const ISO_LOCALE_PATTERN = /^[a-z]{2,3}(-[a-z]{2,3})?$/i;
+      const isValid = ISO_LOCALE_PATTERN.test(value) ? true : (() => {
+        const validation = validateLanguageName(value);
+        return validation.valid;
+      })();
+      if (!isValid) {
         const cell = metadataSheet.getRange(row, 2);
         appendLintNote(
           cell,
-          `Metadata primaryLanguage: ${validation.error || "Unknown error"}`,
+          `Metadata primaryLanguage: "${value}" is not a recognized language. Use an ISO code (e.g. "en", "pt-BR") or a language name (e.g. "English", "Português").`,
           "error",
         );
       }
     }
+  }
+}
+
+/**
+ * Decodes a data:image/svg+xml URI (plain or base64) to extract the raw SVG
+ * content. Returns null if the URI cannot be decoded. Mirrors the decode logic
+ * from payloadBuilder's decodeDataSvg() for use in lint checks.
+ */
+function decodeDataSvgForLint(dataUri: string): string | null {
+  try {
+    if (dataUri.includes(";base64,")) {
+      const base64 = dataUri.split(";base64,")[1];
+      const decoded = Utilities.newBlob(
+        Utilities.base64Decode(base64),
+      ).getDataAsString();
+      return decoded;
+    }
+
+    const commaIndex = dataUri.indexOf(",");
+    if (commaIndex === -1) return null;
+    const payload = dataUri.substring(commaIndex + 1);
+    return decodeURIComponent(payload);
+  } catch (_err) {
+    return null;
   }
 }
 
@@ -3635,9 +3671,21 @@ function checkInlineSvgSizes(): void {
 
     for (let i = 0; i < values.length; i++) {
       const value = String(values[i][0] || "").trim();
-      if (!value.startsWith("<svg")) continue;
+      // Normalize icon source to extract inline SVG content for size checking.
+      // parseIconSource() handles inline <svg>, data:image/svg+xml URIs, and
+      // Drive URLs. Only measure sources that resolve to inline svgData.
+      let svgContent: string | null = null;
+      if (value.startsWith("<svg")) {
+        svgContent = value;
+      } else if (value.toLowerCase().startsWith("data:image/svg+xml")) {
+        // Decode data URI to get the actual SVG content for size measurement
+        svgContent = decodeDataSvgForLint(value);
+      }
+      // Drive URLs and remote URLs are not measured here — they require
+      // network access and the builder validates them during generation.
+      if (!svgContent) continue;
 
-      const sizeBytes = Utilities.newBlob(value).getBytes().length;
+      const sizeBytes = Utilities.newBlob(svgContent).getBytes().length;
       const sizeKB = Math.round(sizeBytes / 1024);
 
       if (sizeBytes > SVG_ERROR_BYTES) {
