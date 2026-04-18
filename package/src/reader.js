@@ -1,4 +1,3 @@
-import { parse as parseBCP47 } from 'bcp-47'
 import parseJson from 'parse-json'
 import * as v from 'valibot'
 import { open } from 'yauzl-promise'
@@ -26,6 +25,7 @@ import {
 	VersionSizeError,
 } from './lib/errors.js'
 import { parse } from './lib/utils.js'
+import { validateBcp47 } from './lib/validate-bcp-47.js'
 import { validateReferences } from './lib/validate-references.js'
 import { CategorySchema } from './schema/category.js'
 import { CategorySelectionSchema } from './schema/categorySelection.js'
@@ -171,10 +171,13 @@ export class Reader {
 								size: entry.uncompressedSize,
 							})
 						}
-						// Ignore BCP 47 without a primary language subtag
-						if (parseBCP47(lang).language) {
-							entries.translations.set(lang, entry)
+						// Ignore entries with invalid or unsupported BCP 47 tags
+						try {
+							const normalizedLang = validateBcp47(lang)
+							entries.translations.set(normalizedLang, entry)
 							continue
+						} catch {
+							// skip entry silently
 						}
 					}
 				}

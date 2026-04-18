@@ -1611,14 +1611,17 @@ function validateCategoryIcons(): void {
             driveFileCache.set(fileId, info);
           }
 
-          if (info.slug && info.isSvg) {
-            // Access is valid; no lint issue.
+          if (info.isSvg) {
+            // Access is valid and file is SVG; no lint issue.
             return;
           }
 
           if (info.errorMessage) {
             addIssue(rowNumber, info.errorMessage);
-          } else if (info.slug) {
+          } else {
+            // File is accessible but not SVG (slug may be empty for
+            // punctuation-only or non-Latin filenames, but config
+            // generation silently drops all non-SVG Drive files).
             addIssue(
               rowNumber,
               "Google Drive icon files must be SVG for direct config export; non-SVG Drive files are silently dropped during generation.",
@@ -3598,20 +3601,17 @@ function lintMetadataSheet(): void {
     }
 
     if (key === "primaryLanguage") {
-      // Validate language using the same normalization path as the builder.
-      // The builder's normalizeLocaleInput() first checks for ISO codes
-      // (e.g. "en", "pt-BR") via regex, then falls back to validateLanguageName()
-      // for display names (e.g. "English", "Português"). Lint must accept both.
-      const ISO_LOCALE_PATTERN = /^[a-z]{2,3}(-[a-z]{2,3})?$/i;
-      const isValid = ISO_LOCALE_PATTERN.test(value) ? true : (() => {
-        const validation = validateLanguageName(value);
-        return validation.valid;
-      })();
-      if (!isValid) {
+      // Validate using validateLanguageName(), which is the same path that
+      // getPrimaryLanguage() (spreadsheetData.ts) uses at runtime. That
+      // function only accepts display names ("English", "Português") — it
+      // does NOT accept ISO codes ("en", "pt-BR"). Accepting ISO codes here
+      // would allow values that pass lint but throw at runtime.
+      const validation = validateLanguageName(value);
+      if (!validation.valid) {
         const cell = metadataSheet.getRange(row, 2);
         appendLintNote(
           cell,
-          `Metadata primaryLanguage: "${value}" is not a recognized language. Use an ISO code (e.g. "en", "pt-BR") or a language name (e.g. "English", "Português").`,
+          `Metadata primaryLanguage: "${value}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
           "error",
         );
       }

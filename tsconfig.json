@@ -16,6 +16,17 @@
     "package/**",
     "plans/**",
     "src/scripts/**",
-    "src/test/**"
+    "src/test/testBuildAndImport.ts",
+    "src/test/testDetailsAndIcons.ts",
+    "src/test/testEndToEnd.ts",
+    "src/test/testExtractAndValidate.ts",
+    "src/test/testFieldExtraction.ts",
+    "src/test/testHelpers.ts",
+    "src/test/testRow2Translation.ts",
+    "src/test/testRunner.ts",
+    "src/test/testSkipTranslation.ts",
+    "src/test/testZipToApi.ts",
+    "src/test/translationExtractor.ts",
+    "src/test/testTranslationExtraction.ts"
   ]
 }
