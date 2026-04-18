@@ -59,12 +59,15 @@ export function validateReferences({
 		})
 	}
 
-	// Check that there are categories for both observation and track documents
-	if (getCategoryIdsForDocType(categories, 'observation').length === 0) {
-		throw new MissingCategoriesError({ docType: 'observation' })
-	}
-	if (getCategoryIdsForDocType(categories, 'track').length === 0) {
-		throw new MissingCategoriesError({ docType: 'track' })
+	// Check that there are categories for document types present in the archive.
+	// Only enforce this for doc types that actually have categories — single-doc-type
+	// archives (e.g., observation-only) are valid and should not be rejected.
+	const presentDocTypes = /** @type {const} */ (['observation', 'track']).filter(
+		(docType) => getCategoryIdsForDocType(categories, docType).length > 0,
+	)
+
+	if (presentDocTypes.length === 0) {
+		throw new MissingCategoriesError()
 	}
 
 	// Check category selection document types if provided
