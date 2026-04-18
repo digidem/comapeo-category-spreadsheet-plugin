@@ -244,6 +244,13 @@ function setMockLintNote(
   cellState.note = `[Lint] ${message}`;
 }
 
+function getMockCellState(target: any): MockCellState {
+  if (target && typeof target.__getCellState === "function") {
+    return target.__getCellState();
+  }
+  return target as MockCellState;
+}
+
 function runWithMockedLintSpreadsheet(
   sheets: Record<string, any[][]>,
   callback: (lintCalls: MockLintCall[]) => void,
@@ -326,6 +333,9 @@ function runWithMockedLintSpreadsheet(
       col,
       numRows,
       numCols,
+      __getCellState(): MockCellState {
+        return getCell(0, 0);
+      },
       getNumRows(): number {
         return numRows;
       },
@@ -432,8 +442,9 @@ function runWithMockedLintSpreadsheet(
     message: string,
     severity: "error" | "warning" | "advisory",
   ): void => {
-    setMockLintNote(cell, message);
-    setMockLintStyle(cell, severity);
+    const cellState = getMockCellState(cell);
+    setMockLintNote(cellState, message);
+    setMockLintStyle(cellState, severity);
     lintCalls.push({ row: cell.row, col: cell.col, message, severity });
   };
   globalScope.appendLintNote = (
@@ -441,8 +452,9 @@ function runWithMockedLintSpreadsheet(
     message: string,
     severity: "error" | "warning" | "advisory",
   ): void => {
-    appendMockLintNote(cell, message);
-    appendMockLintStyle(cell, severity);
+    const cellState = getMockCellState(cell);
+    appendMockLintNote(cellState, message);
+    appendMockLintStyle(cellState, severity);
     lintCalls.push({ row: cell.row, col: cell.col, message, severity });
   };
 

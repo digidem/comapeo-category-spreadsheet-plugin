@@ -25,6 +25,7 @@ import {
 	VersionSizeError,
 	InvalidTranslationFilenameError,
 } from './lib/errors.js'
+import { parseSvg } from './lib/parse-svg.js'
 import { parse } from './lib/utils.js'
 import { validateBcp47 } from './lib/validate-bcp-47.js'
 import { validateReferences } from './lib/validate-references.js'
@@ -217,6 +218,9 @@ export class Reader {
 		await this.metadata()
 		const fields = await this.fields()
 		const iconNames = await this.iconNames()
+		for await (const { iconXml } of this.icons()) {
+			parseSvg(iconXml)
+		}
 		for await (const _translation of this.translations()) {
 			// Iterating forces JSON/schema validation for every translation file.
 		}

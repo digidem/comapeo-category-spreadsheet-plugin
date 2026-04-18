@@ -1027,5 +1027,4 @@ function downloadIconErrorReport(): void {
   );
   // Note: Full implementation requires error summary to be stored in PropertiesService
   // and retrieved here, then converted to CSV using collector.toCSV()
-  google.script.host.close();
 }

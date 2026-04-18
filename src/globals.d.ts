@@ -1,5 +1,3 @@
-declare const google: any;
-
 declare const VERSION: string;
 declare const COMMIT: string;
 declare const BRANCH: string;

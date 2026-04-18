@@ -555,7 +555,14 @@ function checkSlugCollisions(
   const nameRange = sheet.getRange(2, nameColumnIndex, lastRow - 1, 1);
   // Remove only prior slug-collision warnings so duplicate-name errors from
   // checkForDuplicates() remain intact while stale slug warnings are refreshed.
-  clearRangeLintNoteLinesWithPrefix(nameRange, SLUG_COLLISION_LINT_NOTE_PREFIX);
+  // This path preserves user-managed category colors and font choices, so it
+  // only strips the note lines and leaves visual formatting untouched.
+  clearRangeLintNoteLinesWithPrefix(
+    nameRange,
+    SLUG_COLLISION_LINT_NOTE_PREFIX,
+    [],
+    [],
+  );
 
   const names = nameRange.getValues();
 
@@ -696,7 +703,7 @@ function validateAppliesColumn(): void {
     1,
   ).getValues();
   const nameColZeroBased = normalizedHeaders.findIndex(
-    (header) => header === "name" || header === "category" || header === "label",
+    (header) => header === "name",
   );
   const nameColIndex = nameColZeroBased >= 0 ? nameColZeroBased + 1 : 1;
   const nameValues = categoriesSheet.getRange(
@@ -1187,7 +1194,10 @@ function checkUnreferencedDetails(): void {
       for (const token of tokens) {
         const slugified = slugify(token);
         if (slugified) referencedFields.add(slugified);
-        if (token) referencedFields.add(token);
+        if (token) {
+          referencedFields.add(token);
+          referencedFields.add(token.toLowerCase());
+        }
       }
     }
 
@@ -1195,7 +1205,9 @@ function checkUnreferencedDetails(): void {
     for (const entry of detailEntries) {
       const isReferenced =
         (entry.slug && referencedFields.has(entry.slug)) ||
-        (entry.explicitId && referencedFields.has(entry.explicitId));
+        (entry.explicitId &&
+          (referencedFields.has(entry.explicitId) ||
+            referencedFields.has(entry.explicitId.toLowerCase())));
       if (!isReferenced) {
         console.log(
           `Unreferenced detail: "${entry.slug}" at row ${entry.row}`,
@@ -1856,6 +1868,7 @@ function lintCategoriesSheet(): void {
         }
         if (explicitId) {
           cachedValidFieldIds.add(explicitId);
+          cachedValidFieldIds.add(explicitId.toLowerCase());
         }
       }
     }
@@ -1899,7 +1912,13 @@ function lintCategoriesSheet(): void {
           const invalidFields: string[] = [];
           for (const token of tokens) {
             const slugified = slugify(token);
-            if (slugified && !cachedValidFieldIds.has(slugified) && !cachedValidFieldIds.has(token)) {
+            const tokenLower = token.toLowerCase();
+            if (
+              slugified &&
+              !cachedValidFieldIds.has(slugified) &&
+              !cachedValidFieldIds.has(token) &&
+              !cachedValidFieldIds.has(tokenLower)
+            ) {
               invalidFields.push(token);
             }
           }
@@ -3910,32 +3929,36 @@ function buildLintFieldSummaries(
       }
 
       const helperText = String(row[helperCol] || "");
-      // Mirror payloadBuilder: blank type cells default to text, while unknown
-      // values still fall through to selectOne/selectMultiple semantics by first letter.
-      const typeRaw = String(row[typeCol] || "text")
+      const typeRaw = String(row[typeCol] || "")
         .trim()
         .toLowerCase();
       const optionsStr = String(row[optionsCol] || "");
       const explicitId = String(row[idCol] || "").trim();
 
       let options: SelectOption[] | undefined;
+      let resolvedType: "selectOne" | "selectMultiple" | "number" | "text";
       const typeKey = typeRaw.charAt(0);
       switch (typeKey) {
         case "m":
+          resolvedType = "selectMultiple";
           options = parseOptions(optionsStr);
           break;
         case "n":
+          resolvedType = "number";
+          break;
         case "t":
-          options = undefined;
+          resolvedType = "text";
           break;
         case "s":
+        case "":
         default:
+          resolvedType = "selectOne";
           options = parseOptions(optionsStr);
           break;
       }
 
       const isSelectType =
-        typeKey === "m" || typeKey === "s";
+        resolvedType === "selectOne" || resolvedType === "selectMultiple";
       if (isSelectType && (!options || options.length === 0)) {
         return null;
       }

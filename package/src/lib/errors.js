@@ -30,7 +30,8 @@ export function isParseError(err) {
 			err.name === 'CategoryRefError' ||
 			err.name === 'CategorySelectionRefError' ||
 			err.name === 'InvalidCategorySelectionError' ||
-			err.name === 'InvalidTranslationFilenameError')
+			err.name === 'InvalidTranslationFilenameError' ||
+			err.name === 'InvalidSvgError')
 	)
 }
 

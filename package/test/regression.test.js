@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 import archiver from 'archiver'
 
@@ -22,6 +25,13 @@ const VALID_CATEGORY_SELECTION = {
 	track: [],
 }
 
+const execFileAsync = promisify(execFile)
+const MESSAGES_CLI_PATH = fileURLToPath(
+	new URL('../bin/comapeocat-messages.mjs', import.meta.url),
+)
+const VALIDATE_CLI_PATH = fileURLToPath(
+	new URL('../bin/comapeocat-validate.mjs', import.meta.url),
+)
 const VALID_CATEGORIES = {
 	'observation-category': {
 		name: 'Observation Category',
@@ -30,6 +40,40 @@ const VALID_CATEGORIES = {
 		fields: [],
 	},
 }
+
+test('comapeocat-messages uses dot-prop indexes for option label message IDs', async () => {
+	await withTempDir(async (tempDir) => {
+		await writeJson(path.join(tempDir, 'fields', 'status.json'), {
+			tagKey: 'status',
+			label: 'Status',
+			type: 'selectOne',
+			options: [
+				{ label: 'Open', value: 'open' },
+				{ label: 'Closed', value: 'closed' },
+			],
+		})
+
+		const { stdout, stderr } = await execFileAsync(process.execPath, [
+			MESSAGES_CLI_PATH,
+			tempDir,
+		])
+		assert.equal(stderr, '')
+
+		const messages = JSON.parse(stdout)
+		assert.deepEqual(messages['field.status.options.0.label'], {
+			description: "Label for option 'open' of field 'status'",
+			message: 'Open',
+		})
+		assert.deepEqual(messages['field.status.options.1.label'], {
+			description: "Label for option 'closed' of field 'status'",
+			message: 'Closed',
+		})
+		assert.equal(
+			'field.status.options[value="open"].label' in messages,
+			false,
+		)
+	})
+})
 
 test('Writer.finish rejects categorySelection references to missing categories', () => {
 	const writer = new Writer()
@@ -65,6 +109,69 @@ test('Writer.finish rejects categorySelection references to categories with inco
 		name: 'InvalidCategorySelectionError',
 		message:
 			/Category "track-category" in categorySelection\.observation does not include "observation" in its appliesTo array/,
+	})
+})
+
+test('Reader.validate rejects invalid SVG icon payloads in archives', async () => {
+	await withTempDir(async (tempDir) => {
+		const archivePath = path.join(tempDir, 'invalid-icon.comapeocat')
+		await createArchive(archivePath, {
+			'categories.json': JSON.stringify(VALID_CATEGORIES, null, 2),
+			'fields.json': JSON.stringify({}, null, 2),
+			'categorySelection.json': JSON.stringify(VALID_CATEGORY_SELECTION, null, 2),
+			'metadata.json': JSON.stringify(
+				{
+					...VALID_METADATA,
+					buildDateValue: Date.now(),
+				},
+				null,
+				2,
+			),
+			VERSION: '1.0',
+			'icons/broken.svg': '<svg><path></svg>',
+		})
+
+		const reader = new Reader(archivePath)
+		try {
+			await assert.rejects(reader.validate(), {
+				name: 'InvalidSvgError',
+				message: /Invalid SVG content/,
+			})
+		} finally {
+			await reader.close()
+		}
+	})
+})
+
+test('Validate CLI prints invalid SVG errors without a stack trace', async () => {
+	await withTempDir(async (tempDir) => {
+		const archivePath = path.join(tempDir, 'invalid-icon.comapeocat')
+		await createArchive(archivePath, {
+			'categories.json': JSON.stringify(VALID_CATEGORIES, null, 2),
+			'fields.json': JSON.stringify({}, null, 2),
+			'categorySelection.json': JSON.stringify(VALID_CATEGORY_SELECTION, null, 2),
+			'metadata.json': JSON.stringify(
+				{
+					...VALID_METADATA,
+					buildDateValue: Date.now(),
+				},
+				null,
+				2,
+			),
+			VERSION: '1.0',
+			'icons/broken.svg': '<svg><path></svg>',
+		})
+
+		await assert.rejects(
+			execFileAsync(process.execPath, [VALIDATE_CLI_PATH, archivePath]),
+			(err) => {
+				assert.equal(err?.code, 1)
+				assert.equal(err?.stdout, '')
+				assert.match(err?.stderr ?? '', /^Invalid SVG content\n?$/)
+				assert.doesNotMatch(err?.stderr ?? '', /InvalidSvgError|\sat\s/)
+				return true
+			},
+		)
 	})
 })
 
@@ -143,6 +250,11 @@ test('Reader invalid translation filename is treated as a parse-style CLI valida
 		}
 	})
 })
+
+async function writeJson(filePath, value) {
+	await mkdir(path.dirname(filePath), { recursive: true })
+	await writeFile(filePath, JSON.stringify(value, null, 2))
+}
 
 async function createArchive(archivePath, entries) {
 	await new Promise((resolve, reject) => {

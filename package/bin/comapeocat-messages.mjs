@@ -56,10 +56,8 @@ program
 					}
 
 					if ('options' in value && Array.isArray(value.options)) {
-						for (const { label, value: optionValue } of value.options) {
-							messages[
-								`field.${escapedId}.options[value=${JSON.stringify(optionValue)}].label`
-							] = {
+						for (const [optionIndex, { label, value: optionValue }] of value.options.entries()) {
+							messages[`field.${escapedId}.options.${optionIndex}.label`] = {
 								description: `Label for option '${optionValue}' of field '${id}'`,
 								message: label,
 							}
