@@ -764,6 +764,80 @@ function testPrimaryLanguageBlankA1UsesMetadataFallback(): boolean {
   }
 }
 
+function testMetadataPrimaryLanguageDuplicateParity(): boolean {
+  console.log("=== testMetadataPrimaryLanguageDuplicateParity ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Metadata: [
+          ["Key", "Value"],
+          ["primaryLanguage", ""],
+          ["primaryLanguage", "NotALanguage"],
+          ["primaryLanguage", "English"],
+        ],
+      },
+      (lintCalls) => {
+        lintMetadataSheet();
+
+        const duplicateWarnings = lintCalls.filter(
+          (call) =>
+            call.row === 3 &&
+            call.col === 2 &&
+            call.severity === "warning" &&
+            call.message.includes('Duplicate metadata key "primaryLanguage"') &&
+            call.message.includes("only used if all earlier primaryLanguage rows are blank"),
+        );
+        if (duplicateWarnings.length !== 1) {
+          throw new Error(
+            `Expected row 3 duplicate primaryLanguage warning describing builder fallback semantics, got ${duplicateWarnings.length}`,
+          );
+        }
+
+        const invalidLanguageErrors = lintCalls.filter(
+          (call) =>
+            call.row === 3 &&
+            call.col === 2 &&
+            call.severity === "error" &&
+            call.message.includes('Metadata primaryLanguage: "NotALanguage" is not a recognized language name'),
+        );
+        if (invalidLanguageErrors.length !== 1) {
+          throw new Error(
+            `Expected row 3 invalid primaryLanguage error for the first non-empty duplicate, got ${invalidLanguageErrors.length}`,
+          );
+        }
+
+        const ignoredDuplicateWarnings = lintCalls.filter(
+          (call) =>
+            call.row === 4 &&
+            call.col === 2 &&
+            call.severity === "warning" &&
+            call.message.includes('Duplicate metadata key "primaryLanguage"') &&
+            call.message.includes("this row is ignored"),
+        );
+        if (ignoredDuplicateWarnings.length !== 1) {
+          throw new Error(
+            `Expected row 4 duplicate primaryLanguage warning to mark the row ignored, got ${ignoredDuplicateWarnings.length}`,
+          );
+        }
+
+        const row4Errors = lintCalls.filter(
+          (call) => call.row === 4 && call.col === 2 && call.severity === "error",
+        );
+        if (row4Errors.length !== 0) {
+          throw new Error(`Expected no validation errors on ignored duplicate row 4, got ${row4Errors.length}`);
+        }
+      },
+    );
+
+    console.log("PASS: Duplicate metadata primaryLanguage rows mirror first-non-empty builder semantics");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
   console.log("=== testAppliesMissingHeaderPreservesExistingBodyAnnotations ===");
 
@@ -893,6 +967,10 @@ function runLintParityTests(): void {
     {
       name: "Primary Language Blank A1 Uses Metadata Fallback",
       fn: testPrimaryLanguageBlankA1UsesMetadataFallback,
+    },
+    {
+      name: "Metadata Primary Language Duplicate Parity",
+      fn: testMetadataPrimaryLanguageDuplicateParity,
     },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
   ];

@@ -214,8 +214,12 @@ export class Reader {
 
 		const categories = await this.categories()
 		const categorySelection = await this.categorySelection()
+		await this.metadata()
 		const fields = await this.fields()
 		const iconNames = await this.iconNames()
+		for await (const _translation of this.translations()) {
+			// Iterating forces JSON/schema validation for every translation file.
+		}
 
 		validateReferences({
 			categories,
@@ -312,7 +316,9 @@ export class Reader {
 		if (this.#cached.categorySelection) return this.#cached.categorySelection
 		const { categorySelection: entry } = await this.#entriesPromise
 		const data = await this.#readJsonEntry(entry)
-		this.#cached.categorySelection = v.parse(CategorySelectionSchema, data)
+		this.#cached.categorySelection = parse(CategorySelectionSchema, data, {
+			fileName: entry.filename,
+		})
 		return this.#cached.categorySelection
 	}
 
@@ -323,7 +329,9 @@ export class Reader {
 		if (this.#cached.metadata) return this.#cached.metadata
 		const { metadata: entry } = await this.#entriesPromise
 		const data = await this.#readJsonEntry(entry)
-		this.#cached.metadata = v.parse(MetadataSchemaOutput, data)
+		this.#cached.metadata = parse(MetadataSchemaOutput, data, {
+			fileName: entry.filename,
+		})
 		return this.#cached.metadata
 	}
 

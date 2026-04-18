@@ -2429,16 +2429,19 @@ function checkCrossSheetIconCollisions(): void {
 
   const logger = getScopedLogger("LintCrossSheetIconCollisions");
 
-  // Read Icons sheet IDs (col A)
+  // Read Icons sheet IDs and sources (mirror buildIconsFromSheet(): both ID and
+  // source must be present, and unsupported sources are ignored)
   const iconsData = iconsSheet
-    .getRange(2, 1, iconsLastRow - 1, 1)
+    .getRange(2, 1, iconsLastRow - 1, 2)
     .getValues();
   const iconsEntries: Array<{ id: string; row: number }> = [];
   for (let i = 0; i < iconsData.length; i++) {
     const iconId = String(iconsData[i][0] || "").trim();
-    if (iconId) {
-      iconsEntries.push({ id: iconId, row: i + 2 });
+    const iconStr = String(iconsData[i][1] || "").trim();
+    if (!iconId || !iconStr || !parseIconSource(iconStr)) {
+      continue;
     }
+    iconsEntries.push({ id: iconId, row: i + 2 });
   }
 
   // Read Categories: resolve columns by header name (mirrors buildIconsFromSheet).
@@ -3608,17 +3611,45 @@ function lintMetadataSheet(): void {
   // avoid false-positive duplicate warnings on differently-cased keys
   // (e.g. "PrimaryLanguage" vs "primaryLanguage" are distinct to the builder).
   const seenKeys = new Set<string>();
+  let resolvedPrimaryLanguage = false;
 
   for (let i = 0; i < data.length; i++) {
     const key = String(data[i][0] || "").trim();
-    const value = String(data[i][1] || "").trim();
-    if (!value) continue; // Skip empty values
-
+    const rawValue = data[i][1];
+    const value = String(rawValue || "").trim();
     const row = i + 2;
 
     // Flag duplicate keys as a warning — the builder uses only the first row.
     // Use exact key matching to match builder semantics.
     const isDuplicate = key && seenKeys.has(key);
+
+    if (key === "primaryLanguage") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (isDuplicate) {
+        appendLintNote(
+          cell,
+          resolvedPrimaryLanguage
+            ? 'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence — this row is ignored.'
+            : 'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence, so this row is only used if all earlier primaryLanguage rows are blank.',
+          "warning",
+        );
+      }
+      if (key) seenKeys.add(key);
+      if (!value) continue;
+      if (resolvedPrimaryLanguage) continue;
+
+      const validation = validateLanguageName(value);
+      if (!validation.valid) {
+        appendLintNote(
+          cell,
+          `Metadata primaryLanguage: "${value}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+          "error",
+        );
+      }
+      resolvedPrimaryLanguage = true;
+      continue;
+    }
+
     if (isDuplicate) {
       const cell = metadataSheet.getRange(row, 2);
       appendLintNote(
@@ -3626,47 +3657,32 @@ function lintMetadataSheet(): void {
         `Duplicate metadata key "${key}". The builder only reads the first occurrence — this row is ignored.`,
         "warning",
       );
+      if (key) seenKeys.add(key);
+      continue;
     }
     if (key) seenKeys.add(key);
 
-    // Skip further validation for duplicate rows — the builder ignores them
-    // for most keys (name, version). However, primaryLanguage is different:
-    // getPrimaryLanguageName() and buildLocales() keep scanning ALL
-    // primaryLanguage rows until they find a usable value, so we must
-    // validate every primaryLanguage row, not just the first.
-    if (isDuplicate && key !== "primaryLanguage") continue;
-
-    // Only validate "name" for unsafe characters.
-    // The export pipeline overwrites "version" with the current date
-    // (yy.MM.dd) before strict validation runs, so the sheet value is
-    // never used as-is and linting it would produce false errors.
     if (key === "name") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (!value) {
+        appendLintNote(
+          cell,
+          'Metadata "name" is present but blank. Config generation keeps the blank value and strict validation will fail.',
+          "error",
+        );
+        continue;
+      }
       if (STRICT_UNSAFE_PATTERN.test(value)) {
-        const cell = metadataSheet.getRange(row, 2);
         appendLintNote(
           cell,
           `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
           "error",
         );
       }
+      continue;
     }
 
-    if (key === "primaryLanguage") {
-      // Validate using validateLanguageName(), which is the same path that
-      // getPrimaryLanguage() (spreadsheetData.ts) uses at runtime. That
-      // function only accepts display names ("English", "Português") — it
-      // does NOT accept ISO codes ("en", "pt-BR"). Accepting ISO codes here
-      // would allow values that pass lint but throw at runtime.
-      const validation = validateLanguageName(value);
-      if (!validation.valid) {
-        const cell = metadataSheet.getRange(row, 2);
-        appendLintNote(
-          cell,
-          `Metadata primaryLanguage: "${value}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
-          "error",
-        );
-      }
-    }
+    if (!value) continue; // Skip empty values for remaining keys
   }
 }
 
@@ -3878,7 +3894,8 @@ function buildLintFieldSummaries(
       }
 
       const helperText = String(row[helperCol] || "");
-      // Mirror payloadBuilder: empty type cells default to "text" (not selectOne)
+      // Mirror payloadBuilder: blank type cells default to text, while unknown
+      // values still fall through to selectOne/selectMultiple semantics by first letter.
       const typeRaw = String(row[typeCol] || "text")
         .trim()
         .toLowerCase();
