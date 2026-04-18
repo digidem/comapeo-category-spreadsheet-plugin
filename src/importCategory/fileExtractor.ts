@@ -109,6 +109,19 @@ function extractJsonArchive(
 }
 
 /**
+ * Escapes a string for safe use as an XML attribute value.
+ * Covers &, <, >, and " to prevent injection via icon names
+ * containing XML metacharacters (e.g. "fish & shell").
+ */
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
  * Creates an SVG sprite string from an array of icon definitions
  */
 function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>): string {
@@ -151,7 +164,7 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
       }
       const attrs = viewBox ? ` viewBox="${viewBox.replace(/"/g, "&quot;")}"` : "";
       const nsAttrStr = nsAttrs.length > 0 ? ` ${nsAttrs.join(" ")}` : "";
-      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}"${attrs}${nsAttrStr}>${body}</symbol>`;
+      return `<symbol id="${escapeXmlAttr(icon.name)}"${attrs}${nsAttrStr}>${body}</symbol>`;
     } catch (error) {
       console.warn("Failed to parse icon SVG with XmlService, falling back to raw string:", error);
       // Keep the fallback XML-safe: escape the raw body as text content so one
@@ -165,7 +178,7 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
-      return `<symbol id="${icon.name.replace(/"/g, "&quot;")}">${escapedBody}</symbol>`;
+      return `<symbol id="${escapeXmlAttr(icon.name)}">${escapedBody}</symbol>`;
     }
   };
 

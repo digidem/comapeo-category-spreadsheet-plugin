@@ -19,6 +19,7 @@ import {
 	CategorySchema,
 	CategorySchemaDeprecatedSort,
 	CategorySchemaDeprecatedGeometry,
+	CategorySchemaDeprecated,
 } from '../../src/schema/category.js'
 import { CategorySelectionSchema } from '../../src/schema/categorySelection.js'
 import { DefaultsDeprecatedSchema } from '../../src/schema/defaults.js'
@@ -69,8 +70,7 @@ export async function* readFiles(dir) {
 		assertSchema(
 			v.union([
 				CategorySchema,
-				CategorySchemaDeprecatedSort,
-				CategorySchemaDeprecatedGeometry,
+				CategorySchemaDeprecated,
 			]),
 			data,
 			{

@@ -32,7 +32,7 @@ const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFF2CC",
   "#FFF3CD",
 ];
-const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000"];
+const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000", "#FFFFFF"];
 const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
 
@@ -238,11 +238,14 @@ function appendLintNote(
   }
 
   // Apply severity styling (upgrade if higher severity than current)
-  const currentBg = cell.getBackground();
+  const currentBg = cell.getBackground().toUpperCase();
+  // Check for error-level backgrounds. #FFC7CE is the standard lint error
+  // background; #FF0000 is used by validateSheetConsistency for critical
+  // primary-column mismatches and must also be treated as error-level so
+  // that appendLintNote("warning") does not overwrite it.
   const isAlreadyError =
-    currentBg.toUpperCase() === "#FFC7CE";
-  const isAlreadyWarning =
-    currentBg.toUpperCase() === "#FFF2CC";
+    currentBg === "#FFC7CE" || currentBg === "#FF0000";
+  const isAlreadyWarning = currentBg === "#FFF2CC";
 
   switch (severity) {
     case "error":
@@ -613,12 +616,14 @@ function validateAppliesColumn(): void {
   );
 
   if (appliesColZeroBased === -1) {
-    // The Applies header was removed or renamed. We've already cleared
-    // Applies-specific notes above. We intentionally do NOT clear backgrounds
-    // across the entire sheet here because other checks (validateCategoryIcons,
-    // field validation, etc.) may have set severity backgrounds that should be
-    // preserved. Stale Applies backgrounds will be naturally cleaned up on the
-    // next full lint cycle via the targeted clearLintArtifacts calls.
+    // The Applies header was removed or renamed. Clear stale Applies-specific
+    // backgrounds from ALL data rows so re-lint doesn't leave orphaned
+    // highlights. Other checks (validateCategoryIcons, field validation, etc.)
+    // will re-apply their own backgrounds when they run.
+    if (lastRow > 1 && lastCol > 0) {
+      const dataRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
+      clearLintArtifacts(dataRange);
+    }
     const headerCell = categoriesSheet.getRange(1, 1);
     appendLintNote(
       headerCell,
@@ -645,17 +650,23 @@ function validateAppliesColumn(): void {
 
   if (lastRow <= 1) return;
 
-  // Read both name (col A) and Applies so we can skip blank/spacer rows,
+  // Read both name and Applies so we can skip blank/spacer rows,
   // matching buildCategories() which returns early for rows without a name.
+  // Resolve the Name column by header (mirrors buildCategories' header-map
+  // lookup) instead of hard-coding column A.
   const appliesValues = categoriesSheet.getRange(
     2,
     appliesColIndex,
     lastRow - 1,
     1,
   ).getValues();
+  const nameColZeroBased = normalizedHeaders.findIndex(
+    (header) => header === "name" || header === "category" || header === "label",
+  );
+  const nameColIndex = nameColZeroBased >= 0 ? nameColZeroBased + 1 : 1;
   const nameValues = categoriesSheet.getRange(
     2,
-    1,
+    nameColIndex,
     lastRow - 1,
     1,
   ).getValues();
@@ -1724,10 +1735,21 @@ function validatePrimaryLanguageInA1(): void {
   const a1Value = String(categoriesSheet.getRange(1, 1).getValue() || "").trim();
   if (!a1Value) return; // Empty A1 – builder falls back to Metadata
 
-  // Skip standard headers that are clearly not language names
+  // Skip standard headers that are clearly not language names.
+  // However, these values WILL cause getPrimaryLanguage() to throw at runtime
+  // if Metadata has no primaryLanguage, so we flag them as errors rather than
+  // silently accepting them.
   const lowerA1 = a1Value.toLowerCase();
   const HEADER_WORDS = ["category", "categories", "name", "label", "type"];
-  if (HEADER_WORDS.includes(lowerA1)) return;
+  if (HEADER_WORDS.includes(lowerA1)) {
+    setLintNote(
+      cell,
+      `Categories A1 contains "${a1Value}" which is not a valid language name. ` +
+        `Set a valid language (e.g. "English", "Português") or add a "primaryLanguage" row in the Metadata sheet.`,
+      "error",
+    );
+    return;
+  }
 
   // Validate as a language name
   const validation = validateLanguageName(a1Value);
@@ -3581,9 +3603,12 @@ function lintMetadataSheet(): void {
     }
     if (key) seenKeys.add(key);
 
-    // Skip further validation for duplicate rows — the builder ignores them,
-    // so unsafe-char and language errors would be false positives.
-    if (isDuplicate) continue;
+    // Skip further validation for duplicate rows — the builder ignores them
+    // for most keys (name, version). However, primaryLanguage is different:
+    // getPrimaryLanguageName() and buildLocales() keep scanning ALL
+    // primaryLanguage rows until they find a usable value, so we must
+    // validate every primaryLanguage row, not just the first.
+    if (isDuplicate && key !== "primaryLanguage") continue;
 
     // Only validate "name" for unsafe characters.
     // The export pipeline overwrites "version" with the current date
