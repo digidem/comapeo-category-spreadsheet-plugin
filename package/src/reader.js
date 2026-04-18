@@ -23,6 +23,7 @@ import {
 	InvalidZipFileError,
 	TooManyEntriesError,
 	VersionSizeError,
+	InvalidTranslationFilenameError,
 } from './lib/errors.js'
 import { parse } from './lib/utils.js'
 import { validateBcp47 } from './lib/validate-bcp-47.js'
@@ -171,14 +172,17 @@ export class Reader {
 								size: entry.uncompressedSize,
 							})
 						}
-						// Ignore entries with invalid or unsupported BCP 47 tags
+						let normalizedLang
 						try {
-							const normalizedLang = validateBcp47(lang)
-							entries.translations.set(normalizedLang, entry)
-							continue
-						} catch {
-							// skip entry silently
+							normalizedLang = validateBcp47(lang)
+						} catch (cause) {
+							throw new InvalidTranslationFilenameError({
+								fileName: entry.filename,
+								cause: /** @type {Error} */ (cause),
+							})
 						}
+						entries.translations.set(normalizedLang, entry)
+						continue
 					}
 				}
 			}

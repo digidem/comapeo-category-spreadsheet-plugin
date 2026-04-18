@@ -129,10 +129,15 @@ function clearRangeLintNoteLinesWithPrefix(
   const normalizedWarningColors = LINT_WARNING_FONT_COLORS.map((color) =>
     color.toUpperCase(),
   );
+  const normalizedBackgroundColors = LINT_WARNING_BACKGROUND_COLORS.map((color) =>
+    color.toUpperCase(),
+  );
   const notes = range.getNotes();
   const fontColors = range.getFontColors();
+  const backgrounds = range.getBackgrounds();
   let notesUpdated = false;
   let fontColorsUpdated = false;
+  let backgroundsUpdated = false;
 
   for (let row = 0; row < notes.length; row++) {
     for (let col = 0; col < notes[row].length; col++) {
@@ -168,6 +173,16 @@ function clearRangeLintNoteLinesWithPrefix(
         fontColors[row][col] = null;
         fontColorsUpdated = true;
       }
+
+      const background = backgrounds[row][col];
+      if (
+        remainingNote === "" &&
+        background &&
+        normalizedBackgroundColors.includes(background.toUpperCase())
+      ) {
+        backgrounds[row][col] = null;
+        backgroundsUpdated = true;
+      }
     }
   }
 
@@ -177,6 +192,10 @@ function clearRangeLintNoteLinesWithPrefix(
 
   if (fontColorsUpdated) {
     range.setFontColors(fontColors);
+  }
+
+  if (backgroundsUpdated) {
+    range.setBackgrounds(backgrounds);
   }
 }
 
@@ -598,6 +617,10 @@ function validateAppliesColumn(): void {
         bodyRange,
         `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
       );
+      clearRangeLintNoteLinesWithPrefix(
+        bodyRange,
+        `${LINT_NOTE_PREFIX}All Applies tokens are unrecognized`,
+      );
     }
   }
   const headerValues =
@@ -616,14 +639,10 @@ function validateAppliesColumn(): void {
   );
 
   if (appliesColZeroBased === -1) {
-    // The Applies header was removed or renamed. Clear stale Applies-specific
-    // backgrounds from ALL data rows so re-lint doesn't leave orphaned
-    // highlights. Other checks (validateCategoryIcons, field validation, etc.)
-    // will re-apply their own backgrounds when they run.
-    if (lastRow > 1 && lastCol > 0) {
-      const dataRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
-      clearLintArtifacts(dataRange);
-    }
+    // The Applies header was removed or renamed. We've already cleared
+    // Applies-specific notes above. Intentionally avoid blanket-clearing the
+    // sheet here because earlier lint phases may have already annotated other
+    // columns, and those findings must be preserved.
     const headerCell = categoriesSheet.getRange(1, 1);
     appendLintNote(
       headerCell,
@@ -1733,7 +1752,14 @@ function validatePrimaryLanguageInA1(): void {
   }
 
   const a1Value = String(categoriesSheet.getRange(1, 1).getValue() || "").trim();
-  if (!a1Value) return; // Empty A1 – builder falls back to Metadata
+  if (!a1Value) {
+    setLintNote(
+      cell,
+      'Categories A1 is blank and no Metadata primaryLanguage is set. Set a valid language name (e.g. "English", "Português") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
+      "error",
+    );
+    return;
+  }
 
   // Skip standard headers that are clearly not language names.
   // However, these values WILL cause getPrimaryLanguage() to throw at runtime
@@ -3668,6 +3694,22 @@ function decodeDataSvgForLint(dataUri: string): string | null {
   }
 }
 
+function loadDriveSvgForLint(fileId: string): string | null {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const mime = file.getMimeType();
+    const text = file.getBlob().getDataAsString();
+    const isSvgMime = mime?.toLowerCase().includes("svg");
+    const looksLikeSvg = text.trim().startsWith("<svg");
+    if (isSvgMime || looksLikeSvg) {
+      return text.trim();
+    }
+    return null;
+  } catch (_err) {
+    return null;
+  }
+}
+
 /**
  * Phase 6 Task 1: Checks inline SVG sizes in Categories column B and Icons column B.
  * - Warning if SVG > 300 KB (307200 bytes)
@@ -3705,9 +3747,15 @@ function checkInlineSvgSizes(): void {
       } else if (value.toLowerCase().startsWith("data:image/svg+xml")) {
         // Decode data URI to get the actual SVG content for size measurement
         svgContent = decodeDataSvgForLint(value);
+      } else if (value.startsWith("https://drive.google.com/file/d/")) {
+        const fileId = extractDriveFileId(value);
+        if (fileId) {
+          svgContent = loadDriveSvgForLint(fileId);
+        }
       }
-      // Drive URLs and remote URLs are not measured here — they require
-      // network access and the builder validates them during generation.
+      // Remote non-Drive URLs are not measured here because they require network
+      // access, but Drive SVGs are inlined by the builder and must match export-time
+      // size validation.
       if (!svgContent) continue;
 
       const sizeBytes = Utilities.newBlob(svgContent).getBytes().length;

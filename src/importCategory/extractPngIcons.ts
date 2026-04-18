@@ -21,6 +21,38 @@ function safePngDebugLog(message: string) {
 }
 
 /**
+ * Updates an existing Drive file in place so its file ID and URL stay stable.
+ * Uses the Drive upload endpoint because DriveApp does not support binary
+ * content replacement for PNG files.
+ */
+function updateDriveFileBlobInPlace(
+  file: GoogleAppsScript.Drive.File,
+  blob: GoogleAppsScript.Base.Blob,
+): GoogleAppsScript.Drive.File {
+  const response = UrlFetchApp.fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.getId())}?uploadType=media&supportsAllDrives=true`,
+    {
+      method: "patch",
+      contentType: blob.getContentType() || "image/png",
+      payload: blob.getBytes(),
+      headers: {
+        Authorization: `Bearer ${ScriptApp.getOAuthToken()}`,
+      },
+      muteHttpExceptions: true,
+    },
+  );
+
+  const responseCode = response.getResponseCode();
+  if (responseCode < 200 || responseCode >= 300) {
+    throw new Error(
+      `Drive API PNG replacement failed (${responseCode}): ${response.getContentText()}`,
+    );
+  }
+
+  return DriveApp.getFileById(file.getId());
+}
+
+/**
  * Extracts PNG icons from the temp folder and copies them to permanent storage
  * @param tempFolder - The temporary folder containing extracted files
  * @param presets - Array of preset objects that reference icon names
@@ -187,13 +219,10 @@ function extractPngIcons(
         if (existingFiles.hasNext()) {
           const existingFile = existingFiles.next();
           const oldSize = existingFile.getSize();
-          // Create the replacement BEFORE trashing the old file to avoid
-          // data loss if createFile() or getBlob() fails.
           const blob = foundFile.getBlob().setName(fileName);
-          permanentFile = permanentIconsFolder.createFile(blob);
-          existingFile.setTrashed(true);
+          permanentFile = updateDriveFileBlobInPlace(existingFile, blob);
           const newSize = permanentFile.getSize();
-          safePngDebugLog(`  ↻ Replaced existing "${fileName}": ${oldSize} → ${newSize} bytes`);
+          safePngDebugLog(`  ↻ Updated existing "${fileName}" in place: ${oldSize} → ${newSize} bytes`);
         } else {
           const blob = foundFile.getBlob().setName(fileName);
           permanentFile = permanentIconsFolder.createFile(blob);

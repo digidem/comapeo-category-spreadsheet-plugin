@@ -20,7 +20,7 @@ import {
  * @template {SchemaError<BaseSchema<unknown, unknown, BaseIssue<unknown>>
  *   | BaseSchemaAsync<unknown, unknown, BaseIssue<unknown>>>} TSchemaError
  * @param {unknown | TSchemaError} err - The error to check
- * @returns {err is JSONError | TSchemaError | CategoryRefError | InvalidCategorySelectionError} True if the error is a parse or schema error
+ * @returns {err is JSONError | TSchemaError | CategoryRefError | CategorySelectionRefError | InvalidCategorySelectionError | InvalidTranslationFilenameError} True if the error is a parse or schema error
  */
 export function isParseError(err) {
 	return (
@@ -28,7 +28,9 @@ export function isParseError(err) {
 		(err.name === 'JSONError' ||
 			err.name === 'SchemaError' ||
 			err.name === 'CategoryRefError' ||
-			err.name === 'InvalidCategorySelectionError')
+			err.name === 'CategorySelectionRefError' ||
+			err.name === 'InvalidCategorySelectionError' ||
+			err.name === 'InvalidTranslationFilenameError')
 	)
 }
 
@@ -265,6 +267,28 @@ export class CategorySelectionRefError extends Error {
 		super(message)
 
 		Error.captureStackTrace?.(this, CategorySelectionRefError)
+	}
+}
+
+export class InvalidTranslationFilenameError extends Error {
+	name = 'InvalidTranslationFilenameError'
+	fileName
+
+	/**
+	 * @param {object} params
+	 * @param {string} params.fileName - Translation file name inside the archive
+	 * @param {Error} params.cause - The underlying BCP-47 validation error
+	 */
+	constructor({ fileName, cause }) {
+		super(undefined, { cause })
+		this.fileName = fileName
+
+		Error.captureStackTrace?.(this, InvalidTranslationFilenameError)
+	}
+
+	get message() {
+		const causeMessage = this.cause instanceof Error ? this.cause.message : String(this.cause)
+		return `Invalid translation filename: ${this.fileName}\n${causeMessage}`
 	}
 }
 

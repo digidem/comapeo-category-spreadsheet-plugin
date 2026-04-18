@@ -404,6 +404,17 @@ function runWithMockedLintSpreadsheet(
             0,
           );
         },
+        getDataRange(): any {
+          const lastRow = this.getLastRow();
+          const lastCol = this.getLastColumn();
+          return createRange(
+            sheetState,
+            1,
+            1,
+            Math.max(lastRow, 1),
+            Math.max(lastCol, 1),
+          );
+        },
         getRange(row: number, col: number, numRows?: number, numCols?: number): any {
           return createRange(sheetState, row, col, numRows || 1, numCols || 1);
         },
@@ -673,6 +684,193 @@ function testCaseInsensitiveDuplicateFieldIdParity(): boolean {
   }
 }
 
+function testPrimaryLanguageBlankA1RequiresMetadataFallbackError(): boolean {
+  console.log("=== testPrimaryLanguageBlankA1RequiresMetadataFallbackError ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["", "Icon", "Fields", "Applies"],
+          ["Category", "", "field-a", "track"],
+        ],
+        Metadata: [["Key", "Value"]],
+      },
+      (lintCalls) => {
+        validatePrimaryLanguageInA1();
+
+        const blankA1Errors = lintCalls.filter(
+          (call) => call.row === 1 && call.col === 1 && call.severity === "error",
+        );
+        if (blankA1Errors.length !== 1) {
+          throw new Error(
+            `Expected one blank-A1 primary-language error when Metadata has no fallback, got ${blankA1Errors.length}`,
+          );
+        }
+      },
+    );
+
+    console.log("PASS: Blank Categories!A1 is rejected when Metadata has no primaryLanguage fallback");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+function testPrimaryLanguageBlankA1UsesMetadataFallback(): boolean {
+  console.log("=== testPrimaryLanguageBlankA1UsesMetadataFallback ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["", "Icon", "Fields", "Applies"],
+          ["Category", "", "field-a", "track"],
+        ],
+        Metadata: [
+          ["Key", "Value"],
+          ["primaryLanguage", "English"],
+        ],
+      },
+      (lintCalls) => {
+        validatePrimaryLanguageInA1();
+
+        if (lintCalls.length !== 0) {
+          throw new Error(
+            `Expected no primary-language lint when Metadata provides a fallback, got ${lintCalls.length} call(s)`,
+          );
+        }
+
+        const categoriesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+          "Categories",
+        );
+        if (!categoriesSheet) {
+          throw new Error("Expected mock Categories sheet to exist");
+        }
+
+        const a1Cell = categoriesSheet.getRange(1, 1);
+        if (a1Cell.getNote() !== "") {
+          throw new Error(`Expected Categories!A1 note to stay empty, got "${a1Cell.getNote()}"`);
+        }
+      },
+    );
+
+    console.log("PASS: Metadata primaryLanguage suppresses blank Categories!A1 lint");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
+  console.log("=== testAppliesMissingHeaderPreservesExistingBodyAnnotations ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["Name", "Icon", "Fields", "Application"],
+          ["Category", "", "field-a", "track"],
+        ],
+      },
+      (lintCalls) => {
+        const categoriesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+          "Categories",
+        );
+        if (!categoriesSheet) {
+          throw new Error("Expected mock Categories sheet to exist");
+        }
+
+        const bodyCell = categoriesSheet.getRange(2, 3);
+        setLintNote(bodyCell, 'Existing non-Applies lint on Fields cell', "warning");
+        lintCalls.length = 0;
+
+        validateAppliesColumn();
+
+        const missingHeaderWarnings = lintCalls.filter(
+          (call) =>
+            call.row === 1 &&
+            call.col === 1 &&
+            call.severity === "warning" &&
+            call.message.includes('No "Applies" header found'),
+        );
+        if (missingHeaderWarnings.length !== 1) {
+          throw new Error(
+            `Expected one missing Applies header warning, got ${missingHeaderWarnings.length}`,
+          );
+        }
+
+        if (bodyCell.getNote() !== '[Lint] Existing non-Applies lint on Fields cell') {
+          throw new Error(`Expected existing body-cell lint note to be preserved, got "${bodyCell.getNote()}"`);
+        }
+        if (bodyCell.getBackground() !== "#FFF2CC") {
+          throw new Error(
+            `Expected existing body-cell warning background to be preserved, got ${bodyCell.getBackground()}`,
+          );
+        }
+        if (bodyCell.getFontColor() !== "orange") {
+          throw new Error(
+            `Expected existing body-cell warning font color to be preserved, got ${bodyCell.getFontColor()}`,
+          );
+        }
+
+        const staleAppliesCell = categoriesSheet.getRange(2, 4);
+        staleAppliesCell.setNote('[Lint] Unrecognized Applies token(s): "legacy"');
+        staleAppliesCell.setBackground("#FFF2CC");
+        staleAppliesCell.setFontColor("orange");
+
+        validateAppliesColumn();
+
+        if (staleAppliesCell.getNote() !== "") {
+          throw new Error(`Expected stale Applies note to be cleared, got "${staleAppliesCell.getNote()}"`);
+        }
+        if (staleAppliesCell.getBackground() !== "#FFFFFF") {
+          throw new Error(
+            `Expected stale Applies warning background to be cleared, got ${staleAppliesCell.getBackground()}`,
+          );
+        }
+        if (staleAppliesCell.getFontColor() !== null) {
+          throw new Error(
+            `Expected stale Applies warning font color to be cleared, got ${staleAppliesCell.getFontColor()}`,
+          );
+        }
+
+        staleAppliesCell.setNote(
+          '[Lint] All Applies tokens are unrecognized ("legacy"). The builder will silently default this row to "observation". Use "observation" or "track" explicitly.',
+        );
+        staleAppliesCell.setBackground("#FFF2CC");
+        staleAppliesCell.setFontColor("orange");
+
+        validateAppliesColumn();
+
+        if (staleAppliesCell.getNote() !== "") {
+          throw new Error(
+            `Expected stale all-invalid Applies note to be cleared, got "${staleAppliesCell.getNote()}"`,
+          );
+        }
+        if (staleAppliesCell.getBackground() !== "#FFFFFF") {
+          throw new Error(
+            `Expected stale all-invalid Applies warning background to be cleared, got ${staleAppliesCell.getBackground()}`,
+          );
+        }
+        if (staleAppliesCell.getFontColor() !== null) {
+          throw new Error(
+            `Expected stale all-invalid Applies warning font color to be cleared, got ${staleAppliesCell.getFontColor()}`,
+          );
+        }
+      },
+    );
+
+    console.log("PASS: Missing Applies header warning does not wipe unrelated body-cell lint");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 function runLintParityTests(): void {
   console.log("=== Lint Parity Regression Tests ===");
 
@@ -684,6 +882,18 @@ function runLintParityTests(): void {
     { name: "Applies Observation Coverage Parity", fn: testAppliesObservationCoverageParity },
     { name: "Applies Token Prefix Parity", fn: testAppliesTokenPrefixParity },
     { name: "Applies Header Detection Parity", fn: testAppliesHeaderDetectionParity },
+    {
+      name: "Applies Missing Header Preserves Existing Body Annotations",
+      fn: testAppliesMissingHeaderPreservesExistingBodyAnnotations,
+    },
+    {
+      name: "Primary Language Blank A1 Requires Metadata Fallback Error",
+      fn: testPrimaryLanguageBlankA1RequiresMetadataFallbackError,
+    },
+    {
+      name: "Primary Language Blank A1 Uses Metadata Fallback",
+      fn: testPrimaryLanguageBlankA1UsesMetadataFallback,
+    },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
   ];
 

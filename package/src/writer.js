@@ -308,6 +308,7 @@ export class Writer extends EventEmitter {
 			categories: this.#categories,
 			fieldIds: this.#fields,
 			iconIds: this.#iconIds,
+			categorySelection: this.#categorySelection,
 		})
 	}
 }
