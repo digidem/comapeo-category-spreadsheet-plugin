@@ -648,6 +648,61 @@ function testLintAppendAndClearSemantics(): boolean {
   }
 }
 
+function testTranslationSourceOverwriteCleanupPreservesCriticalWhiteText(): boolean {
+  console.log("=== testTranslationSourceOverwriteCleanupPreservesCriticalWhiteText ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        "Category Translations": [
+          ["English", "Português"],
+          ["River", "Rio"],
+          ["River", "Ribeira"],
+        ],
+      },
+      () => {
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+          "Category Translations",
+        );
+        if (!sheet) {
+          throw new Error("Expected mock translation sheet to exist");
+        }
+
+        const criticalCell = sheet.getRange(2, 1);
+        criticalCell.setNote(
+          '[Lint] Source value "River" produces the same key as row 3. Later values may overwrite earlier ones.',
+        );
+        criticalCell.setBackground("#FF0000");
+        criticalCell.setFontColor("#FFFFFF");
+
+        checkTranslationSourceOverwrites();
+
+        if (criticalCell.getFontColor() !== "#FFFFFF") {
+          throw new Error(
+            `Expected critical white font color to be preserved, got ${criticalCell.getFontColor()}`,
+          );
+        }
+        if (criticalCell.getBackground() !== "#FF0000") {
+          throw new Error(
+            `Expected critical red background to be preserved, got ${criticalCell.getBackground()}`,
+          );
+        }
+        if (!criticalCell.getNote().includes('[Lint] Source value "River"')) {
+          throw new Error(
+            `Expected source-overwrite lint note to be restored after cleanup, got "${criticalCell.getNote()}"`,
+          );
+        }
+      },
+    );
+
+    console.log("PASS: Translation source-overwrite cleanup preserves critical white-on-red styling");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 function testCaseInsensitiveDuplicateFieldIdParity(): boolean {
   console.log("=== testCaseInsensitiveDuplicateFieldIdParity ===");
 
@@ -953,6 +1008,10 @@ function runLintParityTests(): void {
     { name: "Canonical Option Parity", fn: testCanonicalOptionParity },
     { name: "Translation Delimiter Parity", fn: testTranslationDelimiterParity },
     { name: "Lint Append and Clear Semantics", fn: testLintAppendAndClearSemantics },
+    {
+      name: "Translation Source Overwrite Cleanup Preserves Critical White Text",
+      fn: testTranslationSourceOverwriteCleanupPreservesCriticalWhiteText,
+    },
     { name: "Applies Observation Coverage Parity", fn: testAppliesObservationCoverageParity },
     { name: "Applies Token Prefix Parity", fn: testAppliesTokenPrefixParity },
     { name: "Applies Header Detection Parity", fn: testAppliesHeaderDetectionParity },

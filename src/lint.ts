@@ -33,8 +33,12 @@ const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFF3CD",
 ];
 const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000", "#FFFFFF"];
+const LINT_WARNING_FONT_COLORS_WITHOUT_WHITE = LINT_WARNING_FONT_COLORS.filter(
+  (color) => color.toUpperCase() !== "#FFFFFF",
+);
 const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
+const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
@@ -122,14 +126,16 @@ function clearRangeNotesWithPrefix(
 function clearRangeLintNoteLinesWithPrefix(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefix: string,
+  fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
+  backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
 ): void {
   if (!range) return;
   if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
 
-  const normalizedWarningColors = LINT_WARNING_FONT_COLORS.map((color) =>
+  const normalizedWarningColors = fontColorsToClear.map((color) =>
     color.toUpperCase(),
   );
-  const normalizedBackgroundColors = LINT_WARNING_BACKGROUND_COLORS.map((color) =>
+  const normalizedBackgroundColors = backgroundColorsToClear.map((color) =>
     color.toUpperCase(),
   );
   const notes = range.getNotes();
@@ -301,6 +307,16 @@ function clearLintArtifacts(
   clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
   clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
   clearRangeNotesWithPrefix(range, LINT_NOTE_PREFIX);
+}
+
+function clearSourceOverwriteLintArtifacts(
+  range: GoogleAppsScript.Spreadsheet.Range,
+): void {
+  clearRangeLintNoteLinesWithPrefix(
+    range,
+    SOURCE_OVERWRITE_LINT_NOTE_PREFIX,
+    LINT_WARNING_FONT_COLORS_WITHOUT_WHITE,
+  );
 }
 
 /**
@@ -2516,7 +2532,7 @@ function checkTranslationSourceOverwrites(): void {
     try {
       // Source column is always column A (index 0) for all translation sheets
       const sourceRange = sheet.getRange(2, 1, lastRow - 1, 1);
-      clearLintArtifacts(sourceRange);
+      clearSourceOverwriteLintArtifacts(sourceRange);
       const sourceValues = sourceRange.getValues();
 
       // Track slug → array of { row, originalValue }
