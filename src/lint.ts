@@ -687,8 +687,21 @@ function validateAppliesColumn(): void {
     );
     clearLintArtifacts(appliesRange);
   }
-  // Also clear header cell artifacts
-  clearLintArtifacts(categoriesSheet.getRange(1, appliesColIndex));
+  // Also clear header cell artifacts (Applies-specific notes only, to avoid
+  // wiping higher-priority annotations on the same cell, e.g. A1 language error)
+  const headerCell = categoriesSheet.getRange(1, appliesColIndex);
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+  );
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
+  );
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+  );
 
   if (lastRow <= 1) return;
 
@@ -2139,6 +2152,11 @@ function lintDetailsSheet(): void {
             console.log(
               "Select field at row " + row + " is missing required options",
             );
+            setLintNote(
+              sheet.getRange(row, col),
+              "Select fields (selectOne / selectMultiple) require at least one option.",
+              "error",
+            );
             setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for missing options
             return;
           }
@@ -2151,6 +2169,11 @@ function lintDetailsSheet(): void {
               "Select field at row " +
                 row +
                 " has empty options after trimming",
+            );
+            setLintNote(
+              sheet.getRange(row, col),
+              "Options column appears non-empty but contains no valid options after parsing.",
+              "error",
             );
             setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for empty options
             return;
@@ -2494,7 +2517,7 @@ function checkCrossSheetIconCollisions(): void {
     if (sanitizedIconId !== rawIconId) {
       appendLintNote(
         iconsSheet.getRange(i + 2, 1),
-        `Icon ID "${rawIconId}" contains a file extension. The builder strips extensions and uses "${sanitizedIconId}" as the effective ID — use "${sanitizedIconId}" directly to avoid confusion.`,
+        `Icon ID "${rawIconId}" contains a file extension. The ID is used as-is in the config, but file name generation strips the extension — so using "${rawIconId}" as an ID will produce a file named "${sanitizedIconId}.svg" (or .png), meaning the config references "${rawIconId}" but the actual file is "${sanitizedIconId}.svg". Consider using "${sanitizedIconId}" directly to keep the ID and file name consistent.`,
         "warning",
       );
     }
@@ -3671,9 +3694,14 @@ function lintMetadataSheet(): void {
   let resolvedPrimaryLanguage = false;
 
   for (let i = 0; i < data.length; i++) {
-    const key = String(data[i][0] || "").trim();
+    const key = String(data[i][0] ?? "");
     const rawValue = data[i][1];
-    const value = String(rawValue || "").trim();
+    // Match builder semantics: no trim, no falsy coercion (builder uses
+    // String(sheetData[i][1]) which serializes 0 as "0").
+    const value = String(rawValue ?? "");
+    // Trimmed variant used only for primaryLanguage validation, where the
+    // language name should be trimmed for lookup purposes.
+    const trimmedValue = String(rawValue ?? "").trim();
     const row = i + 2;
 
     // Flag duplicate keys as a warning — the builder uses only the first row.
@@ -3692,14 +3720,14 @@ function lintMetadataSheet(): void {
         );
       }
       if (key) seenKeys.add(key);
-      if (!value) continue;
+      if (!trimmedValue) continue;
       if (resolvedPrimaryLanguage) continue;
 
-      const validation = validateLanguageName(value);
+      const validation = validateLanguageName(trimmedValue);
       if (!validation.valid) {
         appendLintNote(
           cell,
-          `Metadata primaryLanguage: "${value}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+          `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
           "error",
         );
       }
