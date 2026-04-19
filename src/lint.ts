@@ -717,7 +717,7 @@ function validateAppliesColumn(): void {
 
   for (let i = 0; i < appliesValues.length; i++) {
     const rawValue = appliesValues[i][0] == null ? "" : String(appliesValues[i][0]).trim();
-    const categoryName = nameValues[i][0] == null ? "" : String(nameValues[i][0]).trim();
+    const categoryName = String(nameValues[i][0] || "").trim();
     const row = i + 2;
 
     // Mirror buildCategories(): skip rows without a category name entirely.
@@ -2056,12 +2056,12 @@ function lintDetailsSheet(): void {
 
       const detailsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
 
-      // Empty/blank is valid (defaults to text per payloadBuilder) - add advisory note
+      // Empty/blank defaults to selectOne (mirrors getFieldType() fallback) - add advisory note
       if (isEmptyOrWhitespace(value)) {
         if (detailsSheet) {
           setLintNote(
             detailsSheet.getRange(row, col),
-            "Blank type defaults to text. Enter 'text', 'number', 'selectOne', or 'selectMultiple' to be explicit.",
+            "Blank type defaults to selectOne. Enter 'text', 'number', 'selectOne', or 'selectMultiple' to be explicit.",
             "advisory",
           );
         }
@@ -2448,6 +2448,20 @@ function findCrossSheetIconIdCollisions(
 }
 
 /**
+ * Lightweight check for whether a string looks like a recognised icon source,
+ * without downloading any Drive content. Used by collision checks that only
+ * need to know if a row contributes an icon asset, not what the asset contains.
+ */
+function hasRecognisedIconSource(iconStr: string): boolean {
+  if (!iconStr) return false;
+  if (iconStr.startsWith("<svg")) return true;
+  if (iconStr.toLowerCase().startsWith("data:image/svg+xml")) return true;
+  if (iconStr.startsWith("https://drive.google.com/file/d/")) return true;
+  if (/^https?:\/\//i.test(iconStr) && iconStr.toLowerCase().includes(".svg")) return true;
+  return false;
+}
+
+/**
  * Phase 5 Task 2: Checks for exact icon ID collisions between the Icons sheet
  * and Categories sheet. The builder merges icons from both sources,
  * deduplicating by exact ID, so lint must do the same.
@@ -2473,7 +2487,7 @@ function checkCrossSheetIconCollisions(): void {
   for (let i = 0; i < iconsData.length; i++) {
     const rawIconId = String(iconsData[i][0] || "").trim();
     const iconStr = String(iconsData[i][1] || "").trim();
-    if (!rawIconId || !iconStr || !parseIconSource(iconStr)) {
+    if (!rawIconId || !iconStr || !hasRecognisedIconSource(iconStr)) {
       continue;
     }
     const sanitizedIconId = sanitizeIconSlug(rawIconId);
@@ -2484,7 +2498,7 @@ function checkCrossSheetIconCollisions(): void {
         "warning",
       );
     }
-    iconsEntries.push({ id: sanitizedIconId || rawIconId, row: i + 2 });
+    iconsEntries.push({ id: rawIconId, row: i + 2 });
   }
 
   // Read Categories: resolve columns by header name (mirrors buildIconsFromSheet).
@@ -2504,7 +2518,7 @@ function checkCrossSheetIconCollisions(): void {
     const iconStr = typeof iconRaw === "string" ? iconRaw.trim() : "";
     // Mirror buildIconsFromSheet(): only category rows with a name and a
     // supported icon source contribute packaged icon assets.
-    if (!name || !iconStr || !parseIconSource(iconStr)) continue;
+    if (!name || !iconStr || !hasRecognisedIconSource(iconStr)) continue;
     // Mirror buildIconsFromSheet(): slugify(name) || `category-${index+1}`
     // The builder falls back to `category-N` when slugify produces an empty
     // string (e.g. non-Latin or punctuation-only names).
@@ -3727,11 +3741,11 @@ function lintMetadataSheet(): void {
 
     if (key === "version") {
       const cell = metadataSheet.getRange(row, 2);
-      if (value && STRICT_UNSAFE_PATTERN.test(value)) {
+      if (value) {
         appendLintNote(
           cell,
-          `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
-          "error",
+          `Metadata "version" is always overwritten with today's date (yy.MM.dd) when generating config. The current value "${value}" will be ignored.`,
+          "advisory",
         );
       }
       continue;

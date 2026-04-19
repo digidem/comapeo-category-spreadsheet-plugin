@@ -144,8 +144,13 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
       const rootEl = doc.getRootElement();
       const rootName = rootEl.getName().toLowerCase();
       const viewBox = rootEl.getAttribute("viewBox")?.getValue();
+      // Serialize the successfully-parsed document; the serializer escapes > in
+      // attribute values, making the opening-tag strip safe (no > inside quotes).
+      const serialized = XmlService.getCompactFormat().format(doc);
+      // Strip XML declaration if the compact formatter includes one
+      const xmlContent = serialized.replace(/^<\?xml[^?]*\?>\s*/i, "");
       const body = rootName === "symbol" || rootName === "svg"
-        ? trimmed.replace(/^<\s*(svg|symbol)\b[\s\S]*?>/i, "").replace(/<\s*\/\s*(svg|symbol)\s*>$/i, "").trim()
+        ? xmlContent.replace(/^<[^>]*>/, "").replace(/<\/[^>]+>$/, "").trim()
         : trimmed;
       // Preserve namespace attributes from the original root element (e.g.
       // xmlns:xlink) so that inner markup referencing prefixed attributes
