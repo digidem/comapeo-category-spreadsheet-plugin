@@ -19,3 +19,4 @@ declare function testZipToApi(): void;
 declare function testEndToEnd(url?: string): unknown;
 declare function testSkipTranslation(): void;
 declare function testDebugLogger(): void;
+declare function runAllTests(): void;

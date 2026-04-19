@@ -3749,7 +3749,7 @@ function lintMetadataSheet(): void {
 
     if (key === "name") {
       const cell = metadataSheet.getRange(row, 2);
-      if (!value) {
+      if (!trimmedValue) {
         appendLintNote(
           cell,
           'Metadata "name" is present but blank. Config generation keeps the blank value and strict validation will fail.',
