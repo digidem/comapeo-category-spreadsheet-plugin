@@ -32,7 +32,7 @@ const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFF2CC",
   "#FFF3CD",
 ];
-const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000", "#FFFFFF"];
+const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000"];
 const LINT_WARNING_FONT_COLORS_WITHOUT_WHITE = LINT_WARNING_FONT_COLORS.filter(
   (color) => color.toUpperCase() !== "#FFFFFF",
 );
@@ -3929,7 +3929,7 @@ function buildLintFieldSummaries(
       }
 
       const helperText = String(row[helperCol] || "");
-      const typeRaw = String(row[typeCol] || "")
+      const typeRaw = String(row[typeCol] || "text")
         .trim()
         .toLowerCase();
       const optionsStr = String(row[optionsCol] || "");
