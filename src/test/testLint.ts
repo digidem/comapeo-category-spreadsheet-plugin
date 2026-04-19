@@ -176,6 +176,7 @@ function getSeverityRank(
     case "#FFF2CC":
       return 2;
     case "#FFC7CE":
+    case "#FF0000":
       return 3;
     default:
       return 0;

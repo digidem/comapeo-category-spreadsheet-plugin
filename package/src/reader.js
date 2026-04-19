@@ -36,6 +36,7 @@ import { MetadataSchemaOutput } from './schema/metadata.js'
 import { TranslationsSchema } from './schema/translations.js'
 
 const SUPPORTED_MAJOR_VERSION = 1
+const SUPPORTED_MINOR_VERSION = 0
 /** @import { ZipFile, Entry } from 'yauzl-promise' */
 /** @import { SchemaError } from './lib/errors.js' */
 /** @import { JSONError } from 'parse-json' */
@@ -422,7 +423,10 @@ function assertReadableVersion(version) {
 	if (Number.isNaN(major) || Number.isNaN(minor)) {
 		throw new InvalidFileVersionError({ version })
 	}
-	if (major > SUPPORTED_MAJOR_VERSION) {
+	if (
+		major > SUPPORTED_MAJOR_VERSION ||
+		(major === SUPPORTED_MAJOR_VERSION && minor > SUPPORTED_MINOR_VERSION)
+	) {
 		throw new UnsupportedFileVersionError({
 			version,
 			supportedVersions: [SUPPORTED_MAJOR_VERSION],

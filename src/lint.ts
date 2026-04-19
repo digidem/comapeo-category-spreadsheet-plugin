@@ -716,8 +716,8 @@ function validateAppliesColumn(): void {
   let hasTrack = false;
 
   for (let i = 0; i < appliesValues.length; i++) {
-    const rawValue = String(appliesValues[i][0] || "").trim();
-    const categoryName = String(nameValues[i][0] || "").trim();
+    const rawValue = appliesValues[i][0] == null ? "" : String(appliesValues[i][0]).trim();
+    const categoryName = nameValues[i][0] == null ? "" : String(nameValues[i][0]).trim();
     const row = i + 2;
 
     // Mirror buildCategories(): skip rows without a category name entirely.
@@ -2471,12 +2471,20 @@ function checkCrossSheetIconCollisions(): void {
     .getValues();
   const iconsEntries: Array<{ id: string; row: number }> = [];
   for (let i = 0; i < iconsData.length; i++) {
-    const iconId = String(iconsData[i][0] || "").trim();
+    const rawIconId = String(iconsData[i][0] || "").trim();
     const iconStr = String(iconsData[i][1] || "").trim();
-    if (!iconId || !iconStr || !parseIconSource(iconStr)) {
+    if (!rawIconId || !iconStr || !parseIconSource(iconStr)) {
       continue;
     }
-    iconsEntries.push({ id: iconId, row: i + 2 });
+    const sanitizedIconId = sanitizeIconSlug(rawIconId);
+    if (sanitizedIconId !== rawIconId) {
+      appendLintNote(
+        iconsSheet.getRange(i + 2, 1),
+        `Icon ID "${rawIconId}" contains a file extension. The builder strips extensions and uses "${sanitizedIconId}" as the effective ID — use "${sanitizedIconId}" directly to avoid confusion.`,
+        "warning",
+      );
+    }
+    iconsEntries.push({ id: sanitizedIconId || rawIconId, row: i + 2 });
   }
 
   // Read Categories: resolve columns by header name (mirrors buildIconsFromSheet).
@@ -3708,6 +3716,18 @@ function lintMetadataSheet(): void {
         continue;
       }
       if (STRICT_UNSAFE_PATTERN.test(value)) {
+        appendLintNote(
+          cell,
+          `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
+          "error",
+        );
+      }
+      continue;
+    }
+
+    if (key === "version") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (value && STRICT_UNSAFE_PATTERN.test(value)) {
         appendLintNote(
           cell,
           `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
