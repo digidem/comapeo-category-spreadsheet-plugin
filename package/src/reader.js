@@ -284,7 +284,9 @@ export class Reader {
 		const { icons: entries } = await this.#entriesPromise
 		const entry = entries.get(iconId)
 		if (!entry) return null
-		return concatStream(await entry.openReadStream())
+		const iconXml = await concatStream(await entry.openReadStream())
+		parseSvg(iconXml)
+		return iconXml
 	}
 
 	/**
@@ -295,6 +297,7 @@ export class Reader {
 		const { icons: entries } = await this.#entriesPromise
 		for (const [name, entry] of entries) {
 			const iconXml = await concatStream(await entry.openReadStream())
+			parseSvg(iconXml)
 			yield { name, iconXml }
 		}
 	}

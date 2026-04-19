@@ -40,6 +40,9 @@ const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
 const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
+/** Module-level cache for Drive SVG file content, avoiding redundant downloads per lint run. */
+const driveSvgContentCache = new Map<string, string | null>();
+
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
   colorsToClear: string[],
@@ -795,16 +798,24 @@ function validateAppliesColumn(): void {
     );
   }
 
-  // When the Applies column exists, missing track is a hard error — the builder
-  // throws 'At least one category must include "track"'. Only a warning when the
-  // column is absent entirely (builder auto-creates + seeds it).
+  // When the Applies column was auto-created, the builder seeds the first category
+  // with track + observation, so this is only a warning. Otherwise it is a hard
+  // error — the builder throws 'At least one category must include "track"'.
   if (!hasTrack) {
     const cell = categoriesSheet.getRange(1, appliesColIndex);
-    appendLintNote(
-      cell,
-      'No category includes "track" in Applies. Config generation will fail — at least one category must include "track".',
-      "error",
-    );
+    if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" && AUTO_CREATED_APPLIES_COLUMN) {
+      appendLintNote(
+        cell,
+        'No category includes "track" in Applies. The Applies column was auto-created and the first category will be defaulted to track + observation during generation. Review column D to confirm.',
+        "warning",
+      );
+    } else {
+      appendLintNote(
+        cell,
+        'No category includes "track" in Applies. Config generation will fail — at least one category must include "track".',
+        "error",
+      );
+    }
   }
 }
 
@@ -2060,7 +2071,7 @@ function lintDetailsSheet(): void {
     // Rule 3: Validate the type column (t, n, m, blank, s, or select* are valid)
     (value, row, col) => {
       // Type column validation logic:
-      // - blank/empty → text (valid, mirrors payloadBuilder default)
+      // - blank/empty → selectOne (mirrors payloadBuilder case "" default)
       // - "s*" (select, single, etc.) → selectOne (valid)
       // - "m*" (multi, multiple, etc.) → selectMultiple (valid)
       // - "n*" (number, numeric, etc.) → number (valid)
@@ -2122,9 +2133,9 @@ function lintDetailsSheet(): void {
         const typeStr = String(typeValue || "").trim();
 
         // Determine the field type category
-        // Mirror payloadBuilder: empty type defaults to "text" (not selectOne)
+        // Mirror payloadBuilder: empty type defaults to selectOne (case "" in switch)
         const firstChar = isEmptyOrWhitespace(typeStr)
-          ? "t"
+          ? "s"
           : typeStr.toLowerCase().charAt(0);
         const isSelectField = firstChar === "s" || firstChar === "m";
         const isTextOrNumberField = firstChar === "t" || firstChar === "n";
@@ -2471,14 +2482,19 @@ function findCrossSheetIconIdCollisions(
 }
 
 /**
- * Lightweight check for whether a string looks like a recognised icon source,
- * without downloading any Drive content. Used by collision checks that only
- * need to know if a row contributes an icon asset, not what the asset contains.
+ * Check for whether a string is a recognised icon source that the builder would
+ * accept. Data URIs are decoded to verify valid SVG content; Drive URLs are
+ * accepted by prefix (full validation is done separately in lintIconsSheet).
+ * Used by collision checks that need to know if a row contributes an icon asset.
  */
 function hasRecognisedIconSource(iconStr: string): boolean {
   if (!iconStr) return false;
   if (iconStr.startsWith("<svg")) return true;
-  if (iconStr.toLowerCase().startsWith("data:image/svg+xml")) return true;
+  if (iconStr.toLowerCase().startsWith("data:image/svg+xml")) {
+    // Mirror parseIconSource: must actually decode to valid SVG
+    const svg = decodeDataSvgForLint(iconStr);
+    return !!svg && svg.trim().startsWith("<svg");
+  }
   if (iconStr.startsWith("https://drive.google.com/file/d/")) return true;
   if (/^https?:\/\//i.test(iconStr) && iconStr.toLowerCase().includes(".svg")) return true;
   return false;
@@ -3770,11 +3786,15 @@ function lintMetadataSheet(): void {
     if (key === "version") {
       const cell = metadataSheet.getRange(row, 2);
       if (value) {
-        appendLintNote(
-          cell,
-          `Metadata "version" is always overwritten with today's date (yy.MM.dd) when generating config. The current value "${value}" will be ignored.`,
-          "advisory",
-        );
+        // Only advise when the value doesn't match the auto-generated yy.MM.dd pattern
+        const looksLikeAutoDate = /^\d{2}\.\d{2}\.\d{2}$/.test(value.trim());
+        if (!looksLikeAutoDate) {
+          appendLintNote(
+            cell,
+            `Metadata "version" is always overwritten with today's date (yy.MM.dd) when generating config. The current value "${value}" will be ignored.`,
+            "advisory",
+          );
+        }
       }
       continue;
     }
@@ -3808,17 +3828,18 @@ function decodeDataSvgForLint(dataUri: string): string | null {
 }
 
 function loadDriveSvgForLint(fileId: string): string | null {
+  if (driveSvgContentCache.has(fileId)) return driveSvgContentCache.get(fileId)!;
   try {
     const file = DriveApp.getFileById(fileId);
     const mime = file.getMimeType();
     const text = file.getBlob().getDataAsString();
     const isSvgMime = mime?.toLowerCase().includes("svg");
     const looksLikeSvg = text.trim().startsWith("<svg");
-    if (isSvgMime || looksLikeSvg) {
-      return text.trim();
-    }
-    return null;
+    const result = (isSvgMime || looksLikeSvg) ? text.trim() : null;
+    driveSvgContentCache.set(fileId, result);
+    return result;
   } catch (_err) {
+    driveSvgContentCache.set(fileId, null);
     return null;
   }
 }
@@ -4383,6 +4404,9 @@ function checkTotalEntityCounts(metrics: {
  */
 function lintAllSheets(showAlerts: boolean = true): void {
   try {
+    // Clear cross-run caches so Drive file changes are picked up
+    driveSvgContentCache.clear();
+
     console.log("Starting linting process...");
 
     console.log("Linting Categories sheet...");
