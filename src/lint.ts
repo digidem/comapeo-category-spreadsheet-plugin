@@ -446,13 +446,14 @@ function checkDuplicateCategoryIds(): void {
   const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   const ids = idRange.getValues();
 
-  // Build map of effective ID → rows
+  // Build map of effective ID → rows. Mirror builder: explicit ID → slugify(name) →
+  // `category-${index+1}` fallback. Skip blank-name rows — builder returns early.
   const effectiveIdMap = new Map<string, number[]>();
   for (let i = 0; i < ids.length; i++) {
     const explicitId = String(ids[i][0] || "").trim();
     const name = String(names[i][0] || "").trim();
-    const effectiveId = explicitId || slugify(name) || "";
-    if (!effectiveId) continue;
+    if (!name) continue;
+    const effectiveId = explicitId || slugify(name) || `category-${i + 1}`;
 
     if (!effectiveIdMap.has(effectiveId)) {
       effectiveIdMap.set(effectiveId, [i + 2]);
@@ -501,12 +502,14 @@ function checkDuplicateDetailIds(): void {
   const ids = idRange.getValues();
 
   // Strict validation treats field IDs case-insensitively, so lint should too.
+  // Mirror builder: explicit ID → slugify(name) → `field-${index+1}` fallback.
+  // Skip blank-name rows — builder returns early on those.
   const effectiveIdMap = new Map<string, { rows: number[]; displayId: string }>();
   for (let i = 0; i < ids.length; i++) {
     const explicitId = String(ids[i][0] || "").trim();
     const name = String(names[i][0] || "").trim();
-    const effectiveId = explicitId || slugify(name) || "";
-    if (!effectiveId) continue;
+    if (!name) continue;
+    const effectiveId = explicitId || slugify(name) || `field-${i + 1}`;
     const normalizedId = effectiveId.toLowerCase();
 
     if (!effectiveIdMap.has(normalizedId)) {
@@ -878,6 +881,8 @@ function checkManualIdHygiene(
   });
 
   // 2. Check all non-empty IDs for slug-safety
+  // Skip blank-name rows — builder returns early on those.
+  const nameValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   const idRange = sheet.getRange(2, columnEIndex, lastRow - 1, 1);
   const idValues = idRange.getValues();
   const slugSafePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -885,9 +890,13 @@ function checkManualIdHygiene(
   for (let i = 0; i < idValues.length; i++) {
     const row = i + 2;
     const idValue = String(idValues[i][0] || "").trim();
+    const nameValue = String(nameValues[i][0] || "").trim();
 
     // Skip blank/empty (builder auto-generates)
     if (!idValue) continue;
+
+    // Skip blank-name rows — builder returns early on those.
+    if (!nameValue) continue;
 
     // Skip if this row was already flagged as whitespace-only
     if (rawIds.has(row)) continue;
@@ -2168,7 +2177,6 @@ function lintDetailsSheet(): void {
               "Select fields (selectOne / selectMultiple) require at least one option.",
               "error",
             );
-            setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for missing options
             return;
           }
 
@@ -2186,7 +2194,6 @@ function lintDetailsSheet(): void {
               "Options column appears non-empty but contains no valid options after parsing.",
               "error",
             );
-            setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for empty options
             return;
           }
 
@@ -2408,7 +2415,7 @@ function lintIconsSheet(): void {
         setLintNote(
           iconsSheet.getRange(row, 2),
           "Unsupported icon source format. Expected inline SVG (<svg…>), data:image/svg+xml URI, Google Drive URL (must use /file/d/ format), or HTTP(S) URL ending in .svg.",
-          "warning",
+          "error",
         );
       }
       logger.warn(
@@ -3711,6 +3718,7 @@ function lintMetadataSheet(): void {
 
   for (let i = 0; i < data.length; i++) {
     const key = String(data[i][0] ?? "");
+    const trimmedKey = key.trim();
     const rawValue = data[i][1];
     // Match builder semantics: no trim, no falsy coercion (builder uses
     // String(sheetData[i][1]) which serializes 0 as "0").
@@ -3721,10 +3729,10 @@ function lintMetadataSheet(): void {
     const row = i + 2;
 
     // Flag duplicate keys as a warning — the builder uses only the first row.
-    // Use exact key matching to match builder semantics.
-    const isDuplicate = key && seenKeys.has(key);
+    // Use trimmed key matching to match builder semantics (builder trims keys).
+    const isDuplicate = trimmedKey && seenKeys.has(trimmedKey);
 
-    if (key === "primaryLanguage") {
+    if (trimmedKey === "primaryLanguage") {
       const cell = metadataSheet.getRange(row, 2);
       if (isDuplicate) {
         appendLintNote(
@@ -3735,7 +3743,7 @@ function lintMetadataSheet(): void {
           "warning",
         );
       }
-      if (key) seenKeys.add(key);
+      if (trimmedKey) seenKeys.add(trimmedKey);
       if (!trimmedValue) continue;
       if (resolvedPrimaryLanguage) continue;
 
@@ -3758,12 +3766,12 @@ function lintMetadataSheet(): void {
         `Duplicate metadata key "${key}". The builder only reads the first occurrence — this row is ignored.`,
         "warning",
       );
-      if (key) seenKeys.add(key);
+      if (trimmedKey) seenKeys.add(trimmedKey);
       continue;
     }
-    if (key) seenKeys.add(key);
+    if (trimmedKey) seenKeys.add(trimmedKey);
 
-    if (key === "name") {
+    if (trimmedKey === "name") {
       const cell = metadataSheet.getRange(row, 2);
       if (!trimmedValue) {
         appendLintNote(
@@ -3783,7 +3791,7 @@ function lintMetadataSheet(): void {
       continue;
     }
 
-    if (key === "version") {
+    if (trimmedKey === "version") {
       const cell = metadataSheet.getRange(row, 2);
       if (value) {
         // Only advise when the value doesn't match the auto-generated yy.MM.dd pattern
