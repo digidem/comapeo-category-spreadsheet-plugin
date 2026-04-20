@@ -2,7 +2,6 @@
 import fs from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 
 import { Command } from '@commander-js/extra-typings'
@@ -45,12 +44,18 @@ program
 	)
 	.action(async (dir, { output, addCategoryIdTags, ...metadata }) => {
 		await lint(dir).catch(handleError)
-		const writeStream = output ? fs.createWriteStream(output) : process.stdout
+
+		// Buffer the archive in memory first so that validation/finish errors
+		// don't leave a partial/corrupt file on disk.
 		const writer = new Writer()
-		const pipelinePromise = pipeline(writer.outputStream, writeStream).catch(
-			handleError,
-		)
 		writer.on('error', handleError)
+		const chunks = []
+		writer.outputStream.on('data', (chunk) => chunks.push(chunk))
+		const finishPromise = new Promise((resolve, reject) => {
+			writer.outputStream.on('end', resolve)
+			writer.outputStream.on('error', reject)
+		})
+
 		/** @type {Map<string, import('../src/schema/category.js').CategoryDeprecatedSortInput>} */
 		const categoriesMap = new Map()
 		/** @type {import('../src/schema/metadata.js').MetadataInput | undefined} */
@@ -125,7 +130,15 @@ program
 			writer.setCategorySelection(categorySelection)
 
 			writer.finish()
-			await pipelinePromise
+			await finishPromise
+
+			// All validation passed — now write the buffered archive to the destination
+			const buffer = Buffer.concat(chunks)
+			if (output) {
+				fs.writeFileSync(output, buffer)
+			} else {
+				process.stdout.write(buffer)
+			}
 		} catch (err) {
 			handleError(err)
 		}
