@@ -43,6 +43,13 @@ const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 /** Module-level cache for Drive SVG file content, avoiding redundant downloads per lint run. */
 const driveSvgContentCache = new Map<string, string | null>();
 
+/** Module-level cache for Drive icon info (slug, isSvg, error), shared across
+ *  validateCategoryIcons() and lintIconsSheet() to avoid redundant Drive API calls. */
+const driveIconInfoCache = new Map<
+  string,
+  { slug: string | null; isSvg: boolean; errorMessage?: string }
+>();
+
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
   colorsToClear: string[],
@@ -744,8 +751,19 @@ function validateAppliesColumn(): void {
     if (!categoryName) continue;
 
     if (!rawValue) {
-      // Blank Applies cells fall back to observation in the builder.
-      hasObservation = true;
+      // Blank Applies cells: mirror builder semantics.
+      // When AUTO_CREATED_APPLIES_COLUMN && index === 0, the builder defaults
+      // to [track, observation]; otherwise just [observation].
+      const isFirstCategory = i === 0;
+      const isAutoCreated =
+        typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+        AUTO_CREATED_APPLIES_COLUMN;
+      if (isAutoCreated && isFirstCategory) {
+        hasObservation = true;
+        hasTrack = true;
+      } else {
+        hasObservation = true;
+      }
       continue;
     }
 
@@ -784,11 +802,23 @@ function validateAppliesColumn(): void {
       }
     }
 
-    // If nothing matched, the builder falls back to observation for this row.
-    if (normalizedTokens.length === 0 || normalizedTokens.includes("observation")) {
-      hasObservation = true;
+    // If nothing matched, the builder falls back based on AUTO_CREATED_APPLIES_COLUMN.
+    // Mirror builder: AUTO_CREATED_APPLIES_COLUMN && index === 0 → [track, observation].
+    if (normalizedTokens.length === 0) {
+      const isFirstCategory = i === 0;
+      const isAutoCreated =
+        typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+        AUTO_CREATED_APPLIES_COLUMN;
+      if (isAutoCreated && isFirstCategory) {
+        hasObservation = true;
+        hasTrack = true;
+      } else {
+        hasObservation = true;
+      }
+    } else {
+      if (normalizedTokens.includes("observation")) hasObservation = true;
+      if (normalizedTokens.includes("track")) hasTrack = true;
     }
-    if (normalizedTokens.includes("track")) hasTrack = true;
   }
 
   // The payload builder still requires observation coverage somewhere in the sheet.
@@ -1633,10 +1663,6 @@ function validateCategoryIcons(): void {
   clearLintArtifacts(iconRange);
 
   const iconValues = iconRange.getValues();
-  const driveFileCache = new Map<
-    string,
-    { slug: string | null; isSvg: boolean; errorMessage?: string }
-  >();
   const rowIssues = new Map<number, string[]>();
 
   const addIssue = (row: number, message: string): void => {
@@ -1696,10 +1722,10 @@ function validateCategoryIcons(): void {
         // Drive URL in builder-supported form - validate access
         const fileId = extractDriveFileId(iconValue);
         if (fileId) {
-          let info = driveFileCache.get(fileId);
+          let info = driveIconInfoCache.get(fileId);
           if (!info) {
             info = getDriveIconInfo(fileId);
-            driveFileCache.set(fileId, info);
+            driveIconInfoCache.set(fileId, info);
           }
 
           if (info.isSvg) {
@@ -2307,10 +2333,6 @@ function lintIconsSheet(): void {
 
   const data = dataRange.getValues();
   const seenIds = new Map<string, number[]>();
-  const driveFileCache = new Map<
-    string,
-    { slug: string | null; isSvg: boolean; errorMessage?: string }
-  >();
 
   for (let i = 0; i < data.length; i++) {
     const row = i + 2;
@@ -2378,10 +2400,10 @@ function lintIconsSheet(): void {
       // Drive URL — verify the file is accessible and is SVG
       const fileId = extractDriveFileId(iconSource);
       if (fileId) {
-        let info = driveFileCache.get(fileId);
+        let info = driveIconInfoCache.get(fileId);
         if (!info) {
           info = getDriveIconInfo(fileId);
-          driveFileCache.set(fileId, info);
+          driveIconInfoCache.set(fileId, info);
         }
         if (info.errorMessage) {
           setLintNote(
@@ -3716,6 +3738,12 @@ function lintMetadataSheet(): void {
   const seenKeys = new Set<string>();
   let resolvedPrimaryLanguage = false;
 
+  // Keys the builder looks up with exact equality (no trim). If a cell
+  // contains " name " the builder will NOT match it and will silently
+  // append a default row instead. Lint must use exact key matching for
+  // these to avoid false parity.
+  const EXACT_MATCH_KEYS = new Set(["name", "version", "description", "legacyCompat"]);
+
   for (let i = 0; i < data.length; i++) {
     const key = String(data[i][0] ?? "");
     const trimmedKey = key.trim();
@@ -3728,9 +3756,27 @@ function lintMetadataSheet(): void {
     const trimmedValue = String(rawValue ?? "").trim();
     const row = i + 2;
 
+    // Detect whitespace-padded keys that the builder will not match.
+    // e.g. " name " looks like "name" after trimming, but the builder's
+    // exact equality check (sheetData[i][0] === "name") will miss it.
+    if (
+      trimmedKey &&
+      key !== trimmedKey &&
+      EXACT_MATCH_KEYS.has(trimmedKey)
+    ) {
+      const cell = metadataSheet.getRange(row, 1);
+      appendLintNote(
+        cell,
+        `Metadata key "${key}" has leading/trailing whitespace. The builder uses exact key matching and will not recognize this row — it will be silently ignored and a default value generated instead. Remove the whitespace so the key is exactly "${trimmedKey}".`,
+        "warning",
+      );
+    }
+
     // Flag duplicate keys as a warning — the builder uses only the first row.
-    // Use trimmed key matching to match builder semantics (builder trims keys).
-    const isDuplicate = trimmedKey && seenKeys.has(trimmedKey);
+    // Use exact key matching (same as builder) for non-primaryLanguage keys,
+    // trimmed matching for primaryLanguage (builder resolves it differently).
+    const effectiveKey = trimmedKey === "primaryLanguage" ? trimmedKey : key;
+    const isDuplicate = effectiveKey && seenKeys.has(effectiveKey);
 
     if (trimmedKey === "primaryLanguage") {
       const cell = metadataSheet.getRange(row, 2);
@@ -3766,12 +3812,14 @@ function lintMetadataSheet(): void {
         `Duplicate metadata key "${key}". The builder only reads the first occurrence — this row is ignored.`,
         "warning",
       );
-      if (trimmedKey) seenKeys.add(trimmedKey);
+      if (effectiveKey) seenKeys.add(effectiveKey);
       continue;
     }
-    if (trimmedKey) seenKeys.add(trimmedKey);
+    if (effectiveKey) seenKeys.add(effectiveKey);
 
-    if (trimmedKey === "name") {
+    // Use exact key matching for builder-recognized keys (name, version, etc.)
+    // to match builder semantics (sheetData[i][0] === key).
+    if (key === "name") {
       const cell = metadataSheet.getRange(row, 2);
       if (!trimmedValue) {
         appendLintNote(
@@ -3791,7 +3839,7 @@ function lintMetadataSheet(): void {
       continue;
     }
 
-    if (trimmedKey === "version") {
+    if (key === "version") {
       const cell = metadataSheet.getRange(row, 2);
       if (value) {
         // Only advise when the value doesn't match the auto-generated yy.MM.dd pattern
@@ -4414,6 +4462,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
   try {
     // Clear cross-run caches so Drive file changes are picked up
     driveSvgContentCache.clear();
+    driveIconInfoCache.clear();
 
     console.log("Starting linting process...");
 
