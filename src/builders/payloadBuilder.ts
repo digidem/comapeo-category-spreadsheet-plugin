@@ -282,7 +282,7 @@ function buildFields(data: SheetData): Field[] {
       }
 
       const helperText = String(row[helperCol] || "");
-      const typeRaw = String(row[typeCol] || "text")
+      const typeRaw = String(row[typeCol] || "")
         .trim()
         .toLowerCase();
       const optionsStr = String(row[optionsCol] || "");

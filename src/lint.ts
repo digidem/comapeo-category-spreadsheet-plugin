@@ -3910,12 +3910,8 @@ function loadDriveSvgForLint(fileId: string): string | null {
   try {
     const file = DriveApp.getFileById(fileId);
     const mime = file.getMimeType();
-    // Fast path: if MIME is known and is NOT SVG, skip the blob download entirely
-    if (mime && !mime.toLowerCase().includes("svg")) {
-      driveSvgContentCache.set(fileId, null);
-      return null;
-    }
     const text = file.getBlob().getDataAsString();
+    // Accept SVG mime types or raw SVG content — mirrors builder loadDriveSvg()
     const isSvgMime = mime?.toLowerCase().includes("svg");
     const looksLikeSvg = text.trim().startsWith("<svg");
     const result = isSvgMime || looksLikeSvg ? text.trim() : null;
@@ -4095,7 +4091,7 @@ function buildLintFieldSummaries(
       }
 
       const helperText = String(row[helperCol] || "");
-      const typeRaw = String(row[typeCol] || "text")
+      const typeRaw = String(row[typeCol] || "")
         .trim()
         .toLowerCase();
       const optionsStr = String(row[optionsCol] || "");
