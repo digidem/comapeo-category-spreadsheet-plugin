@@ -2227,7 +2227,7 @@ function lintDetailsSheet(): void {
           const ambiguityWarnings = detectAmbiguousColonUsage(parsed);
           if (ambiguityWarnings.length > 0) {
             const cell = sheet.getRange(row, col);
-            setLintNote(
+            appendLintNote(
               cell,
               ambiguityWarnings.join(" "),
               "warning",
@@ -3888,10 +3888,15 @@ function loadDriveSvgForLint(fileId: string): string | null {
   try {
     const file = DriveApp.getFileById(fileId);
     const mime = file.getMimeType();
+    // Fast path: if MIME is known and is NOT SVG, skip the blob download entirely
+    if (mime && !mime.toLowerCase().includes("svg")) {
+      driveSvgContentCache.set(fileId, null);
+      return null;
+    }
     const text = file.getBlob().getDataAsString();
     const isSvgMime = mime?.toLowerCase().includes("svg");
     const looksLikeSvg = text.trim().startsWith("<svg");
-    const result = (isSvgMime || looksLikeSvg) ? text.trim() : null;
+    const result = isSvgMime || looksLikeSvg ? text.trim() : null;
     driveSvgContentCache.set(fileId, result);
     return result;
   } catch (_err) {
