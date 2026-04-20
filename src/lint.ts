@@ -740,6 +740,7 @@ function validateAppliesColumn(): void {
   ).getValues();
   let hasObservation = false;
   let hasTrack = false;
+  let realCategoryIndex = 0;
 
   for (let i = 0; i < appliesValues.length; i++) {
     const rawValue = appliesValues[i][0] == null ? "" : String(appliesValues[i][0]).trim();
@@ -754,7 +755,7 @@ function validateAppliesColumn(): void {
       // Blank Applies cells: mirror builder semantics.
       // When AUTO_CREATED_APPLIES_COLUMN && index === 0, the builder defaults
       // to [track, observation]; otherwise just [observation].
-      const isFirstCategory = i === 0;
+      const isFirstCategory = realCategoryIndex === 0;
       const isAutoCreated =
         typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
         AUTO_CREATED_APPLIES_COLUMN;
@@ -787,10 +788,18 @@ function validateAppliesColumn(): void {
     if (invalidTokens.length > 0) {
       const cell = categoriesSheet.getRange(row, appliesColIndex);
       if (normalizedTokens.length === 0 && tokens.length > 0) {
-        // All tokens are unrecognized — builder silently defaults to observation
+        // All tokens are unrecognized — mirror builder fallback logic
+        const isFirstCategory = realCategoryIndex === 0;
+        const isAutoCreated =
+          typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+          AUTO_CREATED_APPLIES_COLUMN;
+        const builderDefault =
+          isAutoCreated && isFirstCategory
+            ? "track + observation"
+            : "observation";
         appendLintNote(
           cell,
-          `All Applies tokens are unrecognized ("${invalidTokens.join('", "')}"). The builder will silently default this row to "observation". Use "observation" or "track" explicitly.`,
+          `All Applies tokens are unrecognized ("${invalidTokens.join('", "')}"). The builder will silently default this row to "${builderDefault}". Use "observation" or "track" explicitly.`,
           "warning",
         );
       } else {
@@ -805,7 +814,7 @@ function validateAppliesColumn(): void {
     // If nothing matched, the builder falls back based on AUTO_CREATED_APPLIES_COLUMN.
     // Mirror builder: AUTO_CREATED_APPLIES_COLUMN && index === 0 → [track, observation].
     if (normalizedTokens.length === 0) {
-      const isFirstCategory = i === 0;
+      const isFirstCategory = realCategoryIndex === 0;
       const isAutoCreated =
         typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
         AUTO_CREATED_APPLIES_COLUMN;
@@ -819,6 +828,7 @@ function validateAppliesColumn(): void {
       if (normalizedTokens.includes("observation")) hasObservation = true;
       if (normalizedTokens.includes("track")) hasTrack = true;
     }
+    realCategoryIndex++;
   }
 
   // The payload builder still requires observation coverage somewhere in the sheet.
@@ -862,6 +872,10 @@ function checkEmptySheet(
 ): boolean {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
+    const lastCol = sheet.getLastColumn();
+    if (lastCol > 0) {
+      clearLintArtifacts(sheet.getRange(1, 1, 1, lastCol));
+    }
     const cell = sheet.getRange(1, 1);
     clearLintArtifacts(cell);
     setLintNote(
@@ -2033,6 +2047,11 @@ function lintDetailsSheet(): void {
     return;
   }
 
+  // Clear stale empty-sheet note from A1 (left by a previous run when the
+  // sheet was empty). The non-empty path only touches data rows, so A1
+  // would otherwise retain the old error.
+  clearLintArtifacts(sheet.getRange(1, 1));
+
   // Pre-cleanup: capture whitespace-only IDs before cleanWhitespaceOnlyCells() erases them
   const rawDetailIds = inspectRawIds("Details", 5);
 
@@ -2524,7 +2543,10 @@ function hasRecognisedIconSource(iconStr: string): boolean {
     const svg = decodeDataSvgForLint(iconStr);
     return !!svg && svg.trim().startsWith("<svg");
   }
-  if (iconStr.startsWith("https://drive.google.com/file/d/")) return true;
+  if (iconStr.startsWith("https://drive.google.com/file/d/")) {
+    const fileId = extractDriveFileId(iconStr);
+    return fileId ? !!loadDriveSvgForLint(fileId) : false;
+  }
   if (/^https?:\/\//i.test(iconStr) && iconStr.toLowerCase().includes(".svg")) return true;
   return false;
 }
@@ -2837,19 +2859,19 @@ function validateSheetConsistency(
     const sourceRowCount = sourceSheet.getLastRow();
     const translationRowCount = translationSheet.getLastRow();
 
-    if (translationRowCount > 0 && translationSheet.getLastColumn() > 0) {
-      const fullRange = translationSheet.getRange(
+    if (translationRowCount > 1 && translationSheet.getLastColumn() > 0) {
+      const dataRange = translationSheet.getRange(
+        2,
         1,
-        1,
-        translationRowCount,
+        translationRowCount - 1,
         translationSheet.getLastColumn(),
       );
       clearRangeBackgroundIfMatches(
-        fullRange,
+        dataRange,
         ["#FFC7CE", "#FFF2CC", "#FF0000"], // Include bright red for primary column mismatches
       );
       clearRangeFontColorIfMatches(
-        fullRange,
+        dataRange,
         ["#FFFFFF"], // White text paired with red backgrounds for primary column mismatches
       );
     }
@@ -3722,8 +3744,8 @@ function lintMetadataSheet(): void {
   const lastRow = metadataSheet.getLastRow();
   if (lastRow <= 1) return; // Header-only or empty
 
-  // Clear previous lint artifacts on value column (B)
-  clearLintArtifacts(metadataSheet.getRange(2, 2, lastRow - 1, 1));
+  // Clear previous lint artifacts on both key (A) and value (B) columns
+  clearLintArtifacts(metadataSheet.getRange(2, 1, lastRow - 1, 2));
 
   // Matches containsUnsafeNameCharacters() in importService: slashes, backslashes, ellipsis
   // These are the only characters that strict build validation actually rejects (errors).
