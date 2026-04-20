@@ -1134,6 +1134,12 @@ function testUniversalFieldDoesNotSetRequired(): boolean {
 function testCategoriesAppliesParsing(): boolean {
   console.log("=== Test: Categories Applies Parsing ===");
 
+  // Reset mutable global so prior tests (e.g. testUniversalFieldsAddedToAllCategories)
+  // that trigger the auto-create Applies path don't leak state into this test.
+  if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined") {
+    AUTO_CREATED_APPLIES_COLUMN = false;
+  }
+
   try {
     const testData: SheetData = {
       documentName: "Applies Validation" as any,
