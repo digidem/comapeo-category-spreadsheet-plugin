@@ -281,8 +281,13 @@ function appendLintNote(
 
   switch (severity) {
     case "error":
-      cell.setBackground("#FFC7CE");
-      cell.setFontColor("red");
+      // Preserve #FF0000 critical-mismatch styling; only set #FFC7CE if not
+      // already at a higher visual severity. #FF0000 cells use white text,
+      // so skip fontColor too to keep them readable.
+      if (currentBg !== "#FF0000") {
+        cell.setBackground("#FFC7CE");
+        cell.setFontColor("red");
+      }
       break;
     case "warning":
       // Only set warning styling if not already at error level
@@ -313,7 +318,7 @@ function clearLintArtifacts(
 
   clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
   clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
-  clearRangeNotesWithPrefix(range, LINT_NOTE_PREFIX);
+  clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
 }
 
 function clearSourceOverwriteLintArtifacts(
@@ -1419,7 +1424,12 @@ function validateTranslationHeaders(): void {
       if (lastCol < 2) continue; // Need at least a source column and one language column
 
       const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      clearLintArtifacts(sheet.getRange(1, 1, 1, lastCol));
+      // Clear lint artifacts on header columns 2..lastCol only.
+      // Column A (1,1) is excluded because validateSheetConsistency may have
+      // placed a row-count mismatch note there; clearing it here would lose
+      // that diagnostic if validateSheetConsistency is later skipped.
+      // (lastCol >= 2 is guaranteed by the `continue` above.)
+      clearLintArtifacts(sheet.getRange(1, 2, 1, lastCol - 1));
 
       const headerB = String(headers[1] || "")
         .trim()
