@@ -765,6 +765,7 @@ function validateAppliesColumn(): void {
       } else {
         hasObservation = true;
       }
+      realCategoryIndex++;
       continue;
     }
 
@@ -2399,10 +2400,10 @@ function lintIconsSheet(): void {
 
     if (isSvg) {
       // Inline SVG — check for basic structural validity
-      if (!iconSource.includes("</svg>")) {
+      if (!iconSource.includes("</svg>") && !iconSource.trim().endsWith("/>")) {
         setLintNote(
           iconsSheet.getRange(row, 2),
-          'Inline SVG markup appears incomplete (missing closing </svg> tag). This icon will be dropped during config generation.',
+          'Inline SVG markup appears incomplete (missing closing tag). This icon will be dropped during config generation.',
           "error",
         );
       }
@@ -3822,6 +3823,9 @@ function lintMetadataSheet(): void {
           `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
           "error",
         );
+        // Don't set resolvedPrimaryLanguage — the builder scans until it finds a valid locale,
+        // so subsequent valid primaryLanguage rows should still be checked.
+        continue;
       }
       resolvedPrimaryLanguage = true;
       continue;
