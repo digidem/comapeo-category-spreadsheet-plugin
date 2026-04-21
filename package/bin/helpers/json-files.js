@@ -24,7 +24,7 @@ export async function* jsonFiles(dir, { recursive = true } = {}) {
 		if (path.extname(entry) !== '.json') continue
 		const json = await fs.readFile(path.join(dir, entry), 'utf-8')
 		// Use parse-json to get better error messages
-		const data = parseJson(json)
+		const data = parseJson(json, undefined, entry)
 		yield { name: entry, data }
 	}
 }

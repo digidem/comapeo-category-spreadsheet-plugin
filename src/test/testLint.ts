@@ -641,8 +641,8 @@ function testLintAppendAndClearSemantics(): boolean {
         clearCell.setBackground("#FFF2CC");
         clearCell.setFontColor("orange");
         clearLintArtifacts(clearCell);
-        if (clearCell.getNote() !== "") {
-          throw new Error(`Expected lint-prefixed note to be cleared entirely, got "${clearCell.getNote()}"`);
+        if (clearCell.getNote() !== "manual line") {
+          throw new Error(`Expected non-lint note lines to be preserved, got "${clearCell.getNote()}"`);
         }
         if (clearCell.getBackground() !== "#FFFFFF") {
           throw new Error("Lint warning background should be cleared");
