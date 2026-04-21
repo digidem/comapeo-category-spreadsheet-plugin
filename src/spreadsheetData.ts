@@ -30,12 +30,12 @@ function getLanguageLookup(): LanguageLookup {
 }
 
 /**
- * Gets the primary language name from cell A1 of the Categories sheet.
+ * Gets the primary language value from cell A1 of the Categories sheet.
  *
  * Prefers the Metadata sheet key `primaryLanguage` (set during migrations) and
  * falls back to Categories!A1 for legacy sheets or when metadata is missing.
  *
- * @returns Primary language display name (e.g., "English", "Español").
+ * @returns Primary language value as entered (display name or locale code).
  */
 function getPrimaryLanguageName(): string {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -80,20 +80,18 @@ function filterLanguagesByPrimary(
 ): LanguageMap {
   const log = getScopedLogger("SpreadsheetData");
   const primaryLanguageName = getPrimaryLanguageName();
-
-  // Convert primary language name to code (supports both English and native names)
-  // Uses cached lookup to avoid rebuilding indexes on every call
-  const lookup = getLanguageLookup();
-  const primaryCode = lookup.getCodeByName(primaryLanguageName);
+  const resolvedPrimaryLanguage = resolvePrimaryLanguageInput(primaryLanguageName);
 
   // If primary language is invalid or not found, log warning and return all languages
-  if (!primaryCode) {
+  if (!resolvedPrimaryLanguage) {
     log.warn(
       `Primary language "${primaryLanguageName}" not recognized in language lookup. ` +
-      `Including all languages. Set "primaryLanguage" in Metadata sheet or put a valid language name in Categories!A1.`
+      `Including all languages. Set "primaryLanguage" in Metadata sheet or put a valid language name or locale code in Categories!A1.`
     );
     return allLanguages;
   }
+
+  const primaryCode = resolvedPrimaryLanguage.comparisonCode;
 
   // Filter by comparing language codes, not names
   return Object.entries(allLanguages)
@@ -279,37 +277,38 @@ function languages(includePrimary = false): LanguageMap {
 /**
  * Resolves the primary language code and name configured in the spreadsheet.
  *
- * Now supports BOTH English and native language names in cell A1.
- * For example, both "Portuguese" and "Português" will be recognized as "pt".
+ * Supports English names, native names, canonical language codes, and locale
+ * tags in Metadata!primaryLanguage or Categories!A1.
  *
- * Optimized to avoid redundant data fetches by using the code from validation result.
- *
- * @returns Primary language code and display name pair.
- * @throws {Error} When cell A1 contains an unsupported language name.
+ * @returns Primary language code and original user-entered value.
+ * @throws {Error} When the configured value is unsupported.
  *
  * @example
- * // Cell A1 contains "Portuguese"
+ * // Value contains "Portuguese"
  * getPrimaryLanguage() // => { code: "pt", name: "Portuguese" }
  *
  * @example
- * // Cell A1 contains "Português"
+ * // Value contains "Português"
  * getPrimaryLanguage() // => { code: "pt", name: "Português" }
+ *
+ * @example
+ * // Value contains "pt-BR"
+ * getPrimaryLanguage() // => { code: "pt-br", name: "pt-BR" }
  */
 function getPrimaryLanguage(): { code: LanguageCode; name: string } {
   const primaryLanguage = getPrimaryLanguageName();
+  const resolvedPrimaryLanguage = resolvePrimaryLanguageInput(primaryLanguage);
 
-  // Validate and get the language code in a single operation
-  const validation = validateLanguageName(primaryLanguage);
-
-  if (!validation.valid || !validation.code) {
+  if (!resolvedPrimaryLanguage) {
     throw new Error(
-      `Invalid primary language in cell A1: ${validation.error || "Unknown error"}\n\nPlease set cell A1 in the Categories sheet to a valid language name in either English or native form (e.g., "English", "Spanish"/"Español", "Portuguese"/"Português").`,
+      `Invalid primary language: use a recognized language name or locale code (for example "English", ` +
+        `"Português", "en", or "pt-BR").`,
     );
   }
 
   return {
-    code: validation.code,
-    name: primaryLanguage, // Keep the name as entered by user (could be English or native)
+    code: resolvedPrimaryLanguage.code,
+    name: primaryLanguage,
   };
 }
 
@@ -356,48 +355,49 @@ function getAvailableTargetLanguages(): LanguageMap {
 /**
  * Lists supported language names for validation in the Categories sheet.
  *
- * Returns BOTH English and native language names to support dual-name recognition.
+ * Returns BOTH English and native language names, plus canonical language codes,
+ * to support dual-name recognition and locale-code parity.
  *
- * @returns Array of all supported language names (English and native forms)
+ * @returns Array of all supported primary-language tokens
  *
  * @example
  * getSupportedLanguagesForA1Cell()
- * // => ["English", "Spanish", "Español", "Portuguese", "Português", ...]
+ * // => ["English", "en", "Spanish", "Español", "es", "Portuguese", "Português", "pt", ...]
  */
 function getSupportedLanguagesForA1Cell(): string[] {
   const enhanced = getAllLanguagesEnhanced();
-  const allNames: string[] = [];
+  const allNames = new Set<string>();
 
-  // Collect both English and native names
-  for (const data of Object.values(enhanced)) {
-    allNames.push(data.englishName);
-    // Only add native name if it's different from English
+  // Collect English names, native names, and canonical codes
+  for (const [code, data] of Object.entries(enhanced)) {
+    allNames.add(data.englishName);
     if (data.englishName !== data.nativeName) {
-      allNames.push(data.nativeName);
+      allNames.add(data.nativeName);
     }
+    allNames.add(code);
   }
 
-  return allNames.sort();
+  return Array.from(allNames).sort();
 }
 
 /**
  * Checks whether a language name is valid for the A1 configuration cell.
  *
- * Supports both English and native language names with case-insensitive matching.
- * Uses cached lookup for performance.
+ * Supports English names, native names, and canonical language codes with
+ * case-insensitive matching. Uses cached lookup for performance.
  *
- * @param languageName - Language name in either English or native form
- * @returns True if the name is recognized
+ * @param languageName - Language token in English, native, or canonical code form
+ * @returns True if the token is recognized
  *
  * @example
  * isValidLanguageForA1Cell("Portuguese") // => true
  * isValidLanguageForA1Cell("Português")  // => true
+ * isValidLanguageForA1Cell("pt")         // => true
  * isValidLanguageForA1Cell("PORTUGUESE") // => true
  * isValidLanguageForA1Cell("Invalid")    // => false
  */
 function isValidLanguageForA1Cell(languageName: string): boolean {
-  const lookup = getLanguageLookup();
-  return lookup.hasName(languageName);
+  return resolvePrimaryLanguageInput(languageName) !== null;
 }
 
 /**

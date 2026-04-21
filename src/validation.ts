@@ -200,6 +200,86 @@ function clearLanguageNamesCache(): void {
 }
 
 /**
+ * Normalizes a primary-language locale token for runtime use.
+ *
+ * Accepts canonical language codes from the lookup (preserving canonical casing
+ * like "zh-CN") and generic BCP 47-style locale tags such as "pt-BR".
+ * Generic locale tags are normalized to lowercase to match existing builder
+ * behavior in buildLocales().
+ *
+ * @param primaryLanguage - Primary language value from Metadata or Categories
+ * @returns Canonical or normalized locale code, or null if not a locale token
+ */
+function normalizePrimaryLanguageLocaleCode(
+  primaryLanguage: string,
+): LanguageCode | null {
+  if (!primaryLanguage || primaryLanguage.trim() === "") {
+    return null;
+  }
+
+  const trimmed = primaryLanguage.trim();
+  const lookup = getLanguageLookup();
+  const canonicalCode = lookup.getCanonicalCode(trimmed);
+
+  if (canonicalCode) {
+    return canonicalCode;
+  }
+
+  if (trimmed.includes("_")) {
+    return null;
+  }
+
+  const localePattern = /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i;
+  if (!localePattern.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed.toLowerCase();
+}
+
+/**
+ * Resolves a primary-language value from Metadata or Categories.
+ *
+ * Supports English names, native names, canonical language codes, and locale
+ * tags such as "pt-BR". Returns both the runtime locale code and the best
+ * available comparison code for spreadsheet language filtering.
+ *
+ * @param primaryLanguage - Primary language value from Metadata or Categories
+ * @returns Resolved codes, or null when the value is not recognized
+ */
+function resolvePrimaryLanguageInput(
+  primaryLanguage: string,
+): { code: LanguageCode; comparisonCode: LanguageCode } | null {
+  if (!primaryLanguage || primaryLanguage.trim() === "") {
+    return null;
+  }
+
+  const trimmed = primaryLanguage.trim();
+  const lookup = getLanguageLookup();
+  const nameCode = lookup.getCodeByName(trimmed);
+
+  if (nameCode) {
+    return {
+      code: nameCode,
+      comparisonCode: nameCode,
+    };
+  }
+
+  const localeCode = normalizePrimaryLanguageLocaleCode(trimmed);
+  if (!localeCode) {
+    return null;
+  }
+
+  const baseLanguageToken = localeCode.split("-")[0];
+  const comparisonCode = lookup.getCanonicalCode(baseLanguageToken) || localeCode;
+
+  return {
+    code: localeCode,
+    comparisonCode,
+  };
+}
+
+/**
  * Validates a language name against supported languages
  *
  * Now supports BOTH English and native language names (e.g., "Portuguese" OR "Português").
@@ -283,15 +363,18 @@ function validateLanguageName(
 
 /**
  * Validates the primary language value (Metadata!primaryLanguage preferred,
- * Categories!A1 fallback). Supports English and native names.
+ * Categories!A1 fallback). Supports English names, native names, and locale codes.
  */
 function validatePrimaryLanguage(primaryLanguage: string): SheetValidationResult {
-  const result = validateLanguageName(primaryLanguage);
+  const resolved = resolvePrimaryLanguageInput(primaryLanguage);
 
-  if (!result.valid) {
+  if (!resolved) {
     return {
       valid: false,
-      error: `Invalid primary language (Metadata!primaryLanguage or Categories!A1): ${result.error}`,
+      error:
+        `Invalid primary language (Metadata!primaryLanguage or Categories!A1): ` +
+        `use a recognized language name or locale code (for example "English", ` +
+        `"Português", "en", or "pt-BR").`,
     };
   }
 

@@ -1851,7 +1851,7 @@ function validatePrimaryLanguageInA1(): void {
   if (!a1Value) {
     setLintNote(
       cell,
-      'Categories A1 is blank and no Metadata primaryLanguage is set. Set a valid language name (e.g. "English", "Português") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
+      'Categories A1 is blank and no Metadata primaryLanguage is set. Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
       "error",
     );
     return;
@@ -1866,15 +1866,15 @@ function validatePrimaryLanguageInA1(): void {
   if (HEADER_WORDS.includes(lowerA1)) {
     setLintNote(
       cell,
-      `Categories A1 contains "${a1Value}" which is not a valid language name. ` +
-        `Set a valid language (e.g. "English", "Português") or add a "primaryLanguage" row in the Metadata sheet.`,
+      `Categories A1 contains "${a1Value}" which is not a valid primary language value. ` +
+        `Set a valid language or locale code (e.g. "English", "Português", "en", "pt-BR") or add a "primaryLanguage" row in the Metadata sheet.`,
       "error",
     );
     return;
   }
 
-  // Validate as a language name
-  const validation = validateLanguageName(a1Value);
+  // Validate as a language name or locale code
+  const validation = validatePrimaryLanguage(a1Value);
   if (!validation.valid) {
     setLintNote(
       cell,
@@ -2376,25 +2376,18 @@ function lintIconsSheet(): void {
     }
 
     // Check for unsupported icon source format.
-    // Mirrors parseIconSource() in payloadBuilder: only inline SVG, data:image/svg+xml,
-    // Google Drive links, and HTTP(S) URLs ending in .svg are accepted.
+    // Mirrors parseIconSource() in payloadBuilder: only rows that resolve to a
+    // packaged icon asset should contribute to duplicate-ID tracking.
     const isSvg = iconSource.startsWith("<svg");
     const isDataUri = iconSource.toLowerCase().startsWith("data:image/svg+xml");
     const isDriveUrl = iconSource.startsWith("https://drive.google.com/file/d/");
     const isHttpUrl = /^https?:\/\//i.test(iconSource);
     // Builder's isSvgUrl() requires the URL to contain ".svg"
     const isSvgHttpUrl = isHttpUrl && iconSource.toLowerCase().includes(".svg");
-
-    // Only track rows that have a recognized source format (mirrors builder's parseIconSource check)
-    if (isSvg || isDataUri || isDriveUrl || isSvgHttpUrl) {
-      if (!seenIds.has(iconId)) {
-        seenIds.set(iconId, [row]);
-      } else {
-        seenIds.get(iconId)?.push(row);
-      }
-    }
+    let contributesIconAsset = false;
 
     if (isSvg) {
+      contributesIconAsset = true;
       // Inline SVG — check for basic structural validity
       if (!iconSource.includes("</svg>") && !iconSource.trim().endsWith("/>")) {
         setLintNote(
@@ -2411,6 +2404,8 @@ function lintIconsSheet(): void {
           "SVG data URI is malformed or does not decode to valid SVG content. This icon will be silently dropped during config generation.",
           "error",
         );
+      } else {
+        contributesIconAsset = true;
       }
     } else if (isDriveUrl) {
       // Drive URL — verify the file is accessible and is SVG
@@ -2433,6 +2428,8 @@ function lintIconsSheet(): void {
             "Google Drive icon file is not SVG. Non-SVG Drive files are silently dropped during config generation.",
             "error",
           );
+        } else {
+          contributesIconAsset = true;
         }
       } else {
         setLintNote(
@@ -2459,6 +2456,16 @@ function lintIconsSheet(): void {
       logger.warn(
         `Row ${row}: unsupported icon source format for ID "${iconId}"`,
       );
+    } else {
+      contributesIconAsset = true;
+    }
+
+    if (contributesIconAsset) {
+      if (!seenIds.has(iconId)) {
+        seenIds.set(iconId, [row]);
+      } else {
+        seenIds.get(iconId)?.push(row);
+      }
     }
   }
 
@@ -3729,6 +3736,30 @@ function fixTranslationMismatches(
 }
 
 /**
+ * Mirrors buildLocales() normalization for Metadata!primaryLanguage values.
+ * Accepts either a recognized language name or a locale token like en / pt-BR.
+ */
+function normalizeMetadataPrimaryLanguageValue(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  if (/^[a-z]{2,3}(-[a-z]{2,3})?$/i.test(trimmedValue)) {
+    return trimmedValue.toLowerCase();
+  }
+
+  const validation = validateLanguageName(trimmedValue);
+  if (validation.valid && validation.code) {
+    return validation.code;
+  }
+
+  return null;
+}
+
+function getMetadataPrimaryLanguageLintMessage(value: string): string {
+  return `Metadata primaryLanguage: "${value}" is not a recognized language name or locale code. Use a display name or locale token (e.g. "English", "Português", "en", "pt-BR").`;
+}
+
+/**
  * Validates explicit Metadata sheet values for unsafe characters.
  * Only checks rows that are present – does NOT flag missing rows.
  * Keys validated: name, version, primaryLanguage.
@@ -3802,9 +3833,9 @@ function lintMetadataSheet(): void {
       if (trimmedKey) seenKeys.add(trimmedKey);
       if (!trimmedValue) continue;
 
-      // Validate first, before deciding duplicate warning text
-      const validation = validateLanguageName(trimmedValue);
-      const isValid = validation.valid;
+      // Mirror buildLocales(): accept recognized display names and ISO-style locale tokens.
+      const normalizedPrimaryLanguage = normalizeMetadataPrimaryLanguageValue(trimmedValue);
+      const isValid = normalizedPrimaryLanguage !== null;
 
       if (isDuplicate) {
         if (resolvedPrimaryLanguage) {
@@ -3818,7 +3849,7 @@ function lintMetadataSheet(): void {
           // No valid primaryLanguage yet AND this one is also invalid - still a chance later rows are valid
           appendLintNote(
             cell,
-            `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+            getMetadataPrimaryLanguageLintMessage(trimmedValue),
             "error",
           );
         } else {
@@ -3834,7 +3865,7 @@ function lintMetadataSheet(): void {
         if (!isValid) {
           appendLintNote(
             cell,
-            `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+            getMetadataPrimaryLanguageLintMessage(trimmedValue),
             "error",
           );
           // Don't set resolvedPrimaryLanguage — the builder scans until it finds a valid locale,

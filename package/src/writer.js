@@ -90,6 +90,11 @@ export class Writer extends EventEmitter {
 	 */
 	addCategory(id, category) {
 		if (this.#finished) throw new AddAfterFinishError()
+		if (this.#categories.has(id)) {
+			throw new Error(
+				`Duplicate category ID: ${id}. Each category can only be added once.`,
+			)
+		}
 		const parsedCategory = v.parse(CategorySchema, category)
 		this.#categories.set(id, parsedCategory)
 		return parsedCategory
@@ -128,6 +133,9 @@ export class Writer extends EventEmitter {
 	 */
 	addField(id, field) {
 		if (this.#finished) throw new AddAfterFinishError()
+		if (this.#fields.has(id)) {
+			throw new Error(`Duplicate field ID: ${id}. Each field can only be added once.`)
+		}
 		const parsedField = v.parse(FieldSchema, field)
 		this.#fields.set(id, parsedField)
 		return parsedField

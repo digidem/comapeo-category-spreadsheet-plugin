@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -23,6 +24,12 @@ const VALID_METADATA = {
 const VALID_CATEGORY_SELECTION = {
 	observation: ['observation-category'],
 	track: [],
+}
+
+const VALID_FIELD = {
+	tagKey: 'status',
+	label: 'Status',
+	type: 'text',
 }
 
 const execFileAsync = promisify(execFile)
@@ -109,6 +116,73 @@ test('Writer.finish rejects categorySelection references to categories with inco
 		name: 'InvalidCategorySelectionError',
 		message:
 			/Category "track-category" in categorySelection\.observation does not include "observation" in its appliesTo array/,
+	})
+})
+
+test('Writer.addCategory rejects duplicate category IDs without overwriting the original category', async () => {
+	await withTempDir(async (tempDir) => {
+		const archivePath = path.join(tempDir, 'duplicate-category.comapeocat')
+		const writer = new Writer()
+		writer.setMetadata(VALID_METADATA)
+		writer.addCategory('observation-category', VALID_CATEGORIES['observation-category'])
+		writer.setCategorySelection(VALID_CATEGORY_SELECTION)
+
+		assert.throws(
+			() =>
+				writer.addCategory('observation-category', {
+					...VALID_CATEGORIES['observation-category'],
+					name: 'Overwritten Category',
+				}),
+			{
+				message:
+					'Duplicate category ID: observation-category. Each category can only be added once.',
+			},
+		)
+
+		await writeArchiveFromWriter(writer, archivePath)
+
+		const reader = new Reader(archivePath)
+		try {
+			const categories = await reader.categories()
+			assert.equal(
+				categories.get('observation-category')?.name,
+				'Observation Category',
+			)
+		} finally {
+			await reader.close()
+		}
+	})
+})
+
+test('Writer.addField rejects duplicate field IDs without overwriting the original field', async () => {
+	await withTempDir(async (tempDir) => {
+		const archivePath = path.join(tempDir, 'duplicate-field.comapeocat')
+		const writer = new Writer()
+		writer.setMetadata(VALID_METADATA)
+		writer.addCategory('observation-category', VALID_CATEGORIES['observation-category'])
+		writer.addField('status', VALID_FIELD)
+		writer.setCategorySelection(VALID_CATEGORY_SELECTION)
+
+		assert.throws(
+			() =>
+				writer.addField('status', {
+					...VALID_FIELD,
+					label: 'Overwritten Status',
+				}),
+			{
+				message: 'Duplicate field ID: status. Each field can only be added once.',
+			},
+		)
+
+		await writeArchiveFromWriter(writer, archivePath)
+
+		const reader = new Reader(archivePath)
+		try {
+			const fields = await reader.fields()
+			assert.equal(fields.get('status')?.label, 'Status')
+		} finally {
+			await reader.close()
+		}
 	})
 })
 
@@ -218,6 +292,80 @@ test('Reader.opened and Reader.validate reject invalid translation filenames', a
 	})
 })
 
+test('Reader.opened rejects archives whose major version is not supported', async () => {
+	await withTempDir(async (tempDir) => {
+		for (const version of ['0.9', '2.0']) {
+			const archivePath = path.join(
+				tempDir,
+				`unsupported-major-${version.replace('.', '-')}.comapeocat`,
+			)
+			await createArchive(archivePath, {
+				'categories.json': JSON.stringify(VALID_CATEGORIES, null, 2),
+				'fields.json': JSON.stringify({}, null, 2),
+				'categorySelection.json': JSON.stringify(
+					VALID_CATEGORY_SELECTION,
+					null,
+					2,
+				),
+				'metadata.json': JSON.stringify(
+					{
+						...VALID_METADATA,
+						buildDateValue: Date.now(),
+					},
+					null,
+					2,
+				),
+				VERSION: version,
+			})
+
+			const reader = new Reader(archivePath)
+			try {
+				await assert.rejects(reader.opened(), (err) => {
+					assert.equal(err?.name, 'UnsupportedFileVersionError')
+					assert.match(
+						String(err?.message),
+						new RegExp(`Unsupported file version: "${version.replace('.', '\\.')}"`),
+					)
+					assert.match(String(err?.message), /Supported versions are: "1\.x"\./)
+					return true
+				})
+			} finally {
+				await reader.close()
+			}
+		}
+	})
+})
+
+test('Reader.opened rejects newer unsupported minor versions for the supported major', async () => {
+	await withTempDir(async (tempDir) => {
+		const archivePath = path.join(tempDir, 'unsupported-minor.comapeocat')
+		await createArchive(archivePath, {
+			'categories.json': JSON.stringify(VALID_CATEGORIES, null, 2),
+			'fields.json': JSON.stringify({}, null, 2),
+			'categorySelection.json': JSON.stringify(VALID_CATEGORY_SELECTION, null, 2),
+			'metadata.json': JSON.stringify(
+				{
+					...VALID_METADATA,
+					buildDateValue: Date.now(),
+				},
+				null,
+				2,
+			),
+			VERSION: '1.1',
+		})
+
+		const reader = new Reader(archivePath)
+		try {
+			await assert.rejects(reader.opened(), {
+				name: 'UnsupportedFileVersionError',
+				message: /Unsupported file version: "1\.1"\. Supported versions are: "1\.x"\./,
+			})
+		} finally {
+			await reader.close()
+		}
+	})
+})
+
 test('Reader invalid translation filename is treated as a parse-style CLI validation error', async () => {
 	await withTempDir(async (tempDir) => {
 		const archivePath = path.join(tempDir, 'invalid-translation-tag.comapeocat')
@@ -272,6 +420,11 @@ async function createArchive(archivePath, entries) {
 
 		archive.finalize().catch(reject)
 	})
+}
+
+async function writeArchiveFromWriter(writer, archivePath) {
+	writer.finish()
+	await pipeline(writer.outputStream, createWriteStream(archivePath))
 }
 
 async function withTempDir(fn) {

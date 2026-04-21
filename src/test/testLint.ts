@@ -848,17 +848,16 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
       (lintCalls) => {
         lintMetadataSheet();
 
-        const duplicateWarnings = lintCalls.filter(
+        const row3DuplicateWarnings = lintCalls.filter(
           (call) =>
             call.row === 3 &&
             call.col === 2 &&
             call.severity === "warning" &&
-            call.message.includes('Duplicate metadata key "primaryLanguage"') &&
-            call.message.includes("only used if all earlier primaryLanguage rows are blank"),
+            call.message.includes('Duplicate metadata key "primaryLanguage"'),
         );
-        if (duplicateWarnings.length !== 1) {
+        if (row3DuplicateWarnings.length !== 0) {
           throw new Error(
-            `Expected row 3 duplicate primaryLanguage warning describing builder fallback semantics, got ${duplicateWarnings.length}`,
+            `Expected no duplicate warning on row 3 while earlier primaryLanguage rows are still unresolved, got ${row3DuplicateWarnings.length}`,
           );
         }
 
@@ -867,7 +866,7 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
             call.row === 3 &&
             call.col === 2 &&
             call.severity === "error" &&
-            call.message.includes('Metadata primaryLanguage: "NotALanguage" is not a recognized language name'),
+            call.message.includes('Metadata primaryLanguage: "NotALanguage" is not a recognized language name or locale code'),
         );
         if (invalidLanguageErrors.length !== 1) {
           throw new Error(
@@ -875,17 +874,17 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
           );
         }
 
-        const ignoredDuplicateWarnings = lintCalls.filter(
+        const row4FallbackWarnings = lintCalls.filter(
           (call) =>
             call.row === 4 &&
             call.col === 2 &&
             call.severity === "warning" &&
             call.message.includes('Duplicate metadata key "primaryLanguage"') &&
-            call.message.includes("only used if all earlier primaryLanguage rows are blank"),
+            call.message.includes("only used if all earlier primaryLanguage rows are blank or invalid"),
         );
-        if (ignoredDuplicateWarnings.length !== 1) {
+        if (row4FallbackWarnings.length !== 1) {
           throw new Error(
-            `Expected row 4 duplicate primaryLanguage warning describing builder fallback semantics, got ${ignoredDuplicateWarnings.length}`,
+            `Expected row 4 duplicate primaryLanguage warning describing builder fallback semantics, got ${row4FallbackWarnings.length}`,
           );
         }
 
@@ -893,16 +892,229 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
           (call) => call.row === 4 && call.col === 2 && call.severity === "error",
         );
         if (row4Errors.length !== 0) {
-          throw new Error(`Expected no validation errors on ignored duplicate row 4, got ${row4Errors.length}`);
+          throw new Error(`Expected no validation errors on fallback duplicate row 4, got ${row4Errors.length}`);
         }
       },
     );
 
-    console.log("PASS: Duplicate metadata primaryLanguage rows mirror first-non-empty builder semantics");
+    console.log("PASS: Duplicate metadata primaryLanguage rows mirror first-valid builder semantics");
     return true;
   } catch (error) {
     console.error(`FAIL: ${(error as Error).message}`);
     return false;
+  }
+}
+
+function testMetadataPrimaryLanguageLocaleCodeParity(): boolean {
+  console.log("=== testMetadataPrimaryLanguageLocaleCodeParity ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Metadata: [
+          ["Key", "Value"],
+          ["primaryLanguage", "en"],
+          ["primaryLanguage", "pt-BR"],
+          ["primaryLanguage", "bad_locale"],
+        ],
+      },
+      (lintCalls) => {
+        lintMetadataSheet();
+
+        const row2Errors = lintCalls.filter(
+          (call) => call.row === 2 && call.col === 2 && call.severity === "error",
+        );
+        if (row2Errors.length !== 0) {
+          throw new Error(`Expected locale code row 2 to be accepted without errors, got ${row2Errors.length}`);
+        }
+
+        const row3IgnoredWarnings = lintCalls.filter(
+          (call) =>
+            call.row === 3 &&
+            call.col === 2 &&
+            call.severity === "warning" &&
+            call.message.includes('Duplicate metadata key "primaryLanguage"') &&
+            call.message.includes("this row is ignored"),
+        );
+        if (row3IgnoredWarnings.length !== 1) {
+          throw new Error(
+            `Expected row 3 duplicate warning indicating the locale-code duplicate is ignored, got ${row3IgnoredWarnings.length}`,
+          );
+        }
+
+        const row3Errors = lintCalls.filter(
+          (call) => call.row === 3 && call.col === 2 && call.severity === "error",
+        );
+        if (row3Errors.length !== 0) {
+          throw new Error(`Expected no validation errors on ignored locale-code duplicate row 3, got ${row3Errors.length}`);
+        }
+
+        const row4IgnoredWarnings = lintCalls.filter(
+          (call) =>
+            call.row === 4 &&
+            call.col === 2 &&
+            call.severity === "warning" &&
+            call.message.includes('Duplicate metadata key "primaryLanguage"') &&
+            call.message.includes("this row is ignored"),
+        );
+        if (row4IgnoredWarnings.length !== 1) {
+          throw new Error(
+            `Expected row 4 duplicate warning indicating the invalid locale duplicate is ignored, got ${row4IgnoredWarnings.length}`,
+          );
+        }
+
+        const row4Errors = lintCalls.filter(
+          (call) => call.row === 4 && call.col === 2 && call.severity === "error",
+        );
+        if (row4Errors.length !== 0) {
+          throw new Error(`Expected no validation errors on ignored invalid duplicate row 4, got ${row4Errors.length}`);
+        }
+      },
+    );
+
+    console.log("PASS: Metadata primaryLanguage accepts locale codes and preserves duplicate-row semantics");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+function testIconDuplicateTrackingSkipsMalformedDataUris(): boolean {
+  console.log("=== testIconDuplicateTrackingSkipsMalformedDataUris ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Icons: [
+          ["ID", "SVG"],
+          ["duplicate-icon", "data:image/svg+xml,not-svg"],
+          ["duplicate-icon", "data:image/svg+xml;base64,@@@"],
+        ],
+      },
+      (lintCalls) => {
+        lintIconsSheet();
+
+        const duplicateIdErrors = lintCalls.filter(
+          (call) =>
+            call.col === 1 &&
+            call.severity === "error" &&
+            call.message.includes('Duplicate icon ID "duplicate-icon"'),
+        );
+        if (duplicateIdErrors.length !== 0) {
+          throw new Error(
+            `Expected malformed SVG data URIs to skip duplicate tracking, got ${duplicateIdErrors.length} duplicate error(s)` ,
+          );
+        }
+
+        const sourceErrors = lintCalls.filter(
+          (call) =>
+            (call.row === 2 || call.row === 3) &&
+            call.col === 2 &&
+            call.severity === "error" &&
+            call.message.includes("SVG data URI is malformed or does not decode to valid SVG content"),
+        );
+        if (sourceErrors.length !== 2) {
+          throw new Error(`Expected two malformed data URI errors, got ${sourceErrors.length}`);
+        }
+      },
+    );
+
+    console.log("PASS: Malformed SVG data URIs do not create duplicate icon ID lint");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+function testIconDuplicateTrackingSkipsInvalidDriveSources(): boolean {
+  console.log("=== testIconDuplicateTrackingSkipsInvalidDriveSources ===");
+
+  const globalScope = globalThis as any;
+  const originalDriveApp = globalScope.DriveApp;
+
+  try {
+    globalScope.DriveApp = {
+      getFileById(fileId: string): any {
+        if (fileId === "missing-file-id-1234567890123") {
+          throw new Error("File not found");
+        }
+        if (fileId === "png-file-id-1234567890123456") {
+          return {
+            getName(): string {
+              return "icon.png";
+            },
+            getMimeType(): string {
+              return "image/png";
+            },
+            getBlob(): any {
+              return {
+                getDataAsString(): string {
+                  return "PNG";
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`Unexpected Drive file ID ${fileId}`);
+      },
+    };
+
+    runWithMockedLintSpreadsheet(
+      {
+        Icons: [
+          ["ID", "SVG"],
+          ["drive-duplicate", "https://drive.google.com/file/d/missing-file-id-1234567890123/view"],
+          ["drive-duplicate", "https://drive.google.com/file/d/png-file-id-1234567890123456/view"],
+        ],
+      },
+      (lintCalls) => {
+        lintIconsSheet();
+
+        const duplicateIdErrors = lintCalls.filter(
+          (call) =>
+            call.col === 1 &&
+            call.severity === "error" &&
+            call.message.includes('Duplicate icon ID "drive-duplicate"'),
+        );
+        if (duplicateIdErrors.length !== 0) {
+          throw new Error(
+            `Expected invalid Drive icon sources to skip duplicate tracking, got ${duplicateIdErrors.length} duplicate error(s)`,
+          );
+        }
+
+        const inaccessibleErrors = lintCalls.filter(
+          (call) =>
+            call.row === 2 &&
+            call.col === 2 &&
+            call.severity === "error" &&
+            call.message.includes("Unable to access icon file (Drive ID missing-file-id-1234567890123)"),
+        );
+        if (inaccessibleErrors.length !== 1) {
+          throw new Error(`Expected one inaccessible Drive icon error, got ${inaccessibleErrors.length}`);
+        }
+
+        const nonSvgErrors = lintCalls.filter(
+          (call) =>
+            call.row === 3 &&
+            call.col === 2 &&
+            call.severity === "error" &&
+            call.message.includes("Google Drive icon file is not SVG"),
+        );
+        if (nonSvgErrors.length !== 1) {
+          throw new Error(`Expected one non-SVG Drive icon error, got ${nonSvgErrors.length}`);
+        }
+      },
+    );
+
+    console.log("PASS: Invalid Drive icon sources do not create duplicate icon ID lint");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  } finally {
+    globalScope.DriveApp = originalDriveApp;
   }
 }
 
@@ -1043,6 +1255,18 @@ function runLintParityTests(): void {
     {
       name: "Metadata Primary Language Duplicate Parity",
       fn: testMetadataPrimaryLanguageDuplicateParity,
+    },
+    {
+      name: "Metadata Primary Language Locale Code Parity",
+      fn: testMetadataPrimaryLanguageLocaleCodeParity,
+    },
+    {
+      name: "Icon Duplicate Tracking Skips Malformed Data URIs",
+      fn: testIconDuplicateTrackingSkipsMalformedDataUris,
+    },
+    {
+      name: "Icon Duplicate Tracking Skips Invalid Drive Sources",
+      fn: testIconDuplicateTrackingSkipsInvalidDriveSources,
     },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
   ];

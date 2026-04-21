@@ -427,7 +427,7 @@ function assertReadableVersion(version) {
 		throw new InvalidFileVersionError({ version })
 	}
 	if (
-		major > SUPPORTED_MAJOR_VERSION ||
+		major !== SUPPORTED_MAJOR_VERSION ||
 		(major === SUPPORTED_MAJOR_VERSION && minor > SUPPORTED_MINOR_VERSION)
 	) {
 		throw new UnsupportedFileVersionError({
