@@ -1253,11 +1253,26 @@ function checkUnreferencedDetails(): void {
       CATEGORY_COL.FIELDS;
     const fieldsColOneBased = fieldsColZeroBased + 1;
 
-    const categoryFields = categoriesSheet
-      .getRange(2, fieldsColOneBased, categoriesLastRow - 1, 1)
-      .getValues()
-      .map((row) => String(row[0] || ""))
-      .filter((fields) => fields.trim() !== "");
+    const fieldRange = categoriesSheet.getRange(
+      2,
+      fieldsColOneBased,
+      categoriesLastRow - 1,
+      1,
+    );
+    const displayFieldValues = fieldRange.getDisplayValues();
+    const rawFieldValues = fieldRange.getValues();
+    const categoryFields: string[] = [];
+    for (let i = 0; i < displayFieldValues.length; i++) {
+      const displayStr = String(displayFieldValues[i][0] || "");
+      const rawStr = String(rawFieldValues[i][0] || "");
+      // Mirror builder: prefer display value, fall back to raw
+      const tokens = normalizeFieldTokens(displayStr);
+      const value = tokens.length > 0 ? displayStr : rawStr;
+      const strValue = String(value || "");
+      if (strValue.trim() !== "") {
+        categoryFields.push(strValue);
+      }
+    }
 
     // Build set of all referenced field identifiers using normalizeFieldTokens
     const referencedFields = new Set<string>();
@@ -2637,12 +2652,12 @@ function checkCrossSheetIconCollisions(): void {
     );
     appendLintNote(
       iconsSheet.getRange(collision.iconRow, 1),
-      `Icon ID "${collision.iconId}" collides with a category-derived ID in Categories row ${collision.categoryRow}. The category icon takes priority — this Icons sheet entry will be merged.`,
+      `Icon ID "${collision.iconId}" collides with a category-derived ID in Categories row ${collision.categoryRow}. Entries will be merged — if this Icons sheet row provides SVG data, it may override the category icon.`,
       "warning",
     );
     appendLintNote(
       categoriesSheet.getRange(collision.categoryRow, 2),
-      `Category icon ID "${collision.categoryId}" collides with an Icons sheet entry in row ${collision.iconRow}. The category icon takes priority — the Icons sheet entry will be merged.`,
+      `Category icon ID "${collision.categoryId}" collides with an Icons sheet entry in row ${collision.iconRow}. Entries will be merged — if the Icons sheet entry provides SVG data, it may take priority over the category icon.`,
       "warning",
     );
   }
@@ -3743,13 +3758,11 @@ function normalizeMetadataPrimaryLanguageValue(value: string): string | null {
   const trimmedValue = value.trim();
   if (!trimmedValue) return null;
 
-  if (/^[a-z]{2,3}(-[a-z]{2,3})?$/i.test(trimmedValue)) {
-    return trimmedValue.toLowerCase();
-  }
-
-  const validation = validateLanguageName(trimmedValue);
-  if (validation.valid && validation.code) {
-    return validation.code;
+  // Use the shared resolver so lint accepts the same BCP-47 tags the builder does
+  // (e.g. zh-Hant, es-419) instead of a narrower ad-hoc pattern.
+  const resolved = resolvePrimaryLanguageInput(trimmedValue);
+  if (resolved?.code) {
+    return resolved.code;
   }
 
   return null;
