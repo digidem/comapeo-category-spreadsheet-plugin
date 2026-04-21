@@ -248,7 +248,7 @@ function setLintNote(
 }
 
 /**
- * Appends a lint note to a cell, preserving any existing [Lint]-prefixed note.
+ * Appends a lint note to a cell, preserving any existing note (user-authored or lint).
  * Uses the same severity-based styling as setLintNote but concatenates messages
  * when a note already exists, preventing overwrites from sequential lint passes.
  *
@@ -263,10 +263,7 @@ function appendLintNote(
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
 
-  if (
-    existingNote &&
-    existingNote.startsWith(LINT_NOTE_PREFIX)
-  ) {
+  if (existingNote) {
     cell.setNote(`${existingNote}\n${newMessage}`);
   } else {
     cell.setNote(newMessage);
@@ -366,10 +363,7 @@ function appendLintNotePreserveBackground(
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
 
-  if (
-    existingNote &&
-    existingNote.startsWith(LINT_NOTE_PREFIX)
-  ) {
+  if (existingNote) {
     cell.setNote(`${existingNote}\n${newMessage}`);
   } else {
     cell.setNote(newMessage);
@@ -2887,7 +2881,7 @@ function validateSheetConsistency(
       // Highlight the discrepancy in the translation sheet
       // Use cached translationRowCount instead of calling getLastRow() again
       if (translationRowCount > 0) {
-        setLintNote(
+        appendLintNote(
           translationSheet.getRange(1, 1),
           `Row count mismatch: source has ${sourceRowCount} rows, translation has ${translationRowCount} rows. Re-sync translation sheets before generating config.`,
           "warning",
@@ -3951,10 +3945,17 @@ function checkInlineSvgSizes(): void {
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) continue;
 
-    const values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+    // Read both column A (name/ID) and column B (icon source) so we can skip
+    // rows that the builder would also skip (no name for Categories, no ID for Icons).
+    const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
 
     for (let i = 0; i < values.length; i++) {
-      const value = String(values[i][0] || "").trim();
+      const rowKey = String(values[i][0] || "").trim();
+      // Mirror buildIconsFromSheet eligibility: skip rows without a name (Categories)
+      // or without an ID (Icons), just as the builder does.
+      if (!rowKey) continue;
+
+      const value = String(values[i][1] || "").trim();
       // Normalize icon source to extract inline SVG content for size checking.
       // parseIconSource() handles inline <svg>, data:image/svg+xml URIs, and
       // Drive URLs. Only measure sources that resolve to inline svgData.
@@ -4536,7 +4537,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
           "- Light yellow cells (#FFFFCC): Advisory guidance (blank type defaults, type clarity, plain-text icon workflow warnings, icon ID normalization)\n" +
           "- Red/orange text in icon columns: Missing icons, Drive access issues, HTTP URLs, plain-text workflow warnings\n" +
           "- Icons sheet issues: Missing/duplicate IDs, unsupported formats, cross-sheet collisions\n" +
-          "- Metadata validation: Unsafe characters in name/version/primaryLanguage\n\n" +
+          "- Metadata validation: Unsafe characters in name/primaryLanguage\n\n" +
           "IMPORTANT: Bright red cells will cause translation failures. Re-sync translation sheets before generating config.\n" +
           "TIP: For icons, paste inline SVG from https://icons.earthdefenderstoolkit.com for best results. Plain text still works (auto lookup), but is less accurate.",
         ui.ButtonSet.OK,

@@ -14,7 +14,7 @@
   - class CategoryRefError
   - class InvalidCategorySelectionError
   - class UnsupportedFileVersionError
-  - _...15 more_
+  - _...16 more_
 - `package/src/lib/parse-svg.js` — function parseSvg: (svg) => void
 - `package/src/lib/un-m49.js` — function normalizeUnM49ToIso31661Alpha2: (code) => void, const unM49
 - `package/src/lib/utils.js`

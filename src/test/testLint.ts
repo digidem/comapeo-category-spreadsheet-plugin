@@ -881,11 +881,11 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
             call.col === 2 &&
             call.severity === "warning" &&
             call.message.includes('Duplicate metadata key "primaryLanguage"') &&
-            call.message.includes("this row is ignored"),
+            call.message.includes("only used if all earlier primaryLanguage rows are blank"),
         );
         if (ignoredDuplicateWarnings.length !== 1) {
           throw new Error(
-            `Expected row 4 duplicate primaryLanguage warning to mark the row ignored, got ${ignoredDuplicateWarnings.length}`,
+            `Expected row 4 duplicate primaryLanguage warning describing builder fallback semantics, got ${ignoredDuplicateWarnings.length}`,
           );
         }
 
