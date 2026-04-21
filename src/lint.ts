@@ -1922,6 +1922,13 @@ function lintCategoriesSheet(): void {
     return;
   }
 
+  // Clear stale empty-sheet note from A1 (left by a previous run when the
+  // sheet was empty). The non-empty path only touches data rows, so A1
+  // would otherwise retain the old error. Mirror lintDetailsSheet() line 2073.
+  if (categoriesSheetRef) {
+    clearLintArtifacts(categoriesSheetRef.getRange(1, 1));
+  }
+
   // Phase 4: Validate primary language in A1 (only when sheet has data rows)
   validatePrimaryLanguageInA1();
 
