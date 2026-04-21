@@ -61,6 +61,8 @@ export class Writer extends EventEmitter {
 	#fields = new Map()
 	/** @type {Set<string>} */
 	#iconIds = new Set()
+	/** @type {Set<string>} */
+	#translationLocales = new Set()
 	/** @type {CategorySelectionOutput | undefined} */
 	#categorySelection = undefined
 	/** @type {MetadataOutput | undefined} */
@@ -140,6 +142,9 @@ export class Writer extends EventEmitter {
 		if (this.#finished) throw new AddAfterFinishError()
 		const parsedTranslations = v.parse(TranslationsSchema, translations)
 		const normalizedLang = validateBcp47(lang)
+		if (this.#translationLocales.has(normalizedLang)) {
+			throw new Error(`Duplicate translation locale: ${normalizedLang}. Each locale can only be added once.`)
+		}
 		const jsonString = JSON.stringify(parsedTranslations, null, 2)
 		const size = Buffer.byteLength(jsonString, 'utf-8')
 		if (size > MAX_JSON_SIZE) {
@@ -151,6 +156,7 @@ export class Writer extends EventEmitter {
 		await this.#append(jsonString, {
 			name: `${TRANSLATIONS_DIR}/${normalizedLang}.json`,
 		})
+		this.#translationLocales.add(normalizedLang)
 		this.#entryCount++
 		if (this.#entryCount > MAX_ENTRIES) {
 			throw new TooManyEntriesError()
@@ -170,6 +176,9 @@ export class Writer extends EventEmitter {
 			throw new IconSizeError({ iconId: id, size })
 		}
 		if (this.#finished) throw new AddAfterFinishError()
+		if (this.#iconIds.has(id)) {
+			throw new Error(`Duplicate icon ID: ${id}. Each icon can only be added once.`)
+		}
 		const parsedSvg = parseSvg(svg) // Validate SVG
 		await this.#append(parsedSvg, { name: `${ICONS_DIR}/${id}.svg` })
 		this.#iconIds.add(id)

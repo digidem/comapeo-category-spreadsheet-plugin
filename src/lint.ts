@@ -2364,13 +2364,6 @@ function lintIconsSheet(): void {
       continue;
     }
 
-    // Track for duplicate detection
-    if (!seenIds.has(iconId)) {
-      seenIds.set(iconId, [row]);
-    } else {
-      seenIds.get(iconId)?.push(row);
-    }
-
     // Check for missing icon source (col B)
     if (!iconSource) {
       setLintNote(
@@ -2391,6 +2384,15 @@ function lintIconsSheet(): void {
     const isHttpUrl = /^https?:\/\//i.test(iconSource);
     // Builder's isSvgUrl() requires the URL to contain ".svg"
     const isSvgHttpUrl = isHttpUrl && iconSource.toLowerCase().includes(".svg");
+
+    // Only track rows that have a recognized source format (mirrors builder's parseIconSource check)
+    if (isSvg || isDataUri || isDriveUrl || isSvgHttpUrl) {
+      if (!seenIds.has(iconId)) {
+        seenIds.set(iconId, [row]);
+      } else {
+        seenIds.get(iconId)?.push(row);
+      }
+    }
 
     if (isSvg) {
       // Inline SVG — check for basic structural validity
@@ -2628,13 +2630,13 @@ function checkCrossSheetIconCollisions(): void {
     );
     appendLintNote(
       iconsSheet.getRange(collision.iconRow, 1),
-      `Icon ID "${collision.iconId}" collides with a category-derived ID in Categories row ${collision.categoryRow}.`,
-      "error",
+      `Icon ID "${collision.iconId}" collides with a category-derived ID in Categories row ${collision.categoryRow}. The category icon takes priority — this Icons sheet entry will be merged.`,
+      "warning",
     );
     appendLintNote(
       categoriesSheet.getRange(collision.categoryRow, 2),
-      `Category icon ID "${collision.categoryId}" collides with an Icons sheet entry in row ${collision.iconRow}.`,
-      "error",
+      `Category icon ID "${collision.categoryId}" collides with an Icons sheet entry in row ${collision.iconRow}. The category icon takes priority — the Icons sheet entry will be merged.`,
+      "warning",
     );
   }
 }
@@ -3797,30 +3799,52 @@ function lintMetadataSheet(): void {
 
     if (trimmedKey === "primaryLanguage") {
       const cell = metadataSheet.getRange(row, 2);
-      if (isDuplicate) {
-        appendLintNote(
-          cell,
-          resolvedPrimaryLanguage
-            ? 'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence — this row is ignored.'
-            : 'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence, so this row is only used if all earlier primaryLanguage rows are blank.',
-          "warning",
-        );
-      }
       if (trimmedKey) seenKeys.add(trimmedKey);
       if (!trimmedValue) continue;
-      if (resolvedPrimaryLanguage) continue;
 
+      // Validate first, before deciding duplicate warning text
       const validation = validateLanguageName(trimmedValue);
-      if (!validation.valid) {
-        appendLintNote(
-          cell,
-          `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
-          "error",
-        );
-        // Don't set resolvedPrimaryLanguage — the builder scans until it finds a valid locale,
-        // so subsequent valid primaryLanguage rows should still be checked.
-        continue;
+      const isValid = validation.valid;
+
+      if (isDuplicate) {
+        if (resolvedPrimaryLanguage) {
+          // A valid primaryLanguage was already found - this row is definitely ignored
+          appendLintNote(
+            cell,
+            'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence — this row is ignored.',
+            "warning",
+          );
+        } else if (!isValid) {
+          // No valid primaryLanguage yet AND this one is also invalid - still a chance later rows are valid
+          appendLintNote(
+            cell,
+            `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+            "error",
+          );
+        } else {
+          // No valid primaryLanguage yet but this one IS valid - it becomes the effective one
+          appendLintNote(
+            cell,
+            'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence, so this row is only used if all earlier primaryLanguage rows are blank or invalid.',
+            "warning",
+          );
+        }
+        if (!isValid || resolvedPrimaryLanguage) continue;
+      } else {
+        if (!isValid) {
+          appendLintNote(
+            cell,
+            `Metadata primaryLanguage: "${trimmedValue}" is not a recognized language name. Use a display name (e.g. "English", "Português").`,
+            "error",
+          );
+          // Don't set resolvedPrimaryLanguage — the builder scans until it finds a valid locale,
+          // so subsequent valid primaryLanguage rows should still be checked.
+          continue;
+        }
       }
+
+      // If this is a valid duplicate with no prior valid resolution, it becomes
+      // the effective primaryLanguage — fall through to set resolvedPrimaryLanguage.
       resolvedPrimaryLanguage = true;
       continue;
     }

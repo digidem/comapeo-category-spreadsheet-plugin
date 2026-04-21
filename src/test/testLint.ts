@@ -231,7 +231,7 @@ function appendMockLintNote(
 ): void {
   const prefix = "[Lint] ";
   const newMessage = `${prefix}${message}`;
-  if (cellState.note.startsWith(prefix)) {
+  if (cellState.note) {
     cellState.note = `${cellState.note}\n${newMessage}`;
   } else {
     cellState.note = newMessage;
@@ -629,8 +629,8 @@ function testLintAppendAndClearSemantics(): boolean {
         manualCell.setBackground("#ABCDEF");
         manualCell.setFontColor("#123456");
         appendLintNote(manualCell, "Replaced lint note", "advisory");
-        if (manualCell.getNote() !== "[Lint] Replaced lint note") {
-          throw new Error("Non-lint notes should be replaced, not stacked");
+        if (manualCell.getNote() !== "Manual note\n[Lint] Replaced lint note") {
+          throw new Error(`Non-lint notes should be preserved on append, got: ${manualCell.getNote()}`);
         }
         if (manualCell.getBackground() !== "#FFFFCC") {
           throw new Error("Advisory append should apply lint advisory styling");
