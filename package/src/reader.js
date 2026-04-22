@@ -183,6 +183,11 @@ export class Reader {
 								cause: /** @type {Error} */ (cause),
 							})
 						}
+						if (entries.translations.has(normalizedLang)) {
+							throw new Error(
+								`Duplicate translation locale: ${normalizedLang} (from ${entry.filename}). Each locale can only appear once after BCP-47 normalization.`,
+							)
+						}
 						entries.translations.set(normalizedLang, entry)
 						continue
 					}

@@ -3950,6 +3950,31 @@ function lintMetadataSheet(): void {
       );
     }
 
+    // Detect case-only typos in metadata keys (e.g. "Name" instead of "name").
+    // The builder uses exact key matching, so a different case is silently ignored.
+    // Only flag when the key has no whitespace issues and doesn't match exactly.
+    const allRecognizedKeys = new Set([
+      ...EXACT_MATCH_KEYS,
+      "primaryLanguage",
+    ]);
+    const lowerTrimmedKey = trimmedKey.toLowerCase();
+    if (
+      trimmedKey &&
+      key === trimmedKey && // no whitespace issues (already checked above)
+      !allRecognizedKeys.has(trimmedKey) && // not an exact match
+      [...allRecognizedKeys].some((k) => k.toLowerCase() === lowerTrimmedKey) // matches when lowercased
+    ) {
+      const correctKey = [...allRecognizedKeys].find(
+        (k) => k.toLowerCase() === lowerTrimmedKey,
+      )!;
+      const cell = metadataSheet.getRange(row, 1);
+      appendLintNote(
+        cell,
+        `Metadata key "${key}" differs in casing from the recognized key "${correctKey}". The builder uses exact key matching and will not recognize this row — it will be silently ignored. Use exactly "${correctKey}".`,
+        "warning",
+      );
+    }
+
     // Flag duplicate keys as a warning — the builder uses only the first row.
     // Use exact key matching (same as builder) for non-primaryLanguage keys,
     // trimmed matching for primaryLanguage (builder resolves it differently).
