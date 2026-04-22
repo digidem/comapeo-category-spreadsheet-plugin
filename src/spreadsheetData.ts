@@ -395,11 +395,12 @@ function getAvailableTargetLanguages(): LanguageMap {
           const headerHasSubtag = headerCode.includes("-");
           let isPrimary = false;
           if (primaryCode) {
-            if (!primaryHasSubtag || !headerHasSubtag) {
-              // At least one is a base code — compare base parts
+            if (!primaryHasSubtag) {
+              // Primary is base code — any header with same base is primary
               isPrimary = headerBase === primaryBase;
             } else {
-              // Both have subtags — compare full codes
+              // Primary is locale — only exact match is primary
+              // (base-code headers and sibling locale variants are NOT primary)
               isPrimary = headerCode === primaryCode.toLowerCase();
             }
           }

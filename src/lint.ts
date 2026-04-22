@@ -1738,6 +1738,19 @@ function validateCategoryIcons(): void {
   const iconIdValues = hasIconIdColumn
     ? categoriesSheet.getRange(2, 6, lastRow - 1, 1).getValues()
     : [];
+  // Build a set of known icon IDs from the Icons sheet for validation
+  const knownIconIds = new Set<string>();
+  const iconsSheet = spreadsheet.getSheetByName("Icons");
+  if (iconsSheet) {
+    const iconsLastRow = iconsSheet.getLastRow();
+    if (iconsLastRow > 1) {
+      const iconsData = iconsSheet.getRange(2, 1, iconsLastRow - 1, 1).getValues();
+      for (const row of iconsData) {
+        const id = String(row[0] || "").trim();
+        if (id) knownIconIds.add(id.toLowerCase());
+      }
+    }
+  }
   const rowIssues = new Map<number, string[]>();
 
   const addIssue = (row: number, message: string): void => {
@@ -1761,9 +1774,19 @@ function validateCategoryIcons(): void {
     ) {
       // Check if this row has an Icon ID that the builder can resolve
       const iconId = iconIdValues[index]?.[0];
-      const hasResolvedIconId = iconId !== null && iconId !== undefined && String(iconId).trim() !== "";
-      if (hasResolvedIconId) {
-        // Builder resolves icon from Icons sheet via Icon ID — skip warning
+      const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
+      if (iconIdStr) {
+        if (knownIconIds.has(iconIdStr.toLowerCase())) {
+          // Builder resolves icon from Icons sheet via Icon ID — skip warning
+          return;
+        }
+        // Icon ID doesn't exist in Icons sheet — warn
+        const cell = categoriesSheet.getRange(rowNumber, 2);
+        setLintNote(
+          cell,
+          `Icon is empty and Icon ID "${iconIdStr}" was not found in the Icons sheet. The category will be exported without an icon.`,
+          "warning",
+        );
         return;
       }
       // Missing icon — warn (builder creates category without icon, not a hard error)
@@ -1781,9 +1804,19 @@ function validateCategoryIcons(): void {
       if (!iconValue) {
         // Check if this row has an Icon ID that the builder can resolve
         const iconId = iconIdValues[index]?.[0];
-        const hasResolvedIconId = iconId !== null && iconId !== undefined && String(iconId).trim() !== "";
-        if (hasResolvedIconId) {
-          // Builder resolves icon from Icons sheet via Icon ID — skip warning
+        const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
+        if (iconIdStr) {
+          if (knownIconIds.has(iconIdStr.toLowerCase())) {
+            // Builder resolves icon from Icons sheet via Icon ID — skip warning
+            return;
+          }
+          // Icon ID doesn't exist in Icons sheet — warn
+          const cell = categoriesSheet.getRange(rowNumber, 2);
+          setLintNote(
+            cell,
+            `Icon is empty and Icon ID "${iconIdStr}" was not found in the Icons sheet. The category will be exported without an icon.`,
+            "warning",
+          );
           return;
         }
         // Whitespace-only — treat as missing
@@ -1958,8 +1991,8 @@ function validatePrimaryLanguageInA1(): void {
   if (!validation.valid) {
     setLintNote(
       cell,
-      `Invalid primary language in A1: ${validation.error || "Unknown error"}`,
-      "error",
+      `Invalid primary language in A1: ${validation.error || "Unknown error"}. The builder will fall back to Metadata primaryLanguage or default to "en".`,
+      "warning",
     );
   }
 }
@@ -2479,8 +2512,8 @@ function lintIconsSheet(): void {
       if (!iconSource.includes("</svg>") && !iconSource.trim().endsWith("/>")) {
         setLintNote(
           iconsSheet.getRange(row, 2),
-          'Inline SVG markup appears incomplete (missing closing tag). This icon will be dropped during config generation.',
-          "error",
+          'Inline SVG markup appears incomplete (missing closing tag). The builder will include this icon as-is, but malformed SVG may cause rendering issues in CoMapeo.',
+          "warning",
         );
       }
     } else if (isDataUri) {
