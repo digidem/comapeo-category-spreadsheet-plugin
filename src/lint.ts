@@ -1368,8 +1368,9 @@ function validateUniversalFlag(
 }
 
 /**
- * Optional check for duplicate slugs in translation sheets.
- * Not invoked by default because duplicate translation values are allowed.
+ * Check for duplicate slugs in translation sheets.
+ * Warns when two different translated values produce the same slug,
+ * which would cause silent overwrites during config generation.
  */
 function checkDuplicateTranslationSlugs(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -2883,6 +2884,9 @@ function lintTranslationSheets(): void {
 
   // Phase 4: Warn on source-value slug collisions that cause silent overwrites
   checkTranslationSourceOverwrites();
+
+  // Phase 4 (continued): Warn on duplicate translated-value slugs per column
+  checkDuplicateTranslationSlugs();
 }
 
 /**

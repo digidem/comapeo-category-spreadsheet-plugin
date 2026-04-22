@@ -15,6 +15,7 @@ import {
 import { SchemaError } from '../../src/lib/errors.js'
 import { parseSvg } from '../../src/lib/parse-svg.js'
 import { isNotFoundError } from '../../src/lib/utils.js'
+import { validateBcp47 } from '../../src/lib/validate-bcp-47.js'
 import {
 	CategorySchema,
 	CategorySchemaDeprecatedSort,
@@ -107,6 +108,7 @@ export async function* readFiles(dir) {
 		recursive: false,
 	})) {
 		assertSchema(MessagesSchema, data, { fileName: name })
+		validateBcp47(nameToId(name))
 		yield { type: 'messages', id: nameToId(name), value: data }
 	}
 

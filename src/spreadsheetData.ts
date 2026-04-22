@@ -405,7 +405,15 @@ function getAvailableTargetLanguages(): LanguageMap {
             }
           }
           if (!isPrimary) {
-            targetLanguages[iso.toLowerCase()] = name;
+            // Use headerCode (already lowercase from resolver) as the key to
+            // avoid creating duplicate entries when the canonical list already
+            // has this locale (e.g. "zh-CN" canonical vs "zh-cn" lowercase).
+            const existingKey = Object.keys(targetLanguages).find(
+              (k) => k.toLowerCase() === headerCode.toLowerCase(),
+            );
+            if (!existingKey) {
+              targetLanguages[headerCode] = name;
+            }
           }
         }
       });
