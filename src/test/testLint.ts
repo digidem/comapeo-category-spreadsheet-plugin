@@ -210,7 +210,11 @@ function appendMockLintStyle(
 
   switch (severity) {
     case "error":
-      setMockLintStyle(cellState, "error");
+      // Preserve #FF0000 critical-mismatch styling — mirrors production
+      // appendLintNote() which skips background/font changes for #FF0000 cells.
+      if ((cellState.background || "").toUpperCase() !== "#FF0000") {
+        setMockLintStyle(cellState, "error");
+      }
       break;
     case "warning":
       if (currentRank < 3) {

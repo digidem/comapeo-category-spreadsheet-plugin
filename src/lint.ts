@@ -1135,6 +1135,7 @@ function checkForDuplicates(
   sheet: GoogleAppsScript.Spreadsheet.Sheet,
   columnIndex: number,
   startRow: number = 2,
+  preserveBackground: boolean = false,
 ): void {
   const lastRow = sheet.getLastRow();
   if (lastRow <= startRow) return;
@@ -1169,11 +1170,22 @@ function checkForDuplicates(
       );
       const otherRowsStr = rows.join(", ");
       for (const row of rows) {
-        setLintNote(
-          sheet.getRange(row, columnIndex),
-          `Duplicate value "${value}" found in rows: ${otherRowsStr}`,
-          "error",
-        );
+        const cell = sheet.getRange(row, columnIndex);
+        if (preserveBackground) {
+          // Use preserve-background variant to avoid overwriting user-managed
+          // colors (e.g., Categories column A category colors read by builder).
+          setLintNotePreserveBackground(
+            cell,
+            `Duplicate value "${value}" found in rows: ${otherRowsStr}`,
+            "error",
+          );
+        } else {
+          setLintNote(
+            cell,
+            `Duplicate value "${value}" found in rows: ${otherRowsStr}`,
+            "error",
+          );
+        }
       }
     }
   });
@@ -1565,8 +1577,10 @@ function lintSheet(
     console.timeEnd(`Cleaning whitespace cells for ${sheetName}`);
 
     // Check for duplicates in the first column (usually the name/identifier column)
+    // Preserve background for columns in preserveBackgroundColumns (e.g., Categories
+    // column A has user-managed category colors that the builder reads at export time).
     console.time(`Checking for duplicates in ${sheetName}`);
-    checkForDuplicates(sheet, 1);
+    checkForDuplicates(sheet, 1, 2, preserveBackgroundColumns.includes(0));
     console.timeEnd(`Checking for duplicates in ${sheetName}`);
 
     console.time(`Getting data for ${sheetName}`);
