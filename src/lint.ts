@@ -786,7 +786,7 @@ function validateAppliesColumn(): void {
     // This catches cases like "track; observation" where the semicolon causes the
     // builder to see "track; observation" as a single token → only "track" is kept
     // and "observation" is silently dropped.
-    if (/[;\n•·，、]/.test(rawValue)) {
+    if (/[;；\n•·，、]/.test(rawValue)) {
       const cell = categoriesSheet.getRange(row, appliesColIndex);
       appendLintNote(
         cell,
@@ -3935,14 +3935,6 @@ function lintMetadataSheet(): void {
             'Duplicate metadata key "primaryLanguage". The builder uses the first valid occurrence — this row is ignored.',
             "warning",
           );
-          // Still flag invalid values even on duplicates
-          if (!isValid) {
-            appendLintNote(
-              cell,
-              getMetadataPrimaryLanguageLintMessage(trimmedValue),
-              "error",
-            );
-          }
         } else if (!isValid) {
           // No prior non-empty primaryLanguage AND this one is invalid — still a
           // chance later rows could be valid (builder would skip this invalid value).
