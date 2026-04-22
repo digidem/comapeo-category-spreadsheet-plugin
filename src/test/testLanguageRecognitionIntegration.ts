@@ -441,8 +441,8 @@ function testLanguageRecognitionIntegration(): void {
     }
 
     const localeTag = resolvePrimaryLanguageInput("pt-BR");
-    if (!localeTag || localeTag.code !== "pt-br" || localeTag.comparisonCode !== "pt") {
-      throw new Error("Expected pt-BR to resolve to runtime pt-br and comparison pt");
+    if (!localeTag || localeTag.code !== "pt-br" || localeTag.comparisonCode !== "pt-br") {
+      throw new Error("Expected pt-BR to resolve to runtime pt-br and comparison pt-br (full locale preserved)");
     }
 
     const canonicalLocaleTag = resolvePrimaryLanguageInput("zh-CN");

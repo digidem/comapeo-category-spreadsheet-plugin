@@ -92,12 +92,17 @@ function filterLanguagesByPrimary(
   }
 
   const primaryCode = resolvedPrimaryLanguage.comparisonCode;
+  // comparisonCode may be a full locale (e.g. "pt-br") when the user
+  // entered a locale tag.  The allLanguages map mixes base codes ("pt")
+  // and locale codes ("zh-CN"), so compare base parts on both sides.
+  const primaryBase = primaryCode.split("-")[0].toLowerCase();
 
-  // Filter by comparing language codes, not names
+  // Filter by comparing language base codes, not names
   return Object.entries(allLanguages)
-    .filter(([code, _]) =>
-      includePrimary ? code === primaryCode : code !== primaryCode,
-    )
+    .filter(([code, _]) => {
+      const langBase = code.split("-")[0].toLowerCase();
+      return includePrimary ? langBase === primaryBase : langBase !== primaryBase;
+    })
     .reduce(
       (acc, [code, name]) => {
         acc[code as LanguageCode] = name;
@@ -322,8 +327,6 @@ function getAvailableTargetLanguages(): LanguageMap {
   const allLanguages = getAllLanguages();
 
   // Resolve primary language to a comparison code for consistent matching.
-  // This ensures that locale tags like "pt-BR" are correctly matched against
-  // custom headers like "Portuguese - pt" (both resolve to base code "pt").
   const resolvedPrimary = resolvePrimaryLanguageInput(primaryLanguage);
   const primaryCode = resolvedPrimary ? resolvedPrimary.comparisonCode : null;
 
@@ -349,15 +352,32 @@ function getAvailableTargetLanguages(): LanguageMap {
           const [name, iso] = header.split(" - ");
           if (!name || !iso) return;
           // Resolve the header ISO through the same resolver used for the
-          // primary language, so locale tags like "pt-br" are normalised to
-          // the same base code ("pt") that comparisonCode returns.
-          // Falls back to lowercased raw ISO when the resolver doesn't
-          // recognise the tag.
+          // primary language.  comparisonCode now preserves full locale
+          // codes (e.g. "pt-br") so distinct variants are not collapsed.
           const resolvedHeader = resolvePrimaryLanguageInput(iso.trim());
-          const headerComparisonCode = resolvedHeader
+          const headerCode = resolvedHeader
             ? resolvedHeader.comparisonCode.toLowerCase()
             : iso.trim().toLowerCase();
-          const isPrimary = primaryCode && headerComparisonCode === primaryCode.toLowerCase();
+          // Compare using base-code matching: if either side is a base
+          // code (no subtag), match against the other's base part so that
+          // "Portuguese" (pt) excludes "Portuguese - pt-BR" (pt-br).
+          // When both have subtags, compare full codes so pt-BR ≠ pt-PT.
+          const primaryBase = primaryCode?.split("-")[0].toLowerCase();
+          const headerBase = headerCode.split("-")[0];
+          const primaryHasSubtag = primaryCode
+            ? primaryCode.includes("-")
+            : false;
+          const headerHasSubtag = headerCode.includes("-");
+          let isPrimary = false;
+          if (primaryCode) {
+            if (!primaryHasSubtag || !headerHasSubtag) {
+              // At least one is a base code — compare base parts
+              isPrimary = headerBase === primaryBase;
+            } else {
+              // Both have subtags — compare full codes
+              isPrimary = headerCode === primaryCode.toLowerCase();
+            }
+          }
           if (!isPrimary) {
             targetLanguages[iso.toLowerCase()] = name;
           }

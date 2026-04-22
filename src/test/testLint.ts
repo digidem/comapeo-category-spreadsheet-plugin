@@ -301,7 +301,15 @@ function runWithMockedLintSpreadsheet(
     numRows: number,
     numCols: number,
   ): any => {
+    const emptyCell: MockCellState = { value: "", note: "", background: null, fontColor: null };
+
     const getCell = (rowOffset: number, colOffset: number): MockCellState => {
+      // Production GAS getDataRange() returns a 1x1 range with an empty
+      // cell even on a sheet with zero rows.  Mirror that behaviour so
+      // callers don't get a spurious mock throw on empty sheets.
+      if (sheetState.cells.length === 0) {
+        return emptyCell;
+      }
       if (!sheetState.cells[row - 1 + rowOffset]) {
         throw new Error(`Mock sheet row ${row + rowOffset} is missing`);
       }

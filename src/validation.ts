@@ -229,7 +229,10 @@ function normalizePrimaryLanguageLocaleCode(
     return null;
   }
 
-  const localePattern = /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i;
+  // Mirror the builder's normalizeLocaleInput pattern which only accepts
+  // letter-only subtags and at most one subtag (e.g. "pt-BR", "zh-CN").
+  // Rejects numeric subtags like "es-419" that the builder would reject.
+  const localePattern = /^[a-z]{2,3}(-[a-z]{2,3})?$/i;
   if (!localePattern.test(trimmed)) {
     return null;
   }
@@ -270,8 +273,10 @@ function resolvePrimaryLanguageInput(
     return null;
   }
 
-  const baseLanguageToken = localeCode.split("-")[0];
-  const comparisonCode = lookup.getCanonicalCode(baseLanguageToken) || localeCode;
+  // Preserve the full locale code (e.g. "pt-br", "zh-cn") so that
+  // callers can distinguish between locale variants (pt-BR vs pt-PT).
+  // Callers that need base-code matching can split on "-" themselves.
+  const comparisonCode = localeCode;
 
   return {
     code: localeCode,
