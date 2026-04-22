@@ -1242,6 +1242,49 @@ function testBuildCategoriesRequiresObservationCoverage(): boolean {
   }
 }
 
+function testBuildCategoriesRequiresTrackCoverage(): boolean {
+  console.log("=== Test: Build Categories Requires Track Coverage ===");
+
+  // Reset mutable global so prior tests don't leak state.
+  if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined") {
+    AUTO_CREATED_APPLIES_COLUMN = false;
+  }
+
+  try {
+    const testData: SheetData = {
+      documentName: "Track Coverage" as any,
+      Categories: [
+        ["Name", "Icon", "Fields", "Applies", "Category ID", "Icon ID"],
+        ["Observation One", "", "field-a", "observation", "obs-one", "obs-one"],
+      ],
+      Details: [
+        ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
+        ["Field A", "Helper", "t", "", "field-a", "FALSE"],
+      ],
+    } as SheetData;
+
+    const fields = buildFields(testData);
+
+    try {
+      buildCategories(testData, fields);
+      console.error("FAIL: buildCategories should reject sheets without track coverage");
+      return false;
+    } catch (error) {
+      const message = String((error as Error).message || error);
+      if (!message.includes("track")) {
+        console.error(`FAIL: Unexpected builder error for missing track coverage: ${message}`);
+        return false;
+      }
+    }
+
+    console.log("PASS: Builder rejects all-observation Categories sheets with no track coverage");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + (error as Error).message);
+    return false;
+  }
+}
+
 
 // =============================================================================
 // Round-Trip Integration Tests
@@ -2164,6 +2207,7 @@ function runBuildAndImportTests(): void {
     { name: "Universal Fields Added to All Categories", fn: testUniversalFieldsAddedToAllCategories },
     { name: "Universal Field Does Not Set Required", fn: testUniversalFieldDoesNotSetRequired },
     { name: "Build Categories Requires Observation Coverage", fn: testBuildCategoriesRequiresObservationCoverage },
+    { name: "Build Categories Requires Track Coverage", fn: testBuildCategoriesRequiresTrackCoverage },
     { name: "Categories Applies Parsing", fn: testCategoriesAppliesParsing },
 
     // Round-trip integration tests

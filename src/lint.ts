@@ -769,10 +769,26 @@ function validateAppliesColumn(): void {
     }
 
     // Parse tokens: split by comma, trim, lowercase
+    // Mirror builder's parseTokens() which ONLY splits by comma — semicolons,
+    // newlines, and other delimiters are NOT recognized in the Applies column
+    // (unlike the Fields column which uses normalizeFieldTokens with broader parsing).
     const tokens = rawValue
       .split(",")
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
+
+    // Warn if the raw value contains non-comma delimiters that the builder ignores.
+    // This catches cases like "track; observation" where the semicolon causes the
+    // builder to see "track; observation" as a single token → only "track" is kept
+    // and "observation" is silently dropped.
+    if (/[;\n•·，]/.test(rawValue)) {
+      const cell = categoriesSheet.getRange(row, appliesColIndex);
+      appendLintNote(
+        cell,
+        'Applies value contains semicolons or other non-comma delimiters. The builder only recognizes commas — use "observation, track" instead of "observation; track". Other delimiters cause tokens to be silently merged and potentially dropped.',
+        "warning",
+      );
+    }
 
     const normalizedTokens = tokens
       .map((token) => {

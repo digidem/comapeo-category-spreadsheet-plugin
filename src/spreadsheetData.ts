@@ -321,6 +321,12 @@ function getAvailableTargetLanguages(): LanguageMap {
   const primaryLanguage = getPrimaryLanguageName();
   const allLanguages = getAllLanguages();
 
+  // Resolve primary language to a comparison code for consistent matching.
+  // This ensures that locale tags like "pt-BR" are correctly matched against
+  // custom headers like "Portuguese - pt" (both resolve to base code "pt").
+  const resolvedPrimary = resolvePrimaryLanguageInput(primaryLanguage);
+  const primaryCode = resolvedPrimary ? resolvedPrimary.comparisonCode : null;
+
   // Get all languages except the primary one
   const targetLanguages = filterLanguagesByPrimary(allLanguages, false);
 
@@ -341,7 +347,12 @@ function getAvailableTargetLanguages(): LanguageMap {
       headers.forEach((header, index) => {
         if (index > 2 && header && typeof header === "string" && header.includes(" - ")) {
           const [name, iso] = header.split(" - ");
-          if (name && iso && name !== primaryLanguage) {
+          // Compare by resolved language code, not raw name string.
+          // This prevents a custom header like "Portuguese - pt" from being
+          // re-added after filterLanguagesByPrimary already excluded "pt".
+          const headerIsoLower = iso?.toLowerCase();
+          const isPrimary = primaryCode && headerIsoLower === primaryCode;
+          if (name && iso && !isPrimary) {
             targetLanguages[iso.toLowerCase()] = name;
           }
         }
