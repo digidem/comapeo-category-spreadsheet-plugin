@@ -2,9 +2,9 @@
 
 > **Stack:** raw-http | none | unknown | typescript
 
-> 0 routes | 0 models | 0 components | 17 lib files | 0 env vars | 6 middleware
-> **Token savings:** this file is ~0 tokens. Without it, AI exploration would cost ~0 tokens. **Saves ~0 tokens per conversation.**
-> **Last scanned:** 2026-04-21 07:51 — re-run after significant changes
+> 0 routes | 0 models | 0 components | 17 lib files | 0 env vars | 6 middleware | 0% test coverage
+> **Token savings:** this file is ~1.900 tokens. Without it, AI exploration would cost ~15.100 tokens. **Saves ~13.200 tokens per conversation.**
+> **Last scanned:** 2026-04-21 22:30 — re-run after significant changes
 
 ---
 
@@ -115,6 +115,13 @@
 - `package/src/schema/translations.js` ← `package/bin/helpers/messages-to-translations.js`, `package/src/reader.js`, `package/src/reader.js`, `package/src/writer.js`, `package/src/writer.js`
 - `package/src/lib/validate-bcp-47.js` ← `package/bin/comapeocat-build.mjs`, `package/src/reader.js`, `package/src/writer.js`
 - `package/bin/helpers/read-files.js` ← `package/bin/comapeocat-build.mjs`, `package/bin/comapeocat-messages.mjs`, `package/bin/helpers/lint.js`
+
+---
+
+# Test Coverage
+
+> **0%** of routes and models are covered by tests
+> 24 test files found
 
 ---
 

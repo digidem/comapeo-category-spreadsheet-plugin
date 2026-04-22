@@ -2919,6 +2919,14 @@ function validateSheetConsistency(
           `Source has ${sourceRowCount} rows, translation has ${translationRowCount} rows`,
       );
 
+      // Clear any stale row-count mismatch note from a prior lint run to prevent
+      // duplicate accumulation (the background/font clear above only covers dataRange,
+      // rows 2+, so A1 is excluded and the note would persist indefinitely).
+      clearRangeLintNoteLinesWithPrefix(
+        translationSheet.getRange(1, 1),
+        `${LINT_NOTE_PREFIX}Row count mismatch:`,
+      );
+
       // Highlight the discrepancy in the translation sheet
       // Use cached translationRowCount instead of calling getLastRow() again
       if (translationRowCount > 0) {
@@ -3817,6 +3825,11 @@ function lintMetadataSheet(): void {
   // (e.g. "PrimaryLanguage" vs "primaryLanguage" are distinct to the builder).
   const seenKeys = new Set<string>();
   let resolvedPrimaryLanguage = false;
+  // Track whether any non-empty primaryLanguage has been seen, even if invalid.
+  // The builder's getPrimaryLanguageName() returns the first non-empty value
+  // regardless of validity, so a later valid duplicate is still ignored if an
+  // earlier non-empty (but invalid) row exists.
+  let seenNonEmptyPrimaryLanguage = false;
 
   // Keys the builder looks up with exact equality (no trim). If a cell
   // contains " name " the builder will NOT match it and will silently
@@ -3863,34 +3876,52 @@ function lintMetadataSheet(): void {
       if (trimmedKey) seenKeys.add(trimmedKey);
       if (!trimmedValue) continue;
 
+      // Track that a non-empty primaryLanguage has been seen — the builder's
+      // getPrimaryLanguageName() returns the first non-empty value regardless
+      // of validity, so any later rows are always ignored.
+      // (trimmedValue is guaranteed non-empty here due to the continue above.)
+      const wasPriorNonEmpty = seenNonEmptyPrimaryLanguage;
+      seenNonEmptyPrimaryLanguage = true;
+
       // Mirror buildLocales(): accept recognized display names and ISO-style locale tokens.
       const normalizedPrimaryLanguage = normalizeMetadataPrimaryLanguageValue(trimmedValue);
       const isValid = normalizedPrimaryLanguage !== null;
 
       if (isDuplicate) {
-        if (resolvedPrimaryLanguage) {
-          // A valid primaryLanguage was already found - this row is definitely ignored
+        if (resolvedPrimaryLanguage || wasPriorNonEmpty) {
+          // A valid or non-empty primaryLanguage was already found — the builder
+          // uses the first non-empty occurrence, so this row is definitely ignored.
           appendLintNote(
             cell,
             'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence — this row is ignored.',
             "warning",
           );
+          // Still flag invalid values even on duplicates
+          if (!isValid) {
+            appendLintNote(
+              cell,
+              getMetadataPrimaryLanguageLintMessage(trimmedValue),
+              "error",
+            );
+          }
         } else if (!isValid) {
-          // No valid primaryLanguage yet AND this one is also invalid - still a chance later rows are valid
+          // No prior non-empty primaryLanguage AND this one is invalid — still a
+          // chance later rows could be valid (builder would skip this invalid value).
           appendLintNote(
             cell,
             getMetadataPrimaryLanguageLintMessage(trimmedValue),
             "error",
           );
         } else {
-          // No valid primaryLanguage yet but this one IS valid - it becomes the effective one
+          // No prior non-empty primaryLanguage and this one IS valid — it would
+          // become the effective value if no earlier row claimed it.
           appendLintNote(
             cell,
             'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence, so this row is only used if all earlier primaryLanguage rows are blank or invalid.',
             "warning",
           );
         }
-        if (!isValid || resolvedPrimaryLanguage) continue;
+        if (!isValid || resolvedPrimaryLanguage || wasPriorNonEmpty) continue;
       } else {
         if (!isValid) {
           appendLintNote(
@@ -3947,6 +3978,15 @@ function lintMetadataSheet(): void {
     if (key === "version") {
       const cell = metadataSheet.getRange(row, 2);
       if (value) {
+        // Check for unsafe characters (slashes, backslashes, ellipses) that will
+        // fail strict validation at build time — same check as "name" above.
+        if (STRICT_UNSAFE_PATTERN.test(value)) {
+          appendLintNote(
+            cell,
+            `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
+            "error",
+          );
+        }
         // Only advise when the value doesn't match the auto-generated yy.MM.dd pattern
         const looksLikeAutoDate = /^\d{2}\.\d{2}\.\d{2}$/.test(value.trim());
         if (!looksLikeAutoDate) {
