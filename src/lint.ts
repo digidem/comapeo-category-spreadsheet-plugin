@@ -1911,8 +1911,8 @@ function validatePrimaryLanguageInA1(): void {
   if (!a1Value) {
     setLintNote(
       cell,
-      'Categories A1 is blank and no Metadata primaryLanguage is set. Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
-      "error",
+      'Categories A1 is blank and no Metadata primaryLanguage is set. The builder will default to "en" (English). Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
+      "warning",
     );
     return;
   }
