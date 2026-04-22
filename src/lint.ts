@@ -781,7 +781,7 @@ function validateAppliesColumn(): void {
     // This catches cases like "track; observation" where the semicolon causes the
     // builder to see "track; observation" as a single token → only "track" is kept
     // and "observation" is silently dropped.
-    if (/[;\n•·，]/.test(rawValue)) {
+    if (/[;\n•·，、]/.test(rawValue)) {
       const cell = categoriesSheet.getRange(row, appliesColIndex);
       appendLintNote(
         cell,
@@ -3994,16 +3994,10 @@ function lintMetadataSheet(): void {
     if (key === "version") {
       const cell = metadataSheet.getRange(row, 2);
       if (value) {
-        // Check for unsafe characters (slashes, backslashes, ellipses) that will
-        // fail strict validation at build time — same check as "name" above.
-        if (STRICT_UNSAFE_PATTERN.test(value)) {
-          appendLintNote(
-            cell,
-            `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
-            "error",
-          );
-        }
-        // Only advise when the value doesn't match the auto-generated yy.MM.dd pattern
+        // The builder always overwrites version with today's date (yy.MM.dd),
+        // so unsafe-character checks are unnecessary — any slashes/backslashes
+        // in the user's value are replaced before config generation.
+        // Only advise when the value doesn't match the auto-generated pattern.
         const looksLikeAutoDate = /^\d{2}\.\d{2}\.\d{2}$/.test(value.trim());
         if (!looksLikeAutoDate) {
           appendLintNote(

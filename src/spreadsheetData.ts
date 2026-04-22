@@ -347,12 +347,18 @@ function getAvailableTargetLanguages(): LanguageMap {
       headers.forEach((header, index) => {
         if (index > 2 && header && typeof header === "string" && header.includes(" - ")) {
           const [name, iso] = header.split(" - ");
-          // Compare by resolved language code, not raw name string.
-          // This prevents a custom header like "Portuguese - pt" from being
-          // re-added after filterLanguagesByPrimary already excluded "pt".
-          const headerIsoLower = iso?.toLowerCase();
-          const isPrimary = primaryCode && headerIsoLower === primaryCode;
-          if (name && iso && !isPrimary) {
+          if (!name || !iso) return;
+          // Resolve the header ISO through the same resolver used for the
+          // primary language, so locale tags like "pt-br" are normalised to
+          // the same base code ("pt") that comparisonCode returns.
+          // Falls back to lowercased raw ISO when the resolver doesn't
+          // recognise the tag.
+          const resolvedHeader = resolvePrimaryLanguageInput(iso.trim());
+          const headerComparisonCode = resolvedHeader
+            ? resolvedHeader.comparisonCode.toLowerCase()
+            : iso.trim().toLowerCase();
+          const isPrimary = primaryCode && headerComparisonCode === primaryCode.toLowerCase();
+          if (!isPrimary) {
             targetLanguages[iso.toLowerCase()] = name;
           }
         }
