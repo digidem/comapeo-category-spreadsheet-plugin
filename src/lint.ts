@@ -1732,6 +1732,12 @@ function validateCategoryIcons(): void {
   clearLintArtifacts(iconRange);
 
   const iconValues = iconRange.getValues();
+  // Also read Icon ID column (column F, 1-based index 6) if present
+  const lastCol = categoriesSheet.getLastColumn();
+  const hasIconIdColumn = lastCol >= 6;
+  const iconIdValues = hasIconIdColumn
+    ? categoriesSheet.getRange(2, 6, lastRow - 1, 1).getValues()
+    : [];
   const rowIssues = new Map<number, string[]>();
 
   const addIssue = (row: number, message: string): void => {
@@ -1753,11 +1759,18 @@ function validateCategoryIcons(): void {
       iconCellValue === undefined ||
       iconCellValue === ""
     ) {
+      // Check if this row has an Icon ID that the builder can resolve
+      const iconId = iconIdValues[index]?.[0];
+      const hasResolvedIconId = iconId !== null && iconId !== undefined && String(iconId).trim() !== "";
+      if (hasResolvedIconId) {
+        // Builder resolves icon from Icons sheet via Icon ID — skip warning
+        return;
+      }
       // Missing icon — warn (builder creates category without icon, not a hard error)
       const cell = categoriesSheet.getRange(rowNumber, 2);
       setLintNote(
         cell,
-        "Icon is empty — the category will be exported without an icon. If an Icon ID column is present, the builder may still resolve an icon from the Icons sheet.",
+        "Icon is empty — the category will be exported without an icon. Add an icon here or provide an Icon ID that resolves from the Icons sheet.",
         "warning",
       );
       return;
@@ -1766,11 +1779,18 @@ function validateCategoryIcons(): void {
     if (typeof iconCellValue === "string") {
       const iconValue = iconCellValue.trim();
       if (!iconValue) {
+        // Check if this row has an Icon ID that the builder can resolve
+        const iconId = iconIdValues[index]?.[0];
+        const hasResolvedIconId = iconId !== null && iconId !== undefined && String(iconId).trim() !== "";
+        if (hasResolvedIconId) {
+          // Builder resolves icon from Icons sheet via Icon ID — skip warning
+          return;
+        }
         // Whitespace-only — treat as missing
         const cell = categoriesSheet.getRange(rowNumber, 2);
         setLintNote(
           cell,
-          "Icon is empty — the category will be exported without an icon. If an Icon ID column is present, the builder may still resolve an icon from the Icons sheet.",
+          "Icon is empty — the category will be exported without an icon. Add an icon here or provide an Icon ID that resolves from the Icons sheet.",
           "warning",
         );
         return;

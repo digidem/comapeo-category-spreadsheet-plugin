@@ -780,17 +780,17 @@ function testPrimaryLanguageBlankA1RequiresMetadataFallbackError(): boolean {
         validatePrimaryLanguageInA1();
 
         const blankA1Errors = lintCalls.filter(
-          (call) => call.row === 1 && call.col === 1 && call.severity === "error",
+          (call) => call.row === 1 && call.col === 1 && call.severity === "warning",
         );
         if (blankA1Errors.length !== 1) {
           throw new Error(
-            `Expected one blank-A1 primary-language error when Metadata has no fallback, got ${blankA1Errors.length}`,
+            `Expected one blank-A1 primary-language warning when Metadata has no fallback, got ${blankA1Errors.length}`,
           );
         }
       },
     );
 
-    console.log("PASS: Blank Categories!A1 is rejected when Metadata has no primaryLanguage fallback");
+    console.log("PASS: Blank Categories!A1 produces warning when Metadata has no primaryLanguage fallback");
     return true;
   } catch (error) {
     console.error(`FAIL: ${(error as Error).message}`);

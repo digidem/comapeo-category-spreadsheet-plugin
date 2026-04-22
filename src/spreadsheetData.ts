@@ -123,11 +123,10 @@ function filterLanguagesByPrimary(
         // Primary is base code — exclude all with same base
         return !matchesBase;
       }
-      // Primary is locale — exclude exact match and base-code-only,
-      // keep sibling locale variants
+      // Primary is locale — exclude only the exact match,
+      // keep base code and sibling locale variants
       if (!matchesBase) return true;
-      if (!langHasSubtag) return false; // base code excluded
-      return codeLower !== primaryCode.toLowerCase(); // keep siblings
+      return codeLower !== primaryCode.toLowerCase(); // keep base code and siblings
     })
     .reduce(
       (acc, [code, name]) => {
