@@ -744,7 +744,6 @@ function validateAppliesColumn(): void {
   ).getValues();
   let hasObservation = false;
   let hasTrack = false;
-  let realCategoryIndex = 0;
 
   for (let i = 0; i < appliesValues.length; i++) {
     const rawValue = appliesValues[i][0] == null ? "" : String(appliesValues[i][0]).trim();
@@ -757,9 +756,9 @@ function validateAppliesColumn(): void {
 
     if (!rawValue) {
       // Blank Applies cells: mirror builder semantics.
-      // When AUTO_CREATED_APPLIES_COLUMN && index === 0, the builder defaults
-      // to [track, observation]; otherwise just [observation].
-      const isFirstCategory = realCategoryIndex === 0;
+      // The builder uses the physical array index (not a skip-blank counter)
+      // for the AUTO_CREATED_APPLIES_COLUMN && index === 0 check.
+      const isFirstCategory = i === 0;
       const isAutoCreated =
         typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
         AUTO_CREATED_APPLIES_COLUMN;
@@ -769,7 +768,6 @@ function validateAppliesColumn(): void {
       } else {
         hasObservation = true;
       }
-      realCategoryIndex++;
       continue;
     }
 
@@ -810,7 +808,7 @@ function validateAppliesColumn(): void {
       const cell = categoriesSheet.getRange(row, appliesColIndex);
       if (normalizedTokens.length === 0 && tokens.length > 0) {
         // All tokens are unrecognized — mirror builder fallback logic
-        const isFirstCategory = realCategoryIndex === 0;
+        const isFirstCategory = i === 0;
         const isAutoCreated =
           typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
           AUTO_CREATED_APPLIES_COLUMN;
@@ -833,9 +831,9 @@ function validateAppliesColumn(): void {
     }
 
     // If nothing matched, the builder falls back based on AUTO_CREATED_APPLIES_COLUMN.
-    // Mirror builder: AUTO_CREATED_APPLIES_COLUMN && index === 0 → [track, observation].
+    // Mirror builder: uses physical array index, not skip-blank counter.
     if (normalizedTokens.length === 0) {
-      const isFirstCategory = realCategoryIndex === 0;
+      const isFirstCategory = i === 0;
       const isAutoCreated =
         typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
         AUTO_CREATED_APPLIES_COLUMN;
@@ -849,7 +847,6 @@ function validateAppliesColumn(): void {
       if (normalizedTokens.includes("observation")) hasObservation = true;
       if (normalizedTokens.includes("track")) hasTrack = true;
     }
-    realCategoryIndex++;
   }
 
   // The payload builder still requires observation coverage somewhere in the sheet.
