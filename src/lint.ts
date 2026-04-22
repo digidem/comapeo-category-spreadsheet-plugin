@@ -1744,7 +1744,7 @@ function validateCategoryIcons(): void {
       const iconsData = iconsSheet.getRange(2, 1, iconsLastRow - 1, 1).getValues();
       for (const row of iconsData) {
         const id = String(row[0] || "").trim();
-        if (id) knownIconIds.add(id.toLowerCase());
+        if (id) knownIconIds.add(id);
       }
     }
   }
@@ -1773,23 +1773,23 @@ function validateCategoryIcons(): void {
       const iconId = iconIdValues[index]?.[0];
       const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
       if (iconIdStr) {
-        if (knownIconIds.has(iconIdStr.toLowerCase())) {
+        if (knownIconIds.has(iconIdStr)) {
           // Builder resolves icon from Icons sheet via Icon ID — skip warning
           return;
         }
-        // Icon ID doesn't exist in Icons sheet — warn
+        // Icon ID doesn't exist in Icons sheet — error (builder throws for unresolved iconId)
         const cell = categoriesSheet.getRange(rowNumber, 2);
         setLintNote(
           cell,
-          `Icon is empty and Icon ID "${iconIdStr}" was not found in the Icons sheet. The category will be exported without an icon.`,
-          "warning",
+          `Icon ID "${iconIdStr}" was not found in the Icons sheet. Generate Config will fail because the builder cannot resolve this icon reference. Either add a matching entry to the Icons sheet or clear the Icon ID.`,
+          "error",
         );
         return;
       }
       // Missing icon — warn (builder creates category without icon, not a hard error)
-      const cell = categoriesSheet.getRange(rowNumber, 2);
+      const cell2 = categoriesSheet.getRange(rowNumber, 2);
       setLintNote(
-        cell,
+        cell2,
         "Icon is empty — the category will be exported without an icon. Add an icon here or provide an Icon ID that resolves from the Icons sheet.",
         "warning",
       );
@@ -1803,16 +1803,16 @@ function validateCategoryIcons(): void {
         const iconId = iconIdValues[index]?.[0];
         const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
         if (iconIdStr) {
-          if (knownIconIds.has(iconIdStr.toLowerCase())) {
+          if (knownIconIds.has(iconIdStr)) {
             // Builder resolves icon from Icons sheet via Icon ID — skip warning
             return;
           }
-          // Icon ID doesn't exist in Icons sheet — warn
+          // Icon ID doesn't exist in Icons sheet — error (builder throws for unresolved iconId)
           const cell = categoriesSheet.getRange(rowNumber, 2);
           setLintNote(
             cell,
-            `Icon is empty and Icon ID "${iconIdStr}" was not found in the Icons sheet. The category will be exported without an icon.`,
-            "warning",
+            `Icon ID "${iconIdStr}" was not found in the Icons sheet. Generate Config will fail because the builder cannot resolve this icon reference. Either add a matching entry to the Icons sheet or clear the Icon ID.`,
+            "error",
           );
           return;
         }
