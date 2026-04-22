@@ -1738,7 +1738,7 @@ function validateCategoryIcons(): void {
       const cell = categoriesSheet.getRange(rowNumber, 2);
       setLintNote(
         cell,
-        "Icon is empty — a default icon will be used during config generation",
+        "Icon is empty — the category will be exported without an icon. If an Icon ID column is present, the builder may still resolve an icon from the Icons sheet.",
         "warning",
       );
       return;
@@ -1751,7 +1751,7 @@ function validateCategoryIcons(): void {
         const cell = categoriesSheet.getRange(rowNumber, 2);
         setLintNote(
           cell,
-          "Icon is empty — a default icon will be used during config generation",
+          "Icon is empty — the category will be exported without an icon. If an Icon ID column is present, the builder may still resolve an icon from the Icons sheet.",
           "warning",
         );
         return;
@@ -3892,24 +3892,28 @@ function lintMetadataSheet(): void {
       if (trimmedKey) seenKeys.add(trimmedKey);
       if (!trimmedValue) continue;
 
-      // Track that a non-empty primaryLanguage has been seen — the builder's
-      // getPrimaryLanguageName() returns the first non-empty value regardless
-      // of validity, so any later rows are always ignored.
+      // Track whether a VALID primaryLanguage has been seen — the builder's
+      // buildLocales() normalizes values via normalizeLocaleInput() and skips
+      // invalid ones, continuing to the next row. Only valid values block
+      // later rows from being used.
       // (trimmedValue is guaranteed non-empty here due to the continue above.)
-      const wasPriorNonEmpty = seenNonEmptyPrimaryLanguage;
-      seenNonEmptyPrimaryLanguage = true;
+      const wasPriorValid = seenNonEmptyPrimaryLanguage;
 
       // Mirror buildLocales(): accept recognized display names and ISO-style locale tokens.
       const normalizedPrimaryLanguage = normalizeMetadataPrimaryLanguageValue(trimmedValue);
       const isValid = normalizedPrimaryLanguage !== null;
 
+      // Only mark as "seen" when the builder would actually use this value.
+      // Invalid values are skipped by buildLocales(), so they don't block later rows.
+      if (isValid) seenNonEmptyPrimaryLanguage = true;
+
       if (isDuplicate) {
-        if (resolvedPrimaryLanguage || wasPriorNonEmpty) {
-          // A valid or non-empty primaryLanguage was already found — the builder
-          // uses the first non-empty occurrence, so this row is definitely ignored.
+        if (resolvedPrimaryLanguage || wasPriorValid) {
+          // A valid primaryLanguage was already found — the builder uses the
+          // first valid occurrence, so this row is definitely ignored.
           appendLintNote(
             cell,
-            'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence — this row is ignored.',
+            'Duplicate metadata key "primaryLanguage". The builder uses the first valid occurrence — this row is ignored.',
             "warning",
           );
           // Still flag invalid values even on duplicates
@@ -3929,15 +3933,15 @@ function lintMetadataSheet(): void {
             "error",
           );
         } else {
-          // No prior non-empty primaryLanguage and this one IS valid — it would
-          // become the effective value if no earlier row claimed it.
+          // No prior valid primaryLanguage and this one IS valid — it would
+          // become the effective value if no earlier valid row claimed it.
           appendLintNote(
             cell,
-            'Duplicate metadata key "primaryLanguage". The builder uses the first non-empty occurrence, so this row is only used if all earlier primaryLanguage rows are blank or invalid.',
+            'Duplicate metadata key "primaryLanguage". The builder skips invalid values, so this row is used if all earlier primaryLanguage rows are blank or invalid.',
             "warning",
           );
         }
-        if (!isValid || resolvedPrimaryLanguage || wasPriorNonEmpty) continue;
+        if (!isValid || resolvedPrimaryLanguage || wasPriorValid) continue;
       } else {
         if (!isValid) {
           appendLintNote(
