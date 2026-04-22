@@ -374,10 +374,15 @@ function appendLintNotePreserveBackground(
     cell.setNote(newMessage);
   }
 
-  // Apply font color only (no background)
-  const currentBg = cell.getBackground();
+  // Apply font color only (no background).  Detect existing error state
+  // via both background (#FFC7CE from normal setLintNote) AND font color
+  // (red from appendLintNotePreserveBackground on a preserved-bg cell).
+  const currentBg = cell.getBackground().toUpperCase();
+  const currentFont = (cell.getFontColor() || "").toUpperCase();
   const isAlreadyError =
-    currentBg.toUpperCase() === "#FFC7CE";
+    currentBg === "#FFC7CE" ||
+    currentFont === "RED" ||
+    currentFont === "#FF0000";
 
   switch (severity) {
     case "error":

@@ -94,14 +94,40 @@ function filterLanguagesByPrimary(
   const primaryCode = resolvedPrimaryLanguage.comparisonCode;
   // comparisonCode may be a full locale (e.g. "pt-br") when the user
   // entered a locale tag.  The allLanguages map mixes base codes ("pt")
-  // and locale codes ("zh-CN"), so compare base parts on both sides.
+  // and locale codes ("zh-CN").
   const primaryBase = primaryCode.split("-")[0].toLowerCase();
+  const primaryHasSubtag = primaryCode.includes("-");
 
-  // Filter by comparing language base codes, not names
+  // Filter by comparing language codes:
+  // - When primary is a base code (e.g. "pt"), exclude all variants with
+  //   the same base (pt, pt-BR, pt-PT all excluded).
+  // - When primary is a locale code (e.g. "zh-cn"), only exclude exact
+  //   matches and base-code-only entries, NOT sibling locale variants
+  //   (so zh-CN excludes "zh" but keeps "zh-TW").
   return Object.entries(allLanguages)
     .filter(([code, _]) => {
-      const langBase = code.split("-")[0].toLowerCase();
-      return includePrimary ? langBase === primaryBase : langBase !== primaryBase;
+      const codeLower = code.toLowerCase();
+      const langBase = codeLower.split("-")[0];
+      const langHasSubtag = codeLower.includes("-");
+      const matchesBase = langBase === primaryBase;
+
+      if (includePrimary) {
+        if (!primaryHasSubtag) {
+          // Primary is base code — include all with same base
+          return matchesBase;
+        }
+        // Primary is locale — include exact match or base-code-only
+        return codeLower === primaryCode.toLowerCase() || (matchesBase && !langHasSubtag);
+      }
+      if (!primaryHasSubtag) {
+        // Primary is base code — exclude all with same base
+        return !matchesBase;
+      }
+      // Primary is locale — exclude exact match and base-code-only,
+      // keep sibling locale variants
+      if (!matchesBase) return true;
+      if (!langHasSubtag) return false; // base code excluded
+      return codeLower !== primaryCode.toLowerCase(); // keep siblings
     })
     .reduce(
       (acc, [code, name]) => {
