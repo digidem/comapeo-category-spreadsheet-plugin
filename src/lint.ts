@@ -1425,7 +1425,7 @@ function checkDuplicateTranslationSlugs(): void {
             );
             const otherRowsStr = rows.join(", ");
             for (const row of rows) {
-              setLintNote(
+              appendLintNote(
                 sheet.getRange(row, col),
                 `Duplicate translation slug "${slug}" in rows: ${otherRowsStr}`,
                 "warning",
