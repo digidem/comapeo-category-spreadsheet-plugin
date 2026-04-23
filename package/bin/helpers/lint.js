@@ -2,6 +2,7 @@ import { hasProperty } from 'dot-prop-extra'
 import * as v from 'valibot'
 
 import { FieldTagKeyConflictError } from '../../src/lib/errors.js'
+import { validateBcp47 } from '../../src/lib/validate-bcp-47.js'
 import { addRefToMap, getCategoryIdsForDocType } from '../../src/lib/utils.js'
 import { validateReferences } from '../../src/lib/validate-references.js'
 import { CategorySchema } from '../../src/schema/category.js'
@@ -35,6 +36,8 @@ export async function lint(dir) {
 	let categorySelection = undefined
 	/** @type {Map<string, import('../../src/schema/messages.js').MessagesInput>} */
 	const messages = new Map()
+	/** @type {Map<string, string>} normalized locale -> raw filename id */
+	const normalizedLocales = new Map()
 	/** @type {string[]} */
 	const messagesWarnings = []
 	/** @type {string[]} */
@@ -101,9 +104,18 @@ export async function lint(dir) {
 					)
 				}
 				break
-			case 'messages':
-				messages.set(id, value)
+			case 'messages': {
+				const normalizedId = validateBcp47(id)
+				const existingRawId = normalizedLocales.get(normalizedId)
+				if (existingRawId) {
+					warnings.push(
+						`⚠️ Warning: Duplicate locale: files "${existingRawId}.json" and "${id}.json" both normalize to "${normalizedId}". Build will fail.`,
+					)
+				}
+				normalizedLocales.set(normalizedId, id)
+				messages.set(normalizedId, value)
 				break
+			}
 		}
 	}
 

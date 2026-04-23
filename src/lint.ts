@@ -1749,6 +1749,35 @@ function validateCategoryIcons(): void {
       }
     }
   }
+
+  // Also add category-derived icon IDs (mirrors buildIconsFromSheet logic).
+  // The builder creates icons from categories with: iconId = iconIdFromSheet || categoryId,
+  // where categoryId = idFromSheet || slugify(name) || `category-${index+1}`.
+  // These IDs are valid even without an Icons sheet entry.
+  const nameValues = categoriesSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const hasCategoryIdColumn = lastCol >= 5;
+  const categoryIdValues = hasCategoryIdColumn
+    ? categoriesSheet.getRange(2, 5, lastRow - 1, 1).getValues()
+    : [];
+  for (let i = 0; i < nameValues.length; i++) {
+    const name = String(nameValues[i][0] || "").trim();
+    const iconRaw = iconValues[i][0];
+    const iconStr = typeof iconRaw === "string" ? String(iconRaw).trim() : "";
+    // Mirror buildIconsFromSheet(): only rows with name and supported icon source contribute
+    if (!name || !iconStr || !hasRecognisedIconSource(iconStr)) continue;
+
+    const idFromSheet = hasCategoryIdColumn
+      ? String(categoryIdValues[i][0] || "").trim()
+      : "";
+    const categoryId = idFromSheet || slugify(name) || `category-${i + 1}`;
+
+    const iconIdFromSheet = hasIconIdColumn
+      ? String(iconIdValues[i]?.[0] || "").trim()
+      : "";
+    const iconId = iconIdFromSheet || categoryId;
+
+    if (iconId) knownIconIds.add(iconId);
+  }
   const rowIssues = new Map<number, string[]>();
 
   const addIssue = (row: number, message: string): void => {
@@ -4766,7 +4795,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
           "- Light yellow cells (#FFFFCC): Advisory guidance (blank type defaults, type clarity, plain-text icon workflow warnings, icon ID normalization)\n" +
           "- Red/orange text in icon columns: Missing icons, Drive access issues, HTTP URLs, plain-text workflow warnings\n" +
           "- Icons sheet issues: Missing/duplicate IDs, unsupported formats, cross-sheet collisions\n" +
-          "- Metadata validation: Unsafe characters in name/primaryLanguage\n\n" +
+          "- Metadata validation: Unsafe characters in name/primaryLanguage; version advisory when value doesn't match auto-generated format (yy.MM.dd)\n\n" +
           "IMPORTANT: Bright red cells will cause translation failures. Re-sync translation sheets before generating config.\n" +
           "TIP: For icons, paste inline SVG from https://icons.earthdefenderstoolkit.com for best results. Plain text still works (auto lookup), but is less accurate.",
         ui.ButtonSet.OK,
