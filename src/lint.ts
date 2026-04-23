@@ -1736,16 +1736,21 @@ function validateCategoryIcons(): void {
   const iconIdValues = hasIconIdColumn
     ? categoriesSheet.getRange(2, 6, lastRow - 1, 1).getValues()
     : [];
-  // Build a set of known icon IDs from the Icons sheet for validation
+  // Build a set of known icon IDs from the Icons sheet for validation.
+  // Mirror buildIconsFromSheet: only register IDs whose icon source (column B)
+  // is present and recognised by parseIconSource.
   const knownIconIds = new Set<string>();
   const iconsSheet = spreadsheet.getSheetByName("Icons");
   if (iconsSheet) {
     const iconsLastRow = iconsSheet.getLastRow();
     if (iconsLastRow > 1) {
-      const iconsData = iconsSheet.getRange(2, 1, iconsLastRow - 1, 1).getValues();
+      const iconsData = iconsSheet.getRange(2, 1, iconsLastRow - 1, 2).getValues();
       for (const row of iconsData) {
         const id = String(row[0] || "").trim();
-        if (id) knownIconIds.add(id);
+        const iconStr = String(row[1] || "").trim();
+        if (id && iconStr && hasRecognisedIconSource(iconStr)) {
+          knownIconIds.add(id);
+        }
       }
     }
   }
@@ -4056,7 +4061,7 @@ function lintMetadataSheet(): void {
           // become the effective value if no earlier valid row claimed it.
           appendLintNote(
             cell,
-            'Duplicate metadata key "primaryLanguage". The builder skips invalid values, so this row is used if all earlier primaryLanguage rows are blank or invalid.',
+            'Duplicate metadata key "primaryLanguage". This row is used only if all earlier primaryLanguage rows are blank or have invalid locale codes.',
             "warning",
           );
         }

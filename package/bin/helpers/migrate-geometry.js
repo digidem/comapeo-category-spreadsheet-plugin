@@ -2,12 +2,13 @@
 
 /**
  * Map deprecated geometry types to CoMapeo document types
- * point -> observation, line -> track, other geometry types are ignored
+ * point -> observation, line -> track, area -> observation
  * @type {Record<string, 'observation' | 'track'>}
  */
 const GEOMETRY_TO_APPLIES_TO = {
 	point: 'observation',
 	line: 'track',
+	area: 'observation',
 }
 
 /**
