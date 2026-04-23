@@ -141,6 +141,7 @@ function clearRangeLintNoteLinesWithPrefix(
 ): void {
   if (!range) return;
   if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
+  if (!prefix) return;
 
   const normalizedWarningColors = fontColorsToClear.map((color) =>
     color.toUpperCase(),
@@ -4796,16 +4797,14 @@ function lintAllSheets(showAlerts: boolean = true): void {
       const ui = SpreadsheetApp.getUi();
       ui.alert(
         "Linting Complete",
-        "All sheets have been linted. Please check for:\n" +
-          "- BRIGHT RED cells with white text: CRITICAL translation mismatch (primary language values don't match source sheet)\n" +
-          "- Light red cells (#FFC7CE): Invalid values, missing options, duplicate IDs, missing observation/track coverage, invalid Applies tokens, unsafe Metadata values, duplicate resolved locales, oversized SVGs/locale payloads, entity overflow\n" +
-          "- Yellow highlighted cells (#FFF2CC): Required fields missing, unreferenced details, slug collisions, manual ID hygiene, ambiguous option colons, ignored options on text/number fields, translation source overwrites\n" +
-          "- Light yellow cells (#FFFFCC): Advisory guidance (blank type defaults, type clarity, plain-text icon workflow warnings, icon ID normalization)\n" +
-          "- Red/orange text in icon columns: Missing icons, Drive access issues, HTTP URLs, plain-text workflow warnings\n" +
-          "- Icons sheet issues: Missing/duplicate IDs, unsupported formats, cross-sheet collisions\n" +
-          "- Metadata validation: Unsafe characters in name/primaryLanguage; version advisory when value doesn't match auto-generated format (yy.MM.dd)\n\n" +
-          "IMPORTANT: Bright red cells will cause translation failures. Re-sync translation sheets before generating config.\n" +
-          "TIP: For icons, paste inline SVG from https://icons.earthdefenderstoolkit.com for best results. Plain text still works (auto lookup), but is less accurate.",
+        "All sheets have been linted.\n\n" +
+          "Review highlighted cells before generating config:\n" +
+          "- Bright red with white text: Critical translation mismatch. Re-sync translations before export.\n" +
+          "- Light red (#FFC7CE): Errors that can block or break config generation.\n" +
+          "- Yellow (#FFF2CC): Warnings that need review.\n" +
+          "- Light yellow (#FFFFCC): Advisory guidance.\n" +
+          "- Red/orange text in icon columns: Icon source, access, or format issues.\n\n" +
+          "Open the note on each flagged cell for the specific fix.",
         ui.ButtonSet.OK,
       );
     }

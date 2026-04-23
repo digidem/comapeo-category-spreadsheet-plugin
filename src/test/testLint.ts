@@ -662,10 +662,29 @@ function testLintAppendAndClearSemantics(): boolean {
         if (clearCell.getFontColor() !== null) {
           throw new Error("Lint warning font color should be cleared");
         }
+
+        const emptyPrefixCell = sheet.getRange(1, 1);
+        emptyPrefixCell.setNote("[Lint] keep me\nmanual line");
+        emptyPrefixCell.setBackground("#FFF2CC");
+        emptyPrefixCell.setFontColor("orange");
+        clearRangeLintNoteLinesWithPrefix(emptyPrefixCell, "");
+        if (emptyPrefixCell.getNote() !== "[Lint] keep me\nmanual line") {
+          throw new Error(
+            `Empty prefix should not clear lint note lines, got "${emptyPrefixCell.getNote()}"`,
+          );
+        }
+        if (emptyPrefixCell.getBackground() !== "#FFF2CC") {
+          throw new Error("Empty prefix should not clear lint warning background");
+        }
+        if (emptyPrefixCell.getFontColor() !== "orange") {
+          throw new Error("Empty prefix should not clear lint warning font color");
+        }
       },
     );
 
-    console.log("PASS: appendLintNote and clearLintArtifacts semantics are preserved in the mock");
+    console.log(
+      "PASS: appendLintNote, clearLintArtifacts, and empty-prefix lint cleanup guard are preserved in the mock",
+    );
     return true;
   } catch (error) {
     console.error(`FAIL: ${(error as Error).message}`);
