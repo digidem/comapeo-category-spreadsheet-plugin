@@ -1388,8 +1388,11 @@ function checkDuplicateTranslationSlugs(): void {
       const lastCol = sheet.getLastColumn();
       if (lastCol < 4) continue; // Need at least Name, ISO, Source, and one translation
 
-      clearLintArtifacts(
+      // Clear only duplicate-slug lint notes from prior runs, preserving
+      // option-count mismatch backgrounds/fonts set by validateSheetConsistency().
+      clearRangeLintNoteLinesWithPrefix(
         sheet.getRange(2, 4, lastRow - 1, lastCol - 3),
+        `${LINT_NOTE_PREFIX}Duplicate translation slug`,
       );
 
       // Check each translation column (starting from column 4)

@@ -4,7 +4,7 @@
  */
 export function migrateDefaults(defaults) {
 	return {
-		observation: defaults.point,
+		observation: [...new Set([...(defaults.point || []), ...(defaults.area || [])])],
 		track: defaults.line,
 	}
 }
