@@ -2303,12 +2303,14 @@ function lintDetailsSheet(): void {
       if (!validTypes.includes(firstChar)) {
         try {
           console.log("Invalid type '" + value + "' at row " + row);
-          setInvalidCellBackground(
-            SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details")!,
-            row,
-            col,
-            "#FFC7CE",
-          ); // Light red for invalid type
+          const detailsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
+          if (detailsSheet) {
+            setLintNote(
+              detailsSheet.getRange(row, col),
+              `Invalid type '${value}'. Expected: text (t), number (n), selectOne (s), or selectMultiple (m).`,
+              "error",
+            );
+          }
         } catch (error) {
           console.error(
             "Error highlighting invalid type at row " +
@@ -2508,6 +2510,10 @@ function lintIconsSheet(): void {
     const row = i + 2;
     const iconId = String(data[i][0] || "").trim();
     const iconSource = String(data[i][1] || "").trim();
+
+    // Skip fully blank rows — builder ignores them too (buildIconsFromSheet
+    // skips rows when either iconId or iconStr is empty).
+    if (!iconId && !iconSource) continue;
 
     // Check for missing icon ID (col A)
     if (!iconId) {
@@ -4096,7 +4102,6 @@ function lintMetadataSheet(): void {
         `Duplicate metadata key "${key}". The builder only reads the first occurrence — this row is ignored.`,
         "warning",
       );
-      if (effectiveKey) seenKeys.add(effectiveKey);
       continue;
     }
     if (effectiveKey) seenKeys.add(effectiveKey);
