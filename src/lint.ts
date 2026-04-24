@@ -1398,16 +1398,17 @@ function checkDuplicateTranslationSlugs(): void {
 
       // Check each translation column (starting from column 4)
       for (let col = 4; col <= lastCol; col++) {
-        const values = sheet
+        const rawValues = sheet
           .getRange(2, col, lastRow - 1, 1)
-          .getValues()
-          .map((row) => String(row[0] || "").trim())
-          .filter((v) => v !== "");
+          .getValues();
 
-        // Build slug frequency map
+        // Build slug frequency map — iterate raw values in-place so i+2 maps to
+        // the correct sheet row (blanks are skipped with continue, not filtered).
         const slugCounts = new Map<string, number[]>();
-        for (let i = 0; i < values.length; i++) {
-          const value = values[i];
+        for (let i = 0; i < rawValues.length; i++) {
+          const value = String(rawValues[i][0] || "").trim();
+          if (!value) continue;
+
           const slug = slugify(value);
           if (!slug) continue;
 
