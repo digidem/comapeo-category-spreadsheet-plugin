@@ -1149,6 +1149,101 @@ function testIconDuplicateTrackingSkipsInvalidDriveSources(): boolean {
   }
 }
 
+function testDriveIconInfoCacheKeepsLintSourceRecognitionConsistent(): boolean {
+  console.log("=== testDriveIconInfoCacheKeepsLintSourceRecognitionConsistent ===");
+
+  const globalScope = globalThis as any;
+  const originalDriveApp = globalScope.DriveApp;
+  const rawSvgId = "raw-svg-file-id-1234567890123456";
+  const binaryId = "binary-file-id-1234567890123456";
+  const callsById = new Map<string, number>();
+
+  try {
+    driveIconInfoCache.clear();
+    globalScope.DriveApp = {
+      getFileById(fileId: string): any {
+        callsById.set(fileId, (callsById.get(fileId) || 0) + 1);
+
+        if (fileId === rawSvgId) {
+          return {
+            getName(): string {
+              return "raw-svg.txt";
+            },
+            getMimeType(): string {
+              return "application/octet-stream";
+            },
+            getBlob(): any {
+              return {
+                getDataAsString(): string {
+                  return "  <svg><path d=\"M0 0\" /></svg>  ";
+                },
+              };
+            },
+          };
+        }
+
+        if (fileId === binaryId) {
+          return {
+            getName(): string {
+              return "photo.png";
+            },
+            getMimeType(): string {
+              return "image/png";
+            },
+            getBlob(): any {
+              return {
+                getDataAsString(): string {
+                  throw new Error("Cannot decode binary blob as text");
+                },
+              };
+            },
+          };
+        }
+
+        throw new Error(`Unexpected Drive file ID ${fileId}`);
+      },
+    };
+
+    const rawSvgUrl = `https://drive.google.com/file/d/${rawSvgId}/view`;
+    const binaryUrl = `https://drive.google.com/file/d/${binaryId}/view`;
+
+    if (!hasRecognisedIconSource(rawSvgUrl)) {
+      throw new Error("Raw SVG Drive source should be recognised by text sniffing");
+    }
+
+    const rawSvgInfo = getDriveIconInfo(rawSvgId);
+    if (!rawSvgInfo.isSvg || rawSvgInfo.svgContent !== "<svg><path d=\"M0 0\" /></svg>") {
+      throw new Error(`Raw SVG Drive info was inconsistent: ${JSON.stringify(rawSvgInfo)}`);
+    }
+
+    if (callsById.get(rawSvgId) !== 1) {
+      throw new Error(`Expected raw SVG Drive file to be loaded once, got ${callsById.get(rawSvgId)}`);
+    }
+
+    if (hasRecognisedIconSource(binaryUrl)) {
+      throw new Error("Binary Drive source should not be recognised as an SVG icon source");
+    }
+
+    const binaryInfo = getDriveIconInfo(binaryId);
+    if (binaryInfo.isSvg || binaryInfo.svgContent !== null || binaryInfo.errorMessage) {
+      throw new Error(`Binary Drive info should be accessible non-SVG, got ${JSON.stringify(binaryInfo)}`);
+    }
+
+    if (callsById.get(binaryId) !== 1) {
+      throw new Error(`Expected binary Drive file to be loaded once, got ${callsById.get(binaryId)}`);
+    }
+
+    console.log("PASS: Drive icon source recognition and info reuse one consistent cache");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  } finally {
+    driveIconInfoCache.clear();
+    globalScope.DriveApp = originalDriveApp;
+  }
+}
+
 function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
   console.log("=== testAppliesMissingHeaderPreservesExistingBodyAnnotations ===");
 
@@ -1298,6 +1393,10 @@ function runLintParityTests(): void {
     {
       name: "Icon Duplicate Tracking Skips Invalid Drive Sources",
       fn: testIconDuplicateTrackingSkipsInvalidDriveSources,
+    },
+    {
+      name: "Drive Icon Info Cache Keeps Lint Source Recognition Consistent",
+      fn: testDriveIconInfoCacheKeepsLintSourceRecognitionConsistent,
     },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
   ];

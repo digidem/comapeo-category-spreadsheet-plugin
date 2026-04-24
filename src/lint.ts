@@ -40,16 +40,16 @@ const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
 const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
-/** Module-level cache for Drive SVG file content, avoiding redundant downloads per lint run. */
-const driveSvgContentCache = new Map<string, string | null>();
+/** Module-level cache for Drive icon info, shared across lint checks to avoid
+ *  redundant Drive API calls and keep Drive URL classification consistent. */
+const driveIconInfoCache = new Map<string, DriveIconInfo>();
 
-/** Module-level cache for Drive icon info (slug, isSvg, error), shared across
- *  validateCategoryIcons() and lintIconsSheet() to avoid redundant Drive API calls. */
-const driveIconInfoCache = new Map<
-  string,
-  { slug: string | null; isSvg: boolean; errorMessage?: string }
->();
-
+type DriveIconInfo = {
+  slug: string | null;
+  isSvg: boolean;
+  svgContent: string | null;
+  errorMessage?: string;
+};
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
   colorsToClear: string[],
@@ -1676,11 +1676,10 @@ function lintSheet(
   }
 }
 
-function getDriveIconInfo(fileId: string): {
-  slug: string | null;
-  isSvg: boolean;
-  errorMessage?: string;
-} {
+function getDriveIconInfo(fileId: string): DriveIconInfo {
+  if (driveIconInfoCache.has(fileId)) return driveIconInfoCache.get(fileId)!;
+
+  let info: DriveIconInfo;
   try {
     const file = DriveApp.getFileById(fileId);
     const fileName = file.getName();
@@ -1688,31 +1687,36 @@ function getDriveIconInfo(fileId: string): {
     const mimeTypeLower = mimeType?.toLowerCase() ?? "";
     const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
     const slug = normalizeIconSlug(slugify(nameWithoutExt));
+    const isSvgMime = mimeTypeLower.includes("svg");
+    let svgContent: string | null = null;
 
-    // Fast path: MIME type already tells us it's SVG
-    if (mimeTypeLower.includes("svg")) {
-      return { slug: slug || null, isSvg: true };
+    // Fast path: MIME type already tells us it's SVG, so reading as text is expected.
+    if (isSvgMime) {
+      svgContent = file.getBlob().getDataAsString().trim();
+    } else {
+      // Fallback: try reading as text to detect raw SVG content. Binary files
+      // (PNG/JPEG) may throw here, so treat those as accessible non-SVG files.
+      try {
+        const text = file.getBlob().getDataAsString().trim();
+        svgContent = text.startsWith("<svg") ? text : null;
+      } catch {
+        svgContent = null;
+      }
     }
 
-    // Fallback: try reading as text to detect SVG content
-    // Binary files (PNG/JPEG) will fail here, so treat as non-SVG
-    let isSvg = false;
-    try {
-      isSvg = file.getBlob().getDataAsString().trim().startsWith("<svg");
-    } catch {
-      // Binary file — can't read as text, treat as non-SVG
-      isSvg = false;
-    }
-
-    return { slug: slug || null, isSvg };
+    info = { slug: slug || null, isSvg: svgContent !== null, svgContent };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return {
+    info = {
       slug: null,
       isSvg: false,
+      svgContent: null,
       errorMessage: `Unable to access icon file (Drive ID ${fileId}): ${message}`,
     };
   }
+
+  driveIconInfoCache.set(fileId, info);
+  return info;
 }
 
 function validateCategoryIcons(): void {
@@ -1884,7 +1888,6 @@ function validateCategoryIcons(): void {
           let info = driveIconInfoCache.get(fileId);
           if (!info) {
             info = getDriveIconInfo(fileId);
-            driveIconInfoCache.set(fileId, info);
           }
 
           if (info.isSvg) {
@@ -2577,7 +2580,6 @@ function lintIconsSheet(): void {
         let info = driveIconInfoCache.get(fileId);
         if (!info) {
           info = getDriveIconInfo(fileId);
-          driveIconInfoCache.set(fileId, info);
         }
         if (info.errorMessage) {
           setLintNote(
@@ -4177,21 +4179,7 @@ function decodeDataSvgForLint(dataUri: string): string | null {
 }
 
 function loadDriveSvgForLint(fileId: string): string | null {
-  if (driveSvgContentCache.has(fileId)) return driveSvgContentCache.get(fileId)!;
-  try {
-    const file = DriveApp.getFileById(fileId);
-    const mime = file.getMimeType();
-    const text = file.getBlob().getDataAsString();
-    // Accept SVG mime types or raw SVG content — mirrors builder loadDriveSvg()
-    const isSvgMime = mime?.toLowerCase().includes("svg");
-    const looksLikeSvg = text.trim().startsWith("<svg");
-    const result = isSvgMime || looksLikeSvg ? text.trim() : null;
-    driveSvgContentCache.set(fileId, result);
-    return result;
-  } catch (_err) {
-    driveSvgContentCache.set(fileId, null);
-    return null;
-  }
+  return getDriveIconInfo(fileId).svgContent;
 }
 
 /**
@@ -4762,7 +4750,6 @@ function checkTotalEntityCounts(metrics: {
 function lintAllSheets(showAlerts: boolean = true): void {
   try {
     // Clear cross-run caches so Drive file changes are picked up
-    driveSvgContentCache.clear();
     driveIconInfoCache.clear();
 
     console.log("Starting linting process...");
