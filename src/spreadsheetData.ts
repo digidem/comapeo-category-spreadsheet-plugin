@@ -98,26 +98,41 @@ function filterLanguagesByPrimary(
   const primaryBase = primaryCode.split("-")[0].toLowerCase();
   const primaryHasSubtag = primaryCode.includes("-");
 
+  if (includePrimary && primaryHasSubtag) {
+    const primaryCodeLower = primaryCode.toLowerCase();
+    const exactPrimary = Object.entries(allLanguages).find(
+      ([code]) => code.toLowerCase() === primaryCodeLower,
+    );
+
+    if (exactPrimary) {
+      const [code, name] = exactPrimary;
+      return { [code]: name } as LanguageMap;
+    }
+
+    const basePrimary = Object.entries(allLanguages).find(
+      ([code]) => code.toLowerCase() === primaryBase,
+    );
+
+    return {
+      [primaryCode]: basePrimary ? basePrimary[1] : primaryLanguageName,
+    } as LanguageMap;
+  }
+
   // Filter by comparing language codes:
   // - When primary is a base code (e.g. "pt"), exclude all variants with
   //   the same base (pt, pt-BR, pt-PT all excluded).
   // - When primary is a locale code (e.g. "zh-cn"), only exclude exact
-  //   matches and base-code-only entries, NOT sibling locale variants
-  //   (so zh-CN excludes "zh" but keeps "zh-TW").
+  //   matches, NOT sibling locale variants
+  //   (so zh-CN excludes "zh-CN" but keeps "zh-TW").
   return Object.entries(allLanguages)
     .filter(([code, _]) => {
       const codeLower = code.toLowerCase();
       const langBase = codeLower.split("-")[0];
-      const langHasSubtag = codeLower.includes("-");
       const matchesBase = langBase === primaryBase;
 
       if (includePrimary) {
-        if (!primaryHasSubtag) {
-          // Primary is base code — include all with same base
-          return matchesBase;
-        }
-        // Primary is locale — include exact match or base-code-only
-        return codeLower === primaryCode.toLowerCase() || (matchesBase && !langHasSubtag);
+        // Primary is base code — include all with same base
+        return matchesBase;
       }
       if (!primaryHasSubtag) {
         // Primary is base code — exclude all with same base

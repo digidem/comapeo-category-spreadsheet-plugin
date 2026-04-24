@@ -455,7 +455,67 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 19: CACHE CLEARING (Critical Fix Verification)
+  // Test 19: PRIMARY LANGUAGE LOCALE IDENTITY (Critical Fix Verification)
+  runTest("filterLanguagesByPrimary preserves locale primary identity", () => {
+    const originalSpreadsheetApp = (globalThis as any).SpreadsheetApp;
+
+    try {
+      (globalThis as any).SpreadsheetApp = {
+        getActiveSpreadsheet(): any {
+          return {
+            getSheetByName(name: string): any {
+              if (name === "Metadata") {
+                return {
+                  getDataRange(): any {
+                    return {
+                      getValues(): any[][] {
+                        return [
+                          ["Key", "Value"],
+                          ["primaryLanguage", "pt-BR"],
+                        ];
+                      },
+                    };
+                  },
+                };
+              }
+              if (name === "Categories") {
+                return {
+                  getRange(): any {
+                    return {
+                      getValue(): string {
+                        return "pt-BR";
+                      },
+                    };
+                  },
+                };
+              }
+              return null;
+            },
+          };
+        },
+      };
+
+      const primaryLanguages = filterLanguagesByPrimary(
+        { en: "English", pt: "Portuguese", es: "Spanish" },
+        true,
+      );
+      const primaryEntries = Object.entries(primaryLanguages);
+
+      if (primaryEntries.length !== 1) {
+        throw new Error(`Expected exactly one primary language entry, got ${primaryEntries.length}`);
+      }
+      if (primaryEntries[0][0] !== "pt-br") {
+        throw new Error(`Expected primary locale key 'pt-br', got '${primaryEntries[0][0]}'`);
+      }
+      if (primaryEntries[0][1] !== "Portuguese") {
+        throw new Error(`Expected locale primary to reuse base display name, got '${primaryEntries[0][1]}'`);
+      }
+    } finally {
+      (globalThis as any).SpreadsheetApp = originalSpreadsheetApp;
+    }
+  });
+
+  // Test 20: CACHE CLEARING (Critical Fix Verification)
   runTest("clearLanguagesCache clears both caches", () => {
     // This test verifies the cache clearing function works
     // In practice, we can't easily test the actual cache clearing
@@ -474,7 +534,7 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 20: GETPRIMARYLANGUAGE OPTIMIZATION (Critical Fix Verification)
+  // Test 21: GETPRIMARYLANGUAGE OPTIMIZATION (Critical Fix Verification)
   runTest("getPrimaryLanguage returns correct result efficiently", () => {
     // Mock data - in real usage this comes from cell A1
     // We test with both English and native names
@@ -493,7 +553,7 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 21: TURKISH LOCALE FIX (Moderate Issue Verification)
+  // Test 22: TURKISH LOCALE FIX (Moderate Issue Verification)
   runTest("normalizeLanguageName handles Turkish locale correctly", () => {
     // This verifies that 'I' becomes 'i', not 'ı' (Turkish behavior)
     // We can't directly test normalizeLanguageName since it's not exported,
