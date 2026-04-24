@@ -1149,7 +1149,19 @@ function checkForDuplicates(
     lastRow - startRow + 1,
     1,
   );
-  clearLintArtifacts(range);
+  if (preserveBackground) {
+    clearRangeLintNoteLinesWithPrefix(
+      range,
+      LINT_NOTE_PREFIX,
+      LINT_WARNING_FONT_COLORS,
+      [],
+    );
+    clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
+  } else {
+    clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+    clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
+    clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
+  }
   const values = range
     .getValues()
     .map((row) => row[0].toString().trim().toLowerCase());
@@ -2307,7 +2319,6 @@ function lintDetailsSheet(): void {
       if (!validTypes.includes(firstChar)) {
         try {
           console.log("Invalid type '" + value + "' at row " + row);
-          const detailsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
           if (detailsSheet) {
             setLintNote(
               detailsSheet.getRange(row, col),
