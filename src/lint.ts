@@ -662,6 +662,10 @@ function validateAppliesColumn(): void {
         bodyRange,
         `${LINT_NOTE_PREFIX}All Applies tokens are unrecognized`,
       );
+      clearRangeLintNoteLinesWithPrefix(
+        bodyRange,
+        `${LINT_NOTE_PREFIX}Applies value contains semicolons`,
+      );
     }
   }
   const headerValues =
