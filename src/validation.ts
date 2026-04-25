@@ -229,10 +229,11 @@ function normalizePrimaryLanguageLocaleCode(
     return null;
   }
 
-  // Mirror the builder's normalizeLocaleInput pattern which only accepts
-  // letter-only subtags and at most one subtag (e.g. "pt-BR", "zh-CN").
-  // Rejects numeric subtags like "es-419" that the builder would reject.
-  const localePattern = /^[a-z]{2,3}(-[a-z]{2,3})?$/i;
+  // Mirror the builder's validateBcp47 pattern: accepts ISO 639-1/3 primary
+  // language codes (2-3 letters) and at most one region subtag, which can be
+  // either an ISO 3166-1 alpha-2 code (2 letters) or a UN M.49 numeric code
+  // (3 digits), e.g. "pt-BR", "es-419".
+  const localePattern = /^[a-z]{2,3}(-[a-z]{2,3}|-\d{3})?$/i;
   if (!localePattern.test(trimmed)) {
     return null;
   }
