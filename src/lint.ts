@@ -3976,11 +3976,10 @@ function lintMetadataSheet(): void {
   // (e.g. "PrimaryLanguage" vs "primaryLanguage" are distinct to the builder).
   const seenKeys = new Set<string>();
   let resolvedPrimaryLanguage = false;
-  // Track whether any non-empty primaryLanguage has been seen, even if invalid.
-  // The builder's getPrimaryLanguageName() returns the first non-empty value
-  // regardless of validity, so a later valid duplicate is still ignored if an
-  // earlier non-empty (but invalid) row exists.
-  let seenNonEmptyPrimaryLanguage = false;
+  // Track whether a valid primaryLanguage has been seen.
+  // The builder's buildLocales() normalizes via normalizeLocaleInput() and skips
+  // invalid values, continuing to the next row. Only valid values block later rows.
+  let seenValidPrimaryLanguage = false;
 
   // Keys the builder looks up with exact equality (no trim). If a cell
   // contains " name " the builder will NOT match it and will silently
@@ -4057,7 +4056,7 @@ function lintMetadataSheet(): void {
       // invalid ones, continuing to the next row. Only valid values block
       // later rows from being used.
       // (trimmedValue is guaranteed non-empty here due to the continue above.)
-      const wasPriorValid = seenNonEmptyPrimaryLanguage;
+      const wasPriorValid = seenValidPrimaryLanguage;
 
       // Mirror buildLocales(): accept recognized display names and ISO-style locale tokens.
       const normalizedPrimaryLanguage = normalizeMetadataPrimaryLanguageValue(trimmedValue);
@@ -4065,7 +4064,7 @@ function lintMetadataSheet(): void {
 
       // Only mark as "seen" when the builder would actually use this value.
       // Invalid values are skipped by buildLocales(), so they don't block later rows.
-      if (isValid) seenNonEmptyPrimaryLanguage = true;
+      if (isValid) seenValidPrimaryLanguage = true;
 
       if (isDuplicate) {
         if (resolvedPrimaryLanguage || wasPriorValid) {
