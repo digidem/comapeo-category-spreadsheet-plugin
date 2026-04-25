@@ -187,12 +187,26 @@ function processTranslations(data, fields, presets) {
     }
   }
 
-  // Initialize messages object for all detected languages
+  // Collect languages from ALL translation sheets before initializing messages.
+  // This prevents crashes when a later sheet exposes languages not present in
+  // Category Translations (e.g. Category Translations has es, Detail Label
+  // Translations also has fr).
+  const allDetectedLanguages = new Set<string>(initialMapping.targetLanguages);
+  const translationSheets = sheets(true);
+
+  for (const sheetName of translationSheets) {
+    if (sheetName === "Category Translations") continue; // already scanned
+    const mapping = buildColumnMapForSheet(sheetName);
+    for (const lang of mapping.targetLanguages) {
+      allDetectedLanguages.add(lang);
+    }
+  }
+
+  // Initialize messages object for all detected languages across all sheets
   const messages: CoMapeoTranslations = Object.fromEntries(
-    initialMapping.targetLanguages.map((lang) => [lang, {}]),
+    [...allDetectedLanguages].map((lang) => [lang, {}]),
   );
 
-  const translationSheets = sheets(true);
   getScopedLogger("ProcessTranslations").info("Processing translation sheets:", translationSheets);
   const presetLookup = buildPresetLookup(presets);
 
