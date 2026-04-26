@@ -64,7 +64,7 @@ const FILENAMES = /** @type {const} */ ({
 	'categorySelection.json': 'categorySelection',
 	'metadata.json': 'metadata',
 })
-const ICON_REGEX = new RegExp(`^${ICONS_DIR}/(.+)\\.svg$`)
+const ICON_REGEX = new RegExp(`^${ICONS_DIR}/([a-zA-Z0-9-_]+)\\.svg$`)
 const TRANSLATIONS_REGEX = new RegExp(
 	`^${TRANSLATIONS_DIR}/([a-zA-Z0-9-_]+)\\.json$`,
 )
