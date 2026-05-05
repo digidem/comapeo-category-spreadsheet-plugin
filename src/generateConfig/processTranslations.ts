@@ -191,6 +191,12 @@ function processTranslations(data, fields, presets) {
   const messages: CoMapeoTranslations = Object.fromEntries(
     initialMapping.targetLanguages.map((lang) => [lang, {}]),
   );
+  const ensureLanguageMessages = (lang: string) => {
+    if (!messages[lang]) {
+      messages[lang] = {};
+    }
+    return messages[lang];
+  };
 
   const translationSheets = sheets(true);
   getScopedLogger("ProcessTranslations").info("Processing translation sheets:", translationSheets);
@@ -295,24 +301,25 @@ function processTranslations(data, fields, presets) {
         log.info(
           `Processing ${messageType} for language: ${lang} (column ${colIdx}), key: ${key}`,
         );
+        const languageMessages = ensureLanguageMessages(lang);
 
         switch (sheetName) {
           case "Category Translations":
-            messages[lang][`${messageType}.${key}.name`] = {
+            languageMessages[`${messageType}.${key}.name`] = {
               message: translationValue,
               description: `Name for preset '${key}'`,
             };
             log.info(`Added category translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Label Translations":
-            messages[lang][`${messageType}.${key}.label`] = {
+            languageMessages[`${messageType}.${key}.label`] = {
               message: translationValue,
               description: `Label for field '${key}'`,
             };
             log.info(`Added label translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Helper Text Translations":
-            messages[lang][`${messageType}.${key}.helperText`] = {
+            languageMessages[`${messageType}.${key}.helperText`] = {
               message: translationValue,
               description: `Helper text for field '${key}'`,
             };
@@ -344,7 +351,7 @@ function processTranslations(data, fields, presets) {
                     },
                     description: `Option '${option}' for field '${field.label}'`,
                   };
-                  messages[lang][optionKey] = optionValue;
+                  languageMessages[optionKey] = optionValue;
                   log.info(`Added option translation: ${option} for ${key}`);
                 }
               }
