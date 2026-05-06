@@ -30,10 +30,26 @@ const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFEB9C",
   "#FFFFCC",
   "#FFF2CC",
+  "#FFF3CD",
 ];
-const LINT_WARNING_FONT_COLORS = ["red", "#FF0000"];
+const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000"];
+const LINT_WARNING_FONT_COLORS_WITHOUT_WHITE = LINT_WARNING_FONT_COLORS.filter(
+  (color) => color.toUpperCase() !== "#FFFFFF",
+);
 const LINT_NOTE_PREFIX = "[Lint] ";
+const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
+const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
+/** Module-level cache for Drive icon info, shared across lint checks to avoid
+ *  redundant Drive API calls and keep Drive URL classification consistent. */
+const driveIconInfoCache = new Map<string, DriveIconInfo>();
+
+type DriveIconInfo = {
+  slug: string | null;
+  isSvg: boolean;
+  svgContent: string | null;
+  errorMessage?: string;
+};
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
   colorsToClear: string[],
@@ -117,6 +133,935 @@ function clearRangeNotesWithPrefix(
   }
 }
 
+function clearRangeLintNoteLinesWithPrefix(
+  range: GoogleAppsScript.Spreadsheet.Range,
+  prefix: string,
+  fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
+  backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
+): void {
+  if (!range) return;
+  if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
+  if (!prefix) return;
+
+  const normalizedWarningColors = fontColorsToClear.map((color) =>
+    color.toUpperCase(),
+  );
+  const normalizedBackgroundColors = backgroundColorsToClear.map((color) =>
+    color.toUpperCase(),
+  );
+  const notes = range.getNotes();
+  const fontColors = range.getFontColors();
+  const backgrounds = range.getBackgrounds();
+  let notesUpdated = false;
+  let fontColorsUpdated = false;
+  let backgroundsUpdated = false;
+
+  for (let row = 0; row < notes.length; row++) {
+    for (let col = 0; col < notes[row].length; col++) {
+      const note = notes[row][col];
+      if (!note || !note.includes(prefix)) continue;
+
+      const noteLines = note.split("\n");
+      const remainingLines = noteLines.filter((line) => !line.startsWith(prefix));
+
+      if (remainingLines.length === noteLines.length) continue;
+
+      let start = 0;
+      while (start < remainingLines.length && remainingLines[start] === "") {
+        start++;
+      }
+
+      let end = remainingLines.length;
+      while (end > start && remainingLines[end - 1] === "") {
+        end--;
+      }
+
+      const remainingNote = remainingLines.slice(start, end).join("\n");
+
+      notes[row][col] = remainingNote;
+      notesUpdated = true;
+
+      const fontColor = fontColors[row][col];
+      if (
+        remainingNote === "" &&
+        fontColor &&
+        normalizedWarningColors.includes(fontColor.toUpperCase())
+      ) {
+        fontColors[row][col] = null;
+        fontColorsUpdated = true;
+      }
+
+      const background = backgrounds[row][col];
+      if (
+        remainingNote === "" &&
+        background &&
+        normalizedBackgroundColors.includes(background.toUpperCase())
+      ) {
+        backgrounds[row][col] = null;
+        backgroundsUpdated = true;
+      }
+    }
+  }
+
+  if (notesUpdated) {
+    range.setNotes(notes);
+  }
+
+  if (fontColorsUpdated) {
+    range.setFontColors(fontColors);
+  }
+
+  if (backgroundsUpdated) {
+    range.setBackgrounds(backgrounds);
+  }
+}
+
+/**
+ * Standardized lint note writer. Sets a [Lint]-prefixed note on a cell and applies
+ * severity-appropriate background and font colors so that cleanup and UI behavior
+ * stay consistent across all lint checks.
+ *
+ * severity → background / font color mapping:
+ *   error    → #FFC7CE / red
+ *   warning  → #FFF2CC / orange
+ *   advisory → #FFFFCC / (default)
+ */
+function setLintNote(
+  cell: GoogleAppsScript.Spreadsheet.Range,
+  message: string,
+  severity: "error" | "warning" | "advisory",
+): void {
+  cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
+
+  switch (severity) {
+    case "error":
+      cell.setBackground("#FFC7CE");
+      cell.setFontColor("red");
+      break;
+    case "warning":
+      cell.setBackground("#FFF2CC");
+      cell.setFontColor("orange");
+      break;
+    case "advisory":
+      cell.setBackground("#FFFFCC");
+      break;
+  }
+}
+
+/**
+ * Appends a lint note to a cell, preserving any existing note (user-authored or lint).
+ * Uses the same severity-based styling as setLintNote but concatenates messages
+ * when a note already exists, preventing overwrites from sequential lint passes.
+ *
+ * severity escalation: if the existing note is a lower severity than the new one,
+ * the visual styling is upgraded to match the highest severity present.
+ */
+function appendLintNote(
+  cell: GoogleAppsScript.Spreadsheet.Range,
+  message: string,
+  severity: "error" | "warning" | "advisory",
+): void {
+  const existingNote = cell.getNote() || "";
+  const newMessage = `${LINT_NOTE_PREFIX}${message}`;
+
+  if (existingNote) {
+    cell.setNote(`${existingNote}\n${newMessage}`);
+  } else {
+    cell.setNote(newMessage);
+  }
+
+  // Apply severity styling (upgrade if higher severity than current)
+  const currentBg = cell.getBackground().toUpperCase();
+  // Check for error-level backgrounds. #FFC7CE is the standard lint error
+  // background; #FF0000 is used by validateSheetConsistency for critical
+  // primary-column mismatches and must also be treated as error-level so
+  // that appendLintNote("warning") does not overwrite it.
+  const isAlreadyError =
+    currentBg === "#FFC7CE" || currentBg === "#FF0000";
+  const isAlreadyWarning = currentBg === "#FFF2CC";
+
+  switch (severity) {
+    case "error":
+      // Preserve #FF0000 critical-mismatch styling; only set #FFC7CE if not
+      // already at a higher visual severity. #FF0000 cells use white text,
+      // so skip fontColor too to keep them readable.
+      if (currentBg !== "#FF0000") {
+        cell.setBackground("#FFC7CE");
+        cell.setFontColor("red");
+      }
+      break;
+    case "warning":
+      // Only set warning styling if not already at error level
+      if (!isAlreadyError) {
+        cell.setBackground("#FFF2CC");
+        cell.setFontColor("orange");
+      }
+      break;
+    case "advisory":
+      // Only set advisory styling if no higher severity is present
+      if (!isAlreadyError && !isAlreadyWarning) {
+        cell.setBackground("#FFFFCC");
+      }
+      break;
+  }
+}
+
+/**
+ * Combined helper that clears all lint-managed visual artifacts from a range:
+ * background colors, font colors, and [Lint]-prefixed notes.
+ * Range-scoped so category color backgrounds in column A are preserved.
+ */
+function clearLintArtifacts(
+  range: GoogleAppsScript.Spreadsheet.Range,
+): void {
+  if (!range) return;
+  if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
+
+  clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
+  clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
+  clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+}
+
+function clearSourceOverwriteLintArtifacts(
+  range: GoogleAppsScript.Spreadsheet.Range,
+): void {
+  clearRangeLintNoteLinesWithPrefix(
+    range,
+    SOURCE_OVERWRITE_LINT_NOTE_PREFIX,
+    LINT_WARNING_FONT_COLORS_WITHOUT_WHITE,
+  );
+}
+
+/**
+ * Like setLintNote but does NOT change the cell background.
+ * Use this for columns where user-set backgrounds must be preserved
+ * (e.g., Categories column A category colors).
+ */
+function setLintNotePreserveBackground(
+  cell: GoogleAppsScript.Spreadsheet.Range,
+  message: string,
+  severity: "error" | "warning" | "advisory",
+): void {
+  cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
+
+  switch (severity) {
+    case "error":
+      cell.setFontColor("red");
+      break;
+    case "warning":
+      cell.setFontColor("orange");
+      break;
+    case "advisory":
+      break;
+  }
+}
+
+/**
+ * Like appendLintNote but does NOT change the cell background.
+ * Use this for columns where user-set backgrounds must be preserved
+ * (e.g., Categories column A category colors).
+ */
+function appendLintNotePreserveBackground(
+  cell: GoogleAppsScript.Spreadsheet.Range,
+  message: string,
+  severity: "error" | "warning" | "advisory",
+): void {
+  const existingNote = cell.getNote() || "";
+  const newMessage = `${LINT_NOTE_PREFIX}${message}`;
+
+  if (existingNote) {
+    cell.setNote(`${existingNote}\n${newMessage}`);
+  } else {
+    cell.setNote(newMessage);
+  }
+
+  // Apply font color only (no background).  Detect existing error state
+  // via both background (#FFC7CE from normal setLintNote) AND font color
+  // (red from appendLintNotePreserveBackground on a preserved-bg cell).
+  const currentBg = cell.getBackground().toUpperCase();
+  const currentFont = (cell.getFontColor() || "").toUpperCase();
+  const isAlreadyError =
+    currentBg === "#FFC7CE" ||
+    currentFont === "RED" ||
+    currentFont === "#FF0000";
+
+  switch (severity) {
+    case "error":
+      cell.setFontColor("red");
+      break;
+    case "warning":
+      if (!isAlreadyError) {
+        cell.setFontColor("orange");
+      }
+      break;
+    case "advisory":
+      break;
+  }
+}
+
+/**
+ * Pre-cleanup inspection pass for ID columns (column E, index 4).
+ * Reads raw values BEFORE cleanWhitespaceOnlyCells() runs so that
+ * whitespace-only IDs (which would be erased by cleanup) are captured.
+ *
+ * Returns a Map of row number → raw ID value for cells that contain
+ * only whitespace characters (not empty, but whitespace-only).
+ */
+function inspectRawIds(
+  sheetName: string,
+  columnEIndex: number,
+): Map<number, string> {
+  const result = new Map<number, string>();
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return result;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return result;
+
+  const range = sheet.getRange(2, columnEIndex, lastRow - 1, 1);
+  const values = range.getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i][0];
+    // Capture cells that are strings with content but only whitespace
+    if (
+      typeof value === "string" &&
+      value.length > 0 &&
+      value.trim() === ""
+    ) {
+      result.set(i + 2, value); // +2 because data starts at row 2
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Task 1: Checks for duplicate effective IDs in Categories column E.
+ * The "effective ID" is the explicit ID if present, otherwise the slugified name.
+ * Annotates duplicate cells with error-level lint notes.
+ */
+function checkDuplicateCategoryIds(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName("Categories");
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  // Clear previous lint artifacts on column E (ID column, index 5)
+  const idRange = sheet.getRange(2, 5, lastRow - 1, 1);
+  clearLintArtifacts(idRange);
+
+  // Read name column (A=1) and ID column (E=5)
+  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const ids = idRange.getValues();
+
+  // Build map of effective ID → rows. Mirror builder: explicit ID → slugify(name) →
+  // `category-${index+1}` fallback. Skip blank-name rows — builder returns early.
+  const effectiveIdMap = new Map<string, number[]>();
+  for (let i = 0; i < ids.length; i++) {
+    const explicitId = String(ids[i][0] || "").trim();
+    const name = String(names[i][0] || "").trim();
+    if (!name) continue;
+    const effectiveId = explicitId || slugify(name) || `category-${i + 1}`;
+
+    if (!effectiveIdMap.has(effectiveId)) {
+      effectiveIdMap.set(effectiveId, [i + 2]);
+    } else {
+      effectiveIdMap.get(effectiveId)?.push(i + 2);
+    }
+  }
+
+  // Annotate duplicates
+  effectiveIdMap.forEach((rows, effectiveId) => {
+    if (rows.length > 1) {
+      const logger = getScopedLogger("LintDuplicateCategoryIds");
+      logger.warn(
+        `Duplicate category ID "${effectiveId}" in rows: ${rows.join(", ")}`,
+      );
+      for (const row of rows) {
+        const cell = sheet.getRange(row, 5);
+        setLintNote(
+          cell,
+          `Duplicate category ID "${effectiveId}" (also in rows ${rows.filter((r) => r !== row).join(", ")})`,
+          "error",
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Task 2: Checks for duplicate effective IDs in Details column E.
+ * Mirrors checkDuplicateCategoryIds() for field IDs.
+ */
+function checkDuplicateDetailIds(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName("Details");
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  // Clear previous lint artifacts on column E (ID column, index 5)
+  const idRange = sheet.getRange(2, 5, lastRow - 1, 1);
+  clearLintArtifacts(idRange);
+
+  // Read name column (A=1) and ID column (E=5)
+  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const ids = idRange.getValues();
+
+  // Strict validation treats field IDs case-insensitively, so lint should too.
+  // Mirror builder: explicit ID → slugify(name) → `field-${index+1}` fallback.
+  // Skip blank-name rows — builder returns early on those.
+  const effectiveIdMap = new Map<string, { rows: number[]; displayId: string }>();
+  for (let i = 0; i < ids.length; i++) {
+    const explicitId = String(ids[i][0] || "").trim();
+    const name = String(names[i][0] || "").trim();
+    if (!name) continue;
+    const effectiveId = explicitId || slugify(name) || `field-${i + 1}`;
+    const normalizedId = effectiveId.toLowerCase();
+
+    if (!effectiveIdMap.has(normalizedId)) {
+      effectiveIdMap.set(normalizedId, {
+        rows: [i + 2],
+        displayId: effectiveId,
+      });
+    } else {
+      effectiveIdMap.get(normalizedId)?.rows.push(i + 2);
+    }
+  }
+
+  // Annotate duplicates
+  effectiveIdMap.forEach(({ rows, displayId }) => {
+    if (rows.length > 1) {
+      const logger = getScopedLogger("LintDuplicateDetailIds");
+      logger.warn(
+        `Duplicate field ID "${displayId}" in rows: ${rows.join(", ")}`,
+      );
+      for (const row of rows) {
+        const cell = sheet.getRange(row, 5);
+        setLintNote(
+          cell,
+          `Duplicate field ID "${displayId}" (case-insensitive match; also in rows ${rows.filter((r) => r !== row).join(", ")})`,
+          "error",
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Task 3: Warns when two names in column A produce the same fallback slug,
+ * even if their explicit IDs may later differ. This is the earliest visible
+ * signal that auto-generated IDs may collide.
+ * SEPARATE from checkForDuplicates() which checks exact string matches.
+ */
+function checkSlugCollisions(
+  sheetName: string,
+  nameColumnIndex: number,
+): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const nameRange = sheet.getRange(2, nameColumnIndex, lastRow - 1, 1);
+  // Remove only prior slug-collision warnings so duplicate-name errors from
+  // checkForDuplicates() remain intact while stale slug warnings are refreshed.
+  // This path preserves user-managed category colors and font choices, so it
+  // only strips the note lines and leaves visual formatting untouched.
+  clearRangeLintNoteLinesWithPrefix(
+    nameRange,
+    SLUG_COLLISION_LINT_NOTE_PREFIX,
+    [],
+    [],
+  );
+
+  const names = nameRange.getValues();
+
+  // Build map of slug → rows (original names for display)
+  const slugMap = new Map<string, { rows: number[]; originals: string[] }>();
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i][0] || "").trim();
+    if (!name) continue;
+    const slug = slugify(name);
+    if (!slug) continue;
+
+    if (!slugMap.has(slug)) {
+      slugMap.set(slug, { rows: [i + 2], originals: [name] });
+    } else {
+      const entry = slugMap.get(slug)!;
+      entry.rows.push(i + 2);
+      entry.originals.push(name);
+    }
+  }
+
+  // Annotate slug collisions with warnings
+  slugMap.forEach(({ rows, originals }, slug) => {
+    if (rows.length > 1) {
+      const logger = getScopedLogger("LintSlugCollisions");
+      logger.warn(
+        `Slug collision "${slug}" in ${sheetName}: rows ${rows.join(", ")} (names: ${originals.join(", ")})`,
+      );
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const otherRows = rows.filter((r) => r !== row);
+        const otherNames = originals.filter((_, i) => rows[i] !== row);
+        const cell = sheet.getRange(row, nameColumnIndex);
+        appendLintNotePreserveBackground(
+          cell,
+          `Slug collision: "${originals[idx]}" → "${slug}" (also produced by "${otherNames.join('", "')}" in row${otherRows.length > 1 ? "s" : ""} ${otherRows.join(", ")})`,
+          "warning",
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Task 4: Validates the Applies column in the Categories sheet.
+ * - Resolves the Applies column by header label, matching the builder
+ * - Warns when tokens would be ignored by the builder
+ * - Warns if no category includes "track" (non-blocking per strict build validation)
+ * - Warns if the column is missing and the builder would need to auto-create it
+ */
+function validateAppliesColumn(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const categoriesSheet = spreadsheet.getSheetByName("Categories");
+  if (!categoriesSheet) return;
+
+  const lastRow = categoriesSheet.getLastRow();
+  const lastCol = categoriesSheet.getLastColumn();
+  if (lastCol > 0) {
+    const headerRowRange = categoriesSheet.getRange(1, 1, 1, lastCol);
+    clearRangeLintNoteLinesWithPrefix(
+      headerRowRange,
+      `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+    );
+    clearRangeLintNoteLinesWithPrefix(
+      headerRowRange,
+      `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
+    );
+    clearRangeLintNoteLinesWithPrefix(
+      headerRowRange,
+      `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+    );
+
+    if (lastRow > 1) {
+      const bodyRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
+      clearRangeLintNoteLinesWithPrefix(
+        bodyRange,
+        `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
+      );
+      clearRangeLintNoteLinesWithPrefix(
+        bodyRange,
+        `${LINT_NOTE_PREFIX}All Applies tokens are unrecognized`,
+      );
+      clearRangeLintNoteLinesWithPrefix(
+        bodyRange,
+        `${LINT_NOTE_PREFIX}Applies value contains semicolons`,
+      );
+    }
+  }
+  const headerValues =
+    lastCol > 0 ? categoriesSheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  const normalizedHeaders = headerValues.map((header) =>
+    String(header || "")
+      .trim()
+      .toLowerCase(),
+  );
+  const appliesColZeroBased = normalizedHeaders.findIndex(
+    (header) =>
+      header === "applies" ||
+      header === "tracks" ||
+      header === "applies to" ||
+      header === "appliesto",
+  );
+
+  if (appliesColZeroBased === -1) {
+    // The Applies header was removed or renamed. We've already cleared
+    // Applies-specific notes above. Intentionally avoid blanket-clearing the
+    // sheet here because earlier lint phases may have already annotated other
+    // columns, and those findings must be preserved.
+    const headerCell = categoriesSheet.getRange(1, 1);
+    appendLintNote(
+      headerCell,
+      'No "Applies" header found. The builder resolves this column by header name and may auto-create it, seeding the first category with "track, observation".',
+      "warning",
+    );
+    return;
+  }
+
+  const appliesColIndex = appliesColZeroBased + 1; // 1-based for Sheet ranges
+
+  // Clear previous lint artifacts on column D (data rows + header)
+  if (lastRow > 1) {
+    const appliesRange = categoriesSheet.getRange(
+      2,
+      appliesColIndex,
+      lastRow - 1,
+      1,
+    );
+    clearLintArtifacts(appliesRange);
+  }
+  // Also clear header cell artifacts (Applies-specific notes only, to avoid
+  // wiping higher-priority annotations on the same cell, e.g. A1 language error)
+  const headerCell = categoriesSheet.getRange(1, appliesColIndex);
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+  );
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
+  );
+  clearRangeLintNoteLinesWithPrefix(
+    headerCell,
+    `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+  );
+
+  if (lastRow <= 1) return;
+
+  // Read both name and Applies so we can skip blank/spacer rows,
+  // matching buildCategories() which returns early for rows without a name.
+  // Resolve the Name column by header (mirrors buildCategories' header-map
+  // lookup) instead of hard-coding column A.
+  const appliesValues = categoriesSheet.getRange(
+    2,
+    appliesColIndex,
+    lastRow - 1,
+    1,
+  ).getValues();
+  const nameColZeroBased = normalizedHeaders.findIndex(
+    (header) => header === "name",
+  );
+  const nameColIndex = nameColZeroBased >= 0 ? nameColZeroBased + 1 : 1;
+  const nameValues = categoriesSheet.getRange(
+    2,
+    nameColIndex,
+    lastRow - 1,
+    1,
+  ).getValues();
+  let hasObservation = false;
+  let hasTrack = false;
+
+  for (let i = 0; i < appliesValues.length; i++) {
+    const rawValue = appliesValues[i][0] == null ? "" : String(appliesValues[i][0]).trim();
+    const categoryName = String(nameValues[i][0] || "").trim();
+    const row = i + 2;
+
+    // Mirror buildCategories(): skip rows without a category name entirely.
+    // Blank Applies on a real category row still falls back to observation.
+    if (!categoryName) continue;
+
+    if (!rawValue) {
+      // Blank Applies cells: mirror builder semantics.
+      // The builder uses the physical array index (not a skip-blank counter)
+      // for the AUTO_CREATED_APPLIES_COLUMN && index === 0 check.
+      const isFirstCategory = i === 0;
+      const isAutoCreated =
+        typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+        AUTO_CREATED_APPLIES_COLUMN;
+      if (isAutoCreated && isFirstCategory) {
+        hasObservation = true;
+        hasTrack = true;
+      } else {
+        hasObservation = true;
+      }
+      continue;
+    }
+
+    // Parse tokens: split by comma, trim, lowercase
+    // Mirror builder's parseTokens() which ONLY splits by comma — semicolons,
+    // newlines, and other delimiters are NOT recognized in the Applies column
+    // (unlike the Fields column which uses normalizeFieldTokens with broader parsing).
+    const tokens = rawValue
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+
+    // Warn if the raw value contains non-comma delimiters that the builder ignores.
+    // This catches cases like "track; observation" where the semicolon causes the
+    // builder to see "track; observation" as a single token → only "track" is kept
+    // and "observation" is silently dropped.
+    if (/[;；\n•·，、]/.test(rawValue)) {
+      const cell = categoriesSheet.getRange(row, appliesColIndex);
+      appendLintNote(
+        cell,
+        'Applies value contains semicolons or other non-comma delimiters. The builder only recognizes commas — use "observation, track" instead of "observation; track". Other delimiters cause tokens to be silently merged and potentially dropped.',
+        "warning",
+      );
+    }
+
+    const normalizedTokens = tokens
+      .map((token) => {
+        if (token.startsWith("o")) return "observation";
+        if (token.startsWith("t")) return "track";
+        return "";
+      })
+      .filter(Boolean);
+    const invalidTokens = tokens.filter((token) => {
+      return !token.startsWith("o") && !token.startsWith("t");
+    });
+
+    if (invalidTokens.length > 0) {
+      const cell = categoriesSheet.getRange(row, appliesColIndex);
+      if (normalizedTokens.length === 0 && tokens.length > 0) {
+        // All tokens are unrecognized — mirror builder fallback logic
+        const isFirstCategory = i === 0;
+        const isAutoCreated =
+          typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+          AUTO_CREATED_APPLIES_COLUMN;
+        const builderDefault =
+          isAutoCreated && isFirstCategory
+            ? "track + observation"
+            : "observation";
+        appendLintNote(
+          cell,
+          `All Applies tokens are unrecognized ("${invalidTokens.join('", "')}"). The builder will silently default this row to "${builderDefault}". Use "observation" or "track" explicitly.`,
+          "warning",
+        );
+      } else {
+        appendLintNote(
+          cell,
+          `Unrecognized Applies token(s): "${invalidTokens.join('", "')}". The builder only keeps observation/track prefixes and ignores the rest.`,
+          "warning",
+        );
+      }
+    }
+
+    // If nothing matched, the builder falls back based on AUTO_CREATED_APPLIES_COLUMN.
+    // Mirror builder: uses physical array index, not skip-blank counter.
+    if (normalizedTokens.length === 0) {
+      const isFirstCategory = i === 0;
+      const isAutoCreated =
+        typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" &&
+        AUTO_CREATED_APPLIES_COLUMN;
+      if (isAutoCreated && isFirstCategory) {
+        hasObservation = true;
+        hasTrack = true;
+      } else {
+        hasObservation = true;
+      }
+    } else {
+      if (normalizedTokens.includes("observation")) hasObservation = true;
+      if (normalizedTokens.includes("track")) hasTrack = true;
+    }
+  }
+
+  // The payload builder still requires observation coverage somewhere in the sheet.
+  if (!hasObservation) {
+    const cell = categoriesSheet.getRange(1, appliesColIndex);
+    appendLintNote(
+      cell,
+      'No category includes "observation" in Applies. Config generation currently fails unless at least one category resolves to observation.',
+      "error",
+    );
+  }
+
+  // When the Applies column was auto-created, the builder seeds the first category
+  // with track + observation, so this is only a warning. Otherwise it is a hard
+  // error — the builder throws 'At least one category must include "track"'.
+  if (!hasTrack) {
+    const cell = categoriesSheet.getRange(1, appliesColIndex);
+    if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined" && AUTO_CREATED_APPLIES_COLUMN) {
+      appendLintNote(
+        cell,
+        'No category includes "track" in Applies. The Applies column was auto-created and the first category will be defaulted to track + observation during generation. Review column D to confirm.',
+        "warning",
+      );
+    } else {
+      appendLintNote(
+        cell,
+        'No category includes "track" in Applies. Config generation will fail — at least one category must include "track".',
+        "error",
+      );
+    }
+  }
+}
+
+/**
+ * Task 5: Checks if a sheet is empty (only header row or no rows).
+ * Returns true if empty (caller should return early), false otherwise.
+ */
+function checkEmptySheet(
+  sheet: GoogleAppsScript.Spreadsheet.Sheet,
+  sheetDisplayName: string,
+): boolean {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    const lastCol = sheet.getLastColumn();
+    if (lastCol > 0) {
+      clearLintArtifacts(sheet.getRange(1, 1, 1, lastCol));
+    }
+    const cell = sheet.getRange(1, 1);
+    clearLintArtifacts(cell);
+    setLintNote(
+      cell,
+      `${sheetDisplayName} sheet is empty. At least one ${sheetDisplayName.toLowerCase()} entry is required for config generation.`,
+      "error",
+    );
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Task 6: Checks manual ID hygiene in column E.
+ * - Warns on whitespace-only IDs (from pre-cleanup capture)
+ * - Warns on manually entered IDs that are not slug-safe
+ * - Skips blank/empty IDs (builder auto-generates these)
+ */
+function checkManualIdHygiene(
+  sheetName: string,
+  columnEIndex: number,
+  rawIds: Map<number, string>,
+): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  // NOTE: Do NOT blanket-clear column E here. Duplicate-ID checks (Tasks 1/2)
+  // have already set their annotations on column E. We only clear notes/fonts
+  // for rows we are about to annotate, to avoid wiping prior findings.
+  const logger = getScopedLogger("LintManualIdHygiene");
+
+  // 1. Warn on whitespace-only IDs captured before cleanup
+  rawIds.forEach((rawValue, row) => {
+    const cell = sheet.getRange(row, columnEIndex);
+    appendLintNote(
+      cell,
+      `Whitespace-only ID "${rawValue}" will be treated as empty and auto-generated.`,
+      "warning",
+    );
+    logger.warn(
+      `${sheetName} row ${row}: whitespace-only ID will be treated as empty`,
+    );
+  });
+
+  // 2. Check all non-empty IDs for slug-safety
+  // Skip blank-name rows — builder returns early on those.
+  const nameValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const idRange = sheet.getRange(2, columnEIndex, lastRow - 1, 1);
+  const idValues = idRange.getValues();
+  const slugSafePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+  for (let i = 0; i < idValues.length; i++) {
+    const row = i + 2;
+    const idValue = String(idValues[i][0] || "").trim();
+    const nameValue = String(nameValues[i][0] || "").trim();
+
+    // Skip blank/empty (builder auto-generates)
+    if (!idValue) continue;
+
+    // Skip blank-name rows — builder returns early on those.
+    if (!nameValue) continue;
+
+    // Skip if this row was already flagged as whitespace-only
+    if (rawIds.has(row)) continue;
+
+    // Check slug-safety
+    if (!slugSafePattern.test(idValue)) {
+      const cell = sheet.getRange(row, columnEIndex);
+      appendLintNote(
+        cell,
+        `Manual ID "${idValue}" is used as entered by the builder. Recommended format: lowercase letters, numbers, and hyphens (e.g., "my-category-id").`,
+        "warning",
+      );
+      logger.warn(
+        `${sheetName} row ${row}: non-slug-safe ID "${idValue}"`,
+      );
+    }
+  }
+}
+
+/**
+ * Canonical option parser that mirrors the builder's parseOptions() logic.
+ * Splits by comma, trims, and for each option uses first-colon value:label format.
+ * No-colon entries use slugified label as value.
+ */
+function parseCanonicalOptions(optionsStr: string): Array<{
+  value: string;
+  label: string;
+  raw: string;
+}> {
+  if (!optionsStr) return [];
+
+  const opts = optionsStr
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (opts.length === 0) return [];
+
+  return opts.map((opt) => {
+    const colonIndex = opt.indexOf(":");
+    if (colonIndex > 0) {
+      const value = opt.substring(0, colonIndex);
+      const label = opt.substring(colonIndex + 1);
+      return { value, label, raw: opt };
+    }
+    return {
+      value: slugify(opt),
+      label: opt,
+      raw: opt,
+    };
+  });
+}
+
+/**
+ * Detects ambiguous colon usage in select options that may indicate
+ * accidental label splits rather than intentional value:label pairs.
+ * Returns an array of warning messages for ambiguous patterns.
+ */
+function detectAmbiguousColonUsage(
+  parsed: Array<{ value: string; label: string; raw: string }>,
+): string[] {
+  const warnings: string[] = [];
+
+  for (const opt of parsed) {
+    // Use the raw option text for colon analysis
+    const rawText = opt.raw;
+    const colonCount = (rawText.match(/:/g) || []).length;
+
+    // Leading colon with empty value (e.g., ":label")
+    if (colonCount > 0 && rawText.startsWith(":")) {
+      warnings.push(
+        `Option "${rawText}" has an empty value before the colon.`,
+      );
+      continue;
+    }
+
+    // Multiple colons (e.g., "value:label:extra")
+    if (colonCount > 1) {
+      warnings.push(
+        `Option "${rawText}" contains multiple colons. Only the first colon is used to split value:label.`,
+      );
+      continue;
+    }
+
+    // Value part looks like natural language with spaces (e.g., "not applicable:No")
+    if (
+      opt.value.includes(" ") &&
+      opt.label &&
+      opt.value.length > 1
+    ) {
+      warnings.push(
+        `Option "${rawText}" has spaces in the value portion ("${opt.value}"), which may be unintentional.`,
+      );
+    }
+  }
+
+  return warnings;
+}
+
 function isEmptyOrWhitespace(value: any): boolean {
   return (
     value === undefined ||
@@ -158,6 +1103,28 @@ function extractDriveFileId(url: string): string | null {
   return match ? match[0] : null;
 }
 
+function isSupportedSvgDataUri(dataUri: string): boolean {
+  if (!dataUri.toLowerCase().startsWith("data:image/svg+xml")) return false;
+
+  try {
+    let svgText: string;
+    if (dataUri.includes(";base64,")) {
+      const base64 = dataUri.split(";base64,")[1];
+      if (!base64) return false;
+      svgText = Utilities.newBlob(
+        Utilities.base64Decode(base64),
+      ).getDataAsString();
+    } else {
+      const commaIndex = dataUri.indexOf(",");
+      if (commaIndex === -1) return false;
+      svgText = decodeURIComponent(dataUri.substring(commaIndex + 1));
+    }
+    return svgText.trim().startsWith("<svg");
+  } catch (_error) {
+    return false;
+  }
+}
+
 function columnNumberToLetter(columnNumber: number): string {
   let dividend = columnNumber;
   let columnName = "";
@@ -175,6 +1142,7 @@ function checkForDuplicates(
   sheet: GoogleAppsScript.Spreadsheet.Sheet,
   columnIndex: number,
   startRow: number = 2,
+  preserveBackground: boolean = false,
 ): void {
   const lastRow = sheet.getLastRow();
   if (lastRow <= startRow) return;
@@ -185,7 +1153,19 @@ function checkForDuplicates(
     lastRow - startRow + 1,
     1,
   );
-  clearRangeBackgroundIfMatches(range, ["#FFC7CE"]);
+  if (preserveBackground) {
+    clearRangeLintNoteLinesWithPrefix(
+      range,
+      LINT_NOTE_PREFIX,
+      LINT_WARNING_FONT_COLORS,
+      [],
+    );
+    clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
+  } else {
+    clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+    clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
+    clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
+  }
   const values = range
     .getValues()
     .map((row) => row[0].toString().trim().toLowerCase());
@@ -207,11 +1187,25 @@ function checkForDuplicates(
       console.log(
         'Found duplicate value "' + value + '" in rows: ' + rows.join(", "),
       );
-      const columnLetter = columnNumberToLetter(columnIndex);
-      const rangeAddresses = rows.map(
-        (rowNumber) => `${columnLetter}${rowNumber}`,
-      );
-      sheet.getRangeList(rangeAddresses).setBackground("#FFC7CE"); // Light red
+      const otherRowsStr = rows.join(", ");
+      for (const row of rows) {
+        const cell = sheet.getRange(row, columnIndex);
+        if (preserveBackground) {
+          // Use preserve-background variant to avoid overwriting user-managed
+          // colors (e.g., Categories column A category colors read by builder).
+          setLintNotePreserveBackground(
+            cell,
+            `Duplicate value "${value}" found in rows: ${otherRowsStr}`,
+            "error",
+          );
+        } else {
+          setLintNote(
+            cell,
+            `Duplicate value "${value}" found in rows: ${otherRowsStr}`,
+            "error",
+          );
+        }
+      }
     }
   });
 }
@@ -219,7 +1213,9 @@ function checkForDuplicates(
 // Additional validation functions
 
 /**
- * Check for unreferenced details (details that no category uses)
+ * Check for unreferenced details (details that no category uses).
+ * Uses normalizeFieldTokens() to match build parsing and resolves against
+ * both slugified names and explicit IDs from Details column E.
  */
 function checkUnreferencedDetails(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -231,57 +1227,136 @@ function checkUnreferencedDetails(): void {
   }
 
   try {
-    // Get all detail names from Details sheet
+    // Get all detail names and explicit IDs from Details sheet
     const detailsLastRow = detailsSheet.getLastRow();
     if (detailsLastRow <= 1) return; // No details to check
 
-    clearRangeBackgroundIfMatches(
-      detailsSheet.getRange(2, 1, detailsLastRow - 1, 1),
-      ["#FFFFCC"],
+    const detailRange = detailsSheet.getRange(2, 1, detailsLastRow - 1, 1);
+    clearRangeLintNoteLinesWithPrefix(
+      detailRange,
+      `${LINT_NOTE_PREFIX}Detail `,
     );
+    // Clear warning backgrounds on cells whose notes were fully removed
+    // (i.e., cells that only had unreferenced-detail warnings, now resolved).
+    // Cells still carrying other annotations (e.g., duplicate-name errors)
+    // keep their higher-severity backgrounds.
+    const notesAfter = detailRange.getNotes();
+    const backgrounds = detailRange.getBackgrounds();
+    let bgUpdated = false;
+    for (let r = 0; r < backgrounds.length; r++) {
+      if (
+        !notesAfter[r][0] &&
+        LINT_WARNING_BACKGROUND_COLORS.some(
+          (c) => c.toUpperCase() === backgrounds[r][0].toUpperCase(),
+        )
+      ) {
+        backgrounds[r][0] = null;
+        bgUpdated = true;
+      }
+    }
+    if (bgUpdated) {
+      detailRange.setBackgrounds(backgrounds);
+    }
 
-    const detailNames = detailsSheet
-      .getRange(2, 1, detailsLastRow - 1, 1)
-      .getValues()
-      .map((row) => slugify(String(row[0])))
-      .filter((name) => name);
+    // Read both name (col A) and ID (col E) columns
+    const detailData = detailsSheet
+      .getRange(2, 1, detailsLastRow - 1, 5)
+      .getValues();
 
-    // Get all field references from Categories sheet (column 3)
+    // Build list of detail entries: { slug, explicitId, row }
+    const detailEntries: Array<{
+      name: string;
+      slug: string;
+      explicitId: string;
+      row: number;
+    }> = [];
+    for (let i = 0; i < detailData.length; i++) {
+      const name = String(detailData[i][0] || "").trim();
+      const explicitId = String(detailData[i][4] || "").trim();
+      const slug = slugify(name);
+      if (slug || explicitId) {
+        detailEntries.push({ name, slug, explicitId, row: i + 2 });
+      }
+    }
+
+    // Get all field references from Categories sheet — resolve "Fields" column
+    // dynamically by header name to match builder behavior.
     const categoriesLastRow = categoriesSheet.getLastRow();
     if (categoriesLastRow <= 1) {
       // No categories exist, so all details are unreferenced
       console.log("No categories exist - all details are unreferenced");
-      for (let i = 2; i <= detailsLastRow; i++) {
-        detailsSheet.getRange(i, 1).setBackground("#FFFFCC"); // Light yellow for warning
+      for (const entry of detailEntries) {
+        appendLintNote(
+          detailsSheet.getRange(entry.row, 1),
+          `Detail "${entry.name}" is not referenced by any category's field list. No categories exist.`,
+          "warning",
+        );
       }
       return;
     }
 
-    const categoryFields = categoriesSheet
-      .getRange(2, 3, categoriesLastRow - 1, 1)
-      .getValues()
-      .map((row) => String(row[0] || ""))
-      .filter((fields) => fields.trim() !== "");
+    const categoriesLastCol = categoriesSheet.getLastColumn();
+    const catHeaders = categoriesSheet
+      .getRange(1, 1, 1, categoriesLastCol)
+      .getValues()[0];
+    const catHeaderMap = createLintHeaderMap(catHeaders);
+    const fieldsColZeroBased =
+      getLintColumnIndex(catHeaderMap, "fields", "details") ??
+      CATEGORY_COL.FIELDS;
+    const fieldsColOneBased = fieldsColZeroBased + 1;
 
-    // Build set of all referenced field names
-    const referencedFields = new Set<string>();
-    for (const fieldsStr of categoryFields) {
-      const fields = fieldsStr
-        .split(",")
-        .map((f) => slugify(f.trim()))
-        .filter((f) => f);
-      for (const field of fields) {
-        referencedFields.add(field);
+    const fieldRange = categoriesSheet.getRange(
+      2,
+      fieldsColOneBased,
+      categoriesLastRow - 1,
+      1,
+    );
+    const displayFieldValues = fieldRange.getDisplayValues();
+    const rawFieldValues = fieldRange.getValues();
+    const categoryFields: string[] = [];
+    for (let i = 0; i < displayFieldValues.length; i++) {
+      const displayStr = String(displayFieldValues[i][0] || "");
+      const rawStr = String(rawFieldValues[i][0] || "");
+      // Mirror builder: prefer display value, fall back to raw
+      const tokens = normalizeFieldTokens(displayStr);
+      const value = tokens.length > 0 ? displayStr : rawStr;
+      const strValue = String(value || "");
+      if (strValue.trim() !== "") {
+        categoryFields.push(strValue);
       }
     }
 
-    // Check each detail to see if it's referenced
-    for (let i = 0; i < detailNames.length; i++) {
-      const detailName = detailNames[i];
-      if (!referencedFields.has(detailName)) {
-        const row = i + 2; // +2 because of header row and 0-indexed
-        console.log(`Unreferenced detail: "${detailName}" at row ${row}`);
-        detailsSheet.getRange(row, 1).setBackground("#FFFFCC"); // Light yellow for warning
+    // Build set of all referenced field identifiers using normalizeFieldTokens
+    const referencedFields = new Set<string>();
+    for (const fieldsStr of categoryFields) {
+      const tokens = normalizeFieldTokens(fieldsStr);
+      for (const token of tokens) {
+        const slugified = slugify(token);
+        if (slugified) referencedFields.add(slugified);
+        if (token) {
+          referencedFields.add(token);
+          referencedFields.add(token.toLowerCase());
+        }
+      }
+    }
+
+    // Check each detail to see if it's referenced by slugified name or explicit ID
+    for (const entry of detailEntries) {
+      const isReferenced =
+        (entry.slug && referencedFields.has(entry.slug)) ||
+        (entry.explicitId &&
+          (referencedFields.has(entry.explicitId) ||
+            referencedFields.has(entry.explicitId.toLowerCase())));
+      if (!isReferenced) {
+        console.log(
+          `Unreferenced detail: "${entry.slug}" at row ${entry.row}`,
+        );
+        const cell = detailsSheet.getRange(entry.row, 1);
+        appendLintNote(
+          cell,
+          `Detail "${entry.name}" is not referenced by any category's field list. It will be excluded from the generated config.`,
+          "warning",
+        );
       }
     }
   } catch (error) {
@@ -310,8 +1385,9 @@ function validateUniversalFlag(
 }
 
 /**
- * Optional check for duplicate slugs in translation sheets.
- * Not invoked by default because duplicate translation values are allowed.
+ * Check for duplicate slugs in translation sheets.
+ * Warns when two different translated values produce the same slug,
+ * which would cause silent overwrites during config generation.
  */
 function checkDuplicateTranslationSlugs(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -329,23 +1405,26 @@ function checkDuplicateTranslationSlugs(): void {
       const lastCol = sheet.getLastColumn();
       if (lastCol < 4) continue; // Need at least Name, ISO, Source, and one translation
 
-      clearRangeBackgroundIfMatches(
+      // Clear only duplicate-slug lint notes from prior runs, preserving
+      // option-count mismatch backgrounds/fonts set by validateSheetConsistency().
+      clearRangeLintNoteLinesWithPrefix(
         sheet.getRange(2, 4, lastRow - 1, lastCol - 3),
-        ["#FFEB9C"],
+        `${LINT_NOTE_PREFIX}Duplicate translation slug`,
       );
 
       // Check each translation column (starting from column 4)
       for (let col = 4; col <= lastCol; col++) {
-        const values = sheet
+        const rawValues = sheet
           .getRange(2, col, lastRow - 1, 1)
-          .getValues()
-          .map((row) => String(row[0] || "").trim())
-          .filter((v) => v !== "");
+          .getValues();
 
-        // Build slug frequency map
+        // Build slug frequency map — iterate raw values in-place so i+2 maps to
+        // the correct sheet row (blanks are skipped with continue, not filtered).
         const slugCounts = new Map<string, number[]>();
-        for (let i = 0; i < values.length; i++) {
-          const value = values[i];
+        for (let i = 0; i < rawValues.length; i++) {
+          const value = String(rawValues[i][0] || "").trim();
+          if (!value) continue;
+
           const slug = slugify(value);
           if (!slug) continue;
 
@@ -362,8 +1441,13 @@ function checkDuplicateTranslationSlugs(): void {
             console.log(
               `Duplicate slug "${slug}" in ${sheetName} column ${col} at rows: ${rows.join(", ")}`,
             );
+            const otherRowsStr = rows.join(", ");
             for (const row of rows) {
-              sheet.getRange(row, col).setBackground("#FFEB9C"); // Light orange for duplicate warning
+              appendLintNote(
+                sheet.getRange(row, col),
+                `Duplicate translation slug "${slug}" in rows: ${otherRowsStr}`,
+                "warning",
+              );
             }
           }
         }
@@ -392,10 +1476,12 @@ function validateTranslationHeaders(): void {
       if (lastCol < 2) continue; // Need at least a source column and one language column
 
       const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      clearRangeBackgroundIfMatches(sheet.getRange(1, 1, 1, lastCol), [
-        "#FFC7CE",
-        "#FFEB9C",
-      ]);
+      // Clear lint artifacts on header columns 2..lastCol only.
+      // Column A (1,1) is excluded because validateSheetConsistency may have
+      // placed a row-count mismatch note there; clearing it here would lose
+      // that diagnostic if validateSheetConsistency is later skipped.
+      // (lastCol >= 2 is guaranteed by the `continue` above.)
+      clearLintArtifacts(sheet.getRange(1, 2, 1, lastCol - 1));
 
       const headerB = String(headers[1] || "")
         .trim()
@@ -408,6 +1494,9 @@ function validateTranslationHeaders(): void {
       const languageStartIndex = hasMetaColumns ? 3 : 1;
 
       // Check language columns (skip meta columns if present)
+      // Track resolved locale codes to detect duplicates across columns
+      const localeToColumns = new Map<string, number[]>();
+
       for (let i = languageStartIndex; i < headers.length; i++) {
         const header = String(headers[i] || "").trim();
         if (!header) continue;
@@ -418,9 +1507,38 @@ function validateTranslationHeaders(): void {
           console.log(
             `Invalid translation header "${header}" in ${sheetName} column ${i + 1} - should be a language name, ISO code, or "Name - ISO" format`,
           );
-          sheet.getRange(1, i + 1).setBackground("#FFC7CE"); // Light red for invalid
+          setLintNote(
+            sheet.getRange(1, i + 1),
+            `Invalid translation header "${header}" — should be a language name, ISO code, or "Name - ISO" format`,
+            "error",
+          );
+          continue;
+        }
+
+        // Track locale → column indices for duplicate detection
+        if (!localeToColumns.has(parsedCode)) {
+          localeToColumns.set(parsedCode, [i]);
+        } else {
+          localeToColumns.get(parsedCode)?.push(i);
         }
       }
+
+      // Flag duplicate locale headers
+      localeToColumns.forEach((columns, code) => {
+        if (columns.length > 1) {
+          const firstCol = columns[0] + 1; // 1-based for display
+          for (let idx = 1; idx < columns.length; idx++) {
+            const colIndex = columns[idx];
+            const header = String(headers[colIndex] || "").trim();
+            const cell = sheet.getRange(1, colIndex + 1);
+            setLintNote(
+              cell,
+              `Duplicate locale: header "${header}" resolves to "${code}" which is already used by column ${firstCol}`,
+              "error",
+            );
+          }
+        }
+      });
     } catch (error) {
       console.error(`Error validating headers in ${sheetName}:`, error);
     }
@@ -452,7 +1570,8 @@ function lintSheet(
 
   try {
     if (lastRow > 1 && columnValidations.length > 0) {
-      // Clear backgrounds and font colors for all columns except those that should be preserved
+      // Clear backgrounds, font colors, and stale lint notes for all columns
+      // except those that should be preserved
       for (let col = 0; col < columnValidations.length; col++) {
         // Skip columns that should preserve their backgrounds (e.g., Categories icon column with user colors)
         const shouldClearBackground = !preserveBackgroundColumns.includes(col);
@@ -465,6 +1584,8 @@ function lintSheet(
           );
         }
         clearRangeFontColorIfMatches(colRange, LINT_WARNING_FONT_COLORS);
+        // Clear stale [Lint] notes so re-linting produces a clean result
+        clearRangeLintNoteLinesWithPrefix(colRange, LINT_NOTE_PREFIX);
       }
     }
 
@@ -480,8 +1601,10 @@ function lintSheet(
     console.timeEnd(`Cleaning whitespace cells for ${sheetName}`);
 
     // Check for duplicates in the first column (usually the name/identifier column)
+    // Preserve background for columns in preserveBackgroundColumns (e.g., Categories
+    // column A has user-managed category colors that the builder reads at export time).
     console.time(`Checking for duplicates in ${sheetName}`);
-    checkForDuplicates(sheet, 1);
+    checkForDuplicates(sheet, 1, 2, preserveBackgroundColumns.includes(0));
     console.timeEnd(`Checking for duplicates in ${sheetName}`);
 
     console.time(`Getting data for ${sheetName}`);
@@ -569,27 +1692,47 @@ function lintSheet(
   }
 }
 
-function getDriveIconInfo(fileId: string): {
-  slug: string | null;
-  isSvg: boolean;
-  errorMessage?: string;
-} {
+function getDriveIconInfo(fileId: string): DriveIconInfo {
+  if (driveIconInfoCache.has(fileId)) return driveIconInfoCache.get(fileId)!;
+
+  let info: DriveIconInfo;
   try {
     const file = DriveApp.getFileById(fileId);
     const fileName = file.getName();
     const mimeType = file.getMimeType();
+    const mimeTypeLower = mimeType?.toLowerCase() ?? "";
     const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
     const slug = normalizeIconSlug(slugify(nameWithoutExt));
-    const isSvg = mimeType === MimeType.SVG || /\.svg$/i.test(fileName);
-    return { slug: slug || null, isSvg };
+    const isSvgMime = mimeTypeLower.includes("svg");
+    let svgContent: string | null = null;
+
+    // Fast path: MIME type already tells us it's SVG, so reading as text is expected.
+    if (isSvgMime) {
+      svgContent = file.getBlob().getDataAsString().trim();
+    } else {
+      // Fallback: try reading as text to detect raw SVG content. Binary files
+      // (PNG/JPEG) may throw here, so treat those as accessible non-SVG files.
+      try {
+        const text = file.getBlob().getDataAsString().trim();
+        svgContent = text.startsWith("<svg") ? text : null;
+      } catch {
+        svgContent = null;
+      }
+    }
+
+    info = { slug: slug || null, isSvg: svgContent !== null, svgContent };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return {
+    info = {
       slug: null,
       isSvg: false,
+      svgContent: null,
       errorMessage: `Unable to access icon file (Drive ID ${fileId}): ${message}`,
     };
   }
+
+  driveIconInfoCache.set(fileId, info);
+  return info;
 }
 
 function validateCategoryIcons(): void {
@@ -608,15 +1751,63 @@ function validateCategoryIcons(): void {
   }
 
   const iconRange = categoriesSheet.getRange(2, 2, lastRow - 1, 1);
-  // Clear icon column font colors and notes, but preserve backgrounds (not stored in this column)
-  clearRangeFontColorIfMatches(iconRange, LINT_WARNING_FONT_COLORS);
-  clearRangeNotesWithPrefix(iconRange, LINT_NOTE_PREFIX);
+  // Clear icon column lint artifacts: backgrounds, font colors, and notes
+  clearLintArtifacts(iconRange);
 
   const iconValues = iconRange.getValues();
-  const driveFileCache = new Map<
-    string,
-    { slug: string | null; isSvg: boolean; errorMessage?: string }
-  >();
+  // Also read Icon ID column (column F, 1-based index 6) if present
+  const lastCol = categoriesSheet.getLastColumn();
+  const hasIconIdColumn = lastCol >= 6;
+  const iconIdValues = hasIconIdColumn
+    ? categoriesSheet.getRange(2, 6, lastRow - 1, 1).getValues()
+    : [];
+  // Build a set of known icon IDs from the Icons sheet for validation.
+  // Mirror buildIconsFromSheet: only register IDs whose icon source (column B)
+  // is present and recognised by parseIconSource.
+  const knownIconIds = new Set<string>();
+  const iconsSheet = spreadsheet.getSheetByName("Icons");
+  if (iconsSheet) {
+    const iconsLastRow = iconsSheet.getLastRow();
+    if (iconsLastRow > 1) {
+      const iconsData = iconsSheet.getRange(2, 1, iconsLastRow - 1, 2).getValues();
+      for (const row of iconsData) {
+        const id = String(row[0] || "").trim();
+        const iconStr = String(row[1] || "").trim();
+        if (id && iconStr && hasRecognisedIconSource(iconStr)) {
+          knownIconIds.add(id);
+        }
+      }
+    }
+  }
+
+  // Also add category-derived icon IDs (mirrors buildIconsFromSheet logic).
+  // The builder creates icons from categories with: iconId = iconIdFromSheet || categoryId,
+  // where categoryId = idFromSheet || slugify(name) || `category-${index+1}`.
+  // These IDs are valid even without an Icons sheet entry.
+  const nameValues = categoriesSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const hasCategoryIdColumn = lastCol >= 5;
+  const categoryIdValues = hasCategoryIdColumn
+    ? categoriesSheet.getRange(2, 5, lastRow - 1, 1).getValues()
+    : [];
+  for (let i = 0; i < nameValues.length; i++) {
+    const name = String(nameValues[i][0] || "").trim();
+    const iconRaw = iconValues[i][0];
+    const iconStr = typeof iconRaw === "string" ? String(iconRaw).trim() : "";
+    // Mirror buildIconsFromSheet(): only rows with name and supported icon source contribute
+    if (!name || !iconStr || !hasRecognisedIconSource(iconStr)) continue;
+
+    const idFromSheet = hasCategoryIdColumn
+      ? String(categoryIdValues[i][0] || "").trim()
+      : "";
+    const categoryId = idFromSheet || slugify(name) || `category-${i + 1}`;
+
+    const iconIdFromSheet = hasIconIdColumn
+      ? String(iconIdValues[i]?.[0] || "").trim()
+      : "";
+    const iconId = iconIdFromSheet || categoryId;
+
+    if (iconId) knownIconIds.add(iconId);
+  }
   const rowIssues = new Map<number, string[]>();
 
   const addIssue = (row: number, message: string): void => {
@@ -638,56 +1829,141 @@ function validateCategoryIcons(): void {
       iconCellValue === undefined ||
       iconCellValue === ""
     ) {
+      // Check if this row has an Icon ID that the builder can resolve
+      const iconId = iconIdValues[index]?.[0];
+      const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
+      if (iconIdStr) {
+        if (knownIconIds.has(iconIdStr)) {
+          // Builder resolves icon from Icons sheet via Icon ID — skip warning
+          return;
+        }
+        // Icon ID doesn't exist in Icons sheet — error (builder throws for unresolved iconId)
+        const cell = categoriesSheet.getRange(rowNumber, 2);
+        setLintNote(
+          cell,
+          `Icon ID "${iconIdStr}" was not found in the Icons sheet. Generate Config will fail because the builder cannot resolve this icon reference. Either add a matching entry to the Icons sheet or clear the Icon ID.`,
+          "error",
+        );
+        return;
+      }
+      // Missing icon — warn (builder creates category without icon, not a hard error)
+      const cell2 = categoriesSheet.getRange(rowNumber, 2);
+      setLintNote(
+        cell2,
+        "Icon is empty — the category will be exported without an icon. Add an icon here or provide an Icon ID that resolves from the Icons sheet.",
+        "warning",
+      );
       return;
     }
 
     if (typeof iconCellValue === "string") {
       const iconValue = iconCellValue.trim();
       if (!iconValue) {
+        // Check if this row has an Icon ID that the builder can resolve
+        const iconId = iconIdValues[index]?.[0];
+        const iconIdStr = iconId !== null && iconId !== undefined ? String(iconId).trim() : "";
+        if (iconIdStr) {
+          if (knownIconIds.has(iconIdStr)) {
+            // Builder resolves icon from Icons sheet via Icon ID — skip warning
+            return;
+          }
+          // Icon ID doesn't exist in Icons sheet — error (builder throws for unresolved iconId)
+          const cell = categoriesSheet.getRange(rowNumber, 2);
+          setLintNote(
+            cell,
+            `Icon ID "${iconIdStr}" was not found in the Icons sheet. Generate Config will fail because the builder cannot resolve this icon reference. Either add a matching entry to the Icons sheet or clear the Icon ID.`,
+            "error",
+          );
+          return;
+        }
+        // Whitespace-only — treat as missing
+        const cell = categoriesSheet.getRange(rowNumber, 2);
+        setLintNote(
+          cell,
+          "Icon is empty — the category will be exported without an icon. Add an icon here or provide an Icon ID that resolves from the Icons sheet.",
+          "warning",
+        );
         return;
       }
 
       if (iconValue.startsWith("<svg")) {
         // Inline SVG markup - passed through
         return;
-      } else if (iconValue.startsWith("data:")) {
-        // Data URI - passed through (will be validated during generation)
+      } else if (isSupportedSvgDataUri(iconValue)) {
+        // Valid SVG data URI - passed through
         return;
-      } else if (iconValue.startsWith("https://drive.google.com/")) {
-        // Drive URL - validate access
+      } else if (iconValue.startsWith("data:")) {
+        addIssue(
+          rowNumber,
+          "Only SVG data URIs (data:image/svg+xml) are supported for direct config export; other data URIs are silently dropped during generation.",
+        );
+      } else if (iconValue.startsWith("https://drive.google.com/file/d/")) {
+        // Drive URL in builder-supported form - validate access
         const fileId = extractDriveFileId(iconValue);
         if (fileId) {
-          let info = driveFileCache.get(fileId);
+          let info = driveIconInfoCache.get(fileId);
           if (!info) {
             info = getDriveIconInfo(fileId);
-            driveFileCache.set(fileId, info);
           }
 
-          if (info.slug) {
-            // Access is valid; no lint issue.
+          if (info.isSvg) {
+            // Access is valid and file is SVG; no lint issue.
             return;
           }
 
           if (info.errorMessage) {
             addIssue(rowNumber, info.errorMessage);
+          } else {
+            // File is accessible but not SVG (slug may be empty for
+            // punctuation-only or non-Latin filenames, but config
+            // generation silently drops all non-SVG Drive files).
+            addIssue(
+              rowNumber,
+              "Google Drive icon files must be SVG for direct config export; non-SVG Drive files are silently dropped during generation.",
+            );
           }
-          // Note: We don't validate SVG format here because PNG files are also supported
-          // and will be converted to SVG during generation
         } else {
           addIssue(
             rowNumber,
             "Icon URL must contain a valid Google Drive file ID.",
           );
         }
+      } else if (iconValue.startsWith("https://drive.google.com/")) {
+        addIssue(
+          rowNumber,
+          "Google Drive icon URLs must use the /file/d/ form (for example, https://drive.google.com/file/d/<FILE_ID>/view) so config generation can package them.",
+        );
       } else if (/^http:\/\//i.test(iconValue)) {
-        // HTTP URL - warn about security (should use HTTPS)
-        return;
+        if (iconValue.toLowerCase().includes(".svg")) {
+          // HTTP SVG URL - warn about security (should use HTTPS)
+          const cell = categoriesSheet.getRange(rowNumber, 2);
+          setLintNote(
+            cell,
+            "Icon URL should use HTTPS instead of HTTP for security",
+            "warning",
+          );
+          return;
+        }
+        addIssue(
+          rowNumber,
+          'HTTP(S) icon URLs must point directly to an SVG file (URL must contain ".svg"); non-SVG URLs are silently dropped during config generation.',
+        );
       } else if (/^https:\/\//i.test(iconValue)) {
-        // HTTPS URL - passed through
-        return;
+        if (iconValue.toLowerCase().includes(".svg")) {
+          // HTTPS SVG URL - passed through
+          return;
+        }
+        addIssue(
+          rowNumber,
+          'HTTP(S) icon URLs must point directly to an SVG file (URL must contain ".svg"); non-SVG URLs are silently dropped during config generation.',
+        );
       } else {
-        // Plain text - will be used to search icon API (e.g., "river", "building", "tree")
-        // This is the most common use case!
+        // Plain text - works with 'Generate Category Icons' search but not direct export
+        setLintNote(
+          categoriesSheet.getRange(rowNumber, 2),
+          `Plain text icon '${iconValue}' works with 'Generate Category Icons' search, but direct config export only packages supported icon sources (inline SVG, SVG data URI, Drive SVG, or direct SVG URL).`,
+          "warning",
+        );
         return;
       }
     } else if (
@@ -707,8 +1983,7 @@ function validateCategoryIcons(): void {
 
   rowIssues.forEach((messages, rowNumber) => {
     const cell = categoriesSheet.getRange(rowNumber, 2);
-    cell.setFontColor("red");
-    cell.setNote(`${LINT_NOTE_PREFIX}${messages.join("\n")}`);
+    setLintNote(cell, messages.join("\n"), "error");
     console.warn(
       `Icon issue in Categories row ${rowNumber}: ${messages.join(" | ")}`,
     );
@@ -719,11 +1994,87 @@ function validateCategoryIcons(): void {
   }
 }
 
+function validatePrimaryLanguageInA1(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const categoriesSheet = spreadsheet.getSheetByName("Categories");
+  if (!categoriesSheet) return;
+
+  const cell = categoriesSheet.getRange(1, 1);
+  clearLintArtifacts(cell);
+
+  // Mirror getPrimaryLanguageName(): if Metadata sheet has a primaryLanguage
+  // entry, the builder uses that and ignores A1 entirely. Only validate A1
+  // when it is the effective primary-language source.
+  const metadataSheet = spreadsheet.getSheetByName("Metadata");
+  if (metadataSheet) {
+    const metadataValues = metadataSheet.getDataRange().getValues();
+    for (let i = 1; i < metadataValues.length; i++) {
+      if (String(metadataValues[i][0]).trim() === "primaryLanguage") {
+        const lang = String(metadataValues[i][1] || "").trim();
+        if (lang) return; // Metadata has primaryLanguage — A1 is not used
+      }
+    }
+  }
+
+  const a1Value = String(categoriesSheet.getRange(1, 1).getValue() || "").trim();
+  if (!a1Value) {
+    setLintNote(
+      cell,
+      'Categories A1 is blank and no Metadata primaryLanguage is set. The builder will default to "en" (English). Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
+      "warning",
+    );
+    return;
+  }
+
+  // Skip standard headers that are clearly not language names.
+  // However, these values WILL cause getPrimaryLanguage() to throw at runtime
+  // if Metadata has no primaryLanguage, so we flag them as errors rather than
+  // silently accepting them.
+  const lowerA1 = a1Value.toLowerCase();
+  const HEADER_WORDS = ["category", "categories", "name", "label", "type"];
+  if (HEADER_WORDS.includes(lowerA1)) {
+    setLintNote(
+      cell,
+      `Categories A1 contains "${a1Value}" which is not a valid primary language value. ` +
+        `Set a valid language or locale code (e.g. "English", "Português", "en", "pt-BR") or add a "primaryLanguage" row in the Metadata sheet.`,
+      "error",
+    );
+    return;
+  }
+
+  // Validate as a language name or locale code
+  const validation = validatePrimaryLanguage(a1Value);
+  if (!validation.valid) {
+    setLintNote(
+      cell,
+      `Invalid primary language in A1: ${validation.error || "Unknown error"}. The builder will fall back to Metadata primaryLanguage or default to "en".`,
+      "warning",
+    );
+  }
+}
+
 // Specific sheet linting functions
 function lintCategoriesSheet(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const categoriesSheetRef = spreadsheet.getSheetByName("Categories");
   const detailsSheetRef = spreadsheet.getSheetByName("Details");
+
+  // Task 5: Check if Categories sheet is empty before running lint.
+  // Must run BEFORE validatePrimaryLanguageInA1() to avoid the empty-sheet
+  // check wiping the A1 language error note (both target cell A1).
+  if (categoriesSheetRef && checkEmptySheet(categoriesSheetRef, "Categories")) {
+    return;
+  }
+
+  // validatePrimaryLanguageInA1() clears A1 artifacts internally, so no
+  // separate A1 clear is needed here. Removing the redundant clear avoids
+  // accidentally wiping any intermediate state if future phases write to A1.
+
+  // Phase 4: Validate primary language in A1 (only when sheet has data rows)
+  validatePrimaryLanguageInA1();
+
+  // Pre-cleanup: capture whitespace-only IDs before cleanWhitespaceOnlyCells() erases them
+  const rawCategoryIds = inspectRawIds("Categories", 5);
 
   if (categoriesSheetRef) {
     const lastRow = categoriesSheetRef.getLastRow();
@@ -741,17 +2092,29 @@ function lintCategoriesSheet(): void {
     }
   }
 
-  let cachedDetailNames: string[] = [];
+  // Build a Set of all valid field identifiers: slugified names AND explicit IDs
+  let cachedValidFieldIds: Set<string>;
   if (detailsSheetRef) {
     const lastRow = detailsSheetRef.getLastRow();
     if (lastRow > 1) {
-      cachedDetailNames = detailsSheetRef
-        .getRange(2, 1, lastRow - 1, 1)
-        .getValues()
-        .map((row) => slugify(String(row[0])))
-        .filter((name) => name);
+      const detailData = detailsSheetRef
+        .getRange(2, 1, lastRow - 1, 5)
+        .getValues();
+      cachedValidFieldIds = new Set<string>();
+      for (const row of detailData) {
+        const name = String(row[0] || "").trim();
+        const explicitId = String(row[4] || "").trim();
+        if (name) {
+          cachedValidFieldIds.add(slugify(name));
+        }
+        if (explicitId) {
+          cachedValidFieldIds.add(explicitId);
+          cachedValidFieldIds.add(explicitId.toLowerCase());
+        }
+      }
     }
   }
+  cachedValidFieldIds = cachedValidFieldIds || new Set<string>();
 
   const categoriesValidations = [
     // Rule 1: Capitalize the first letter of the category name
@@ -774,74 +2137,32 @@ function lintCategoriesSheet(): void {
         }
       }
     },
-    // Rule 2: Validate icon value - accepts Drive URLs, plain text (for icon search), inline SVG, data URIs, or HTTP URLs
-    (value, row, col) => {
-      try {
-        const trimmedValue = value.trim();
-
-        if (!trimmedValue) {
-          console.log("Missing icon at row " + row);
-          const cell = categoriesSheetRef?.getRange(row, col);
-          if (cell) {
-            cell.setFontColor("red");
-            cell.setNote(
-              `${LINT_NOTE_PREFIX}Icon is required but missing or empty`,
-            );
-          }
-          return;
-        }
-
-        // Icon processing accepts:
-        // 1. Drive URLs - processed as Drive icons
-        // 2. Plain text - used to search icon API (e.g., "river", "building")
-        // 3. Inline SVG - passed through
-        // 4. Data URIs - passed through
-        // 5. HTTP URLs - passed through
-        // All non-empty strings are valid and will be processed appropriately
-
-        // Only validate HTTP URLs must be HTTPS (security best practice)
-        const isHttpUrl = /^http:\/\//i.test(trimmedValue);
-        if (isHttpUrl) {
-          console.log(
-            "Icon HTTP URL should use HTTPS for security: " + trimmedValue,
-          );
-          const cell = categoriesSheetRef?.getRange(row, col);
-          if (cell) {
-            cell.setFontColor("orange");
-            cell.setNote(
-              `${LINT_NOTE_PREFIX}Icon URL should use HTTPS instead of HTTP for security`,
-            );
-          }
-          return;
-        }
-
-        // All other non-empty strings are valid
-        // They will be processed by iconProcessor.ts:
-        // - Drive URLs → processed as Drive icons
-        // - CellImages → processed as cell images
-        // - Everything else → used to search icon API
-      } catch (error) {
-        console.error(
-          "Error validating icon in Categories sheet at row " +
-            row +
-            ", col " +
-            col +
-            ":",
-          error,
-        );
-      }
+    // Rule 2: Icon validation is handled entirely by validateCategoryIcons()
+    // which runs after lintSheet() to avoid clear/write race conditions.
+    () => {
+      // Icon column — no inline validation; see validateCategoryIcons()
     },
-    // Rule 3: Validate comma-separated fields list
+    // Rule 3: Validate field references using normalizeFieldTokens (matches build parsing)
     (value, row, col) => {
       if (isEmptyOrWhitespace(value)) return;
 
       try {
-        // Validate that each field in the comma-separated list exists in the Details sheet
-        if (cachedDetailNames.length > 0) {
-          const fields = value.split(",").map((field) => slugify(field.trim()));
-          const invalidFields = fields.filter(
-            (field) => field && !cachedDetailNames.includes(field),
-          );
+        // Use normalizeFieldTokens to match build parsing across commas, semicolons, newlines, bullets, fullwidth
+        if (cachedValidFieldIds.size > 0) {
+          const tokens = normalizeFieldTokens(value);
+          const invalidFields: string[] = [];
+          for (const token of tokens) {
+            const slugified = slugify(token);
+            const tokenLower = token.toLowerCase();
+            if (
+              slugified &&
+              !cachedValidFieldIds.has(slugified) &&
+              !cachedValidFieldIds.has(token) &&
+              !cachedValidFieldIds.has(tokenLower)
+            ) {
+              invalidFields.push(token);
+            }
+          }
 
           if (invalidFields.length > 0) {
             console.log(
@@ -849,9 +2170,10 @@ function lintCategoriesSheet(): void {
             );
             const cell = categoriesSheetRef?.getRange(row, col);
             if (cell) {
-              cell.setFontColor("red");
-              cell.setNote(
-                `${LINT_NOTE_PREFIX}Invalid fields: ${invalidFields.join(", ")}. These fields do not exist in the Details sheet`,
+              setLintNote(
+                cell,
+                `Invalid fields: ${invalidFields.join(", ")}. These fields do not exist in the Details sheet`,
+                "error",
               );
             }
           }
@@ -873,6 +2195,12 @@ function lintCategoriesSheet(): void {
   // Preserve backgrounds in category name column (index 0) because they are user-set category colors
   lintSheet("Categories", categoriesValidations, [0, 1], [0]);
   validateCategoryIcons();
+
+  // Phase 2: Post-lintSheet() edge-case checks
+  checkDuplicateCategoryIds(); // Task 1: duplicate effective IDs in col E
+  checkSlugCollisions("Categories", 1); // Task 3: slug collisions in col A
+  validateAppliesColumn(); // Task 4: Applies column validation
+  checkManualIdHygiene("Categories", 5, rawCategoryIds); // Task 6: ID hygiene in col E
 }
 
 function lintDetailsSheet(): void {
@@ -881,6 +2209,19 @@ function lintDetailsSheet(): void {
     console.log("Details sheet not found");
     return;
   }
+
+  // Task 5: Check if Details sheet is empty before running lint
+  if (checkEmptySheet(sheet, "Details")) {
+    return;
+  }
+
+  // Clear stale empty-sheet note from A1 (left by a previous run when the
+  // sheet was empty). The non-empty path only touches data rows, so A1
+  // would otherwise retain the old error.
+  clearLintArtifacts(sheet.getRange(1, 1));
+
+  // Pre-cleanup: capture whitespace-only IDs before cleanWhitespaceOnlyCells() erases them
+  const rawDetailIds = inspectRawIds("Details", 5);
 
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
@@ -901,9 +2242,6 @@ function lintDetailsSheet(): void {
       ]);
     }
   }
-
-  // Check for unreferenced details (details not used by any category)
-  checkUnreferencedDetails();
 
   const detailsValidations = [
     // Rule 1: Capitalize the first letter of the detail name
@@ -955,15 +2293,24 @@ function lintDetailsSheet(): void {
     // Rule 3: Validate the type column (t, n, m, blank, s, or select* are valid)
     (value, row, col) => {
       // Type column validation logic:
-      // - blank/empty → selectOne (valid)
+      // - blank/empty → selectOne (mirrors payloadBuilder case "" default)
       // - "s*" (select, single, etc.) → selectOne (valid)
       // - "m*" (multi, multiple, etc.) → selectMultiple (valid)
       // - "n*" (number, numeric, etc.) → number (valid)
       // - "t*" (text, textual, etc.) → text (valid)
       // - Any other value → invalid
 
-      // Empty/blank is valid (defaults to selectOne)
+      const detailsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
+
+      // Empty/blank defaults to selectOne (mirrors getFieldType() fallback) - add advisory note
       if (isEmptyOrWhitespace(value)) {
+        if (detailsSheet) {
+          setLintNote(
+            detailsSheet.getRange(row, col),
+            "Blank type defaults to selectOne. Enter 'text', 'number', 'selectOne', or 'selectMultiple' to be explicit.",
+            "advisory",
+          );
+        }
         return;
       }
 
@@ -973,12 +2320,13 @@ function lintDetailsSheet(): void {
       if (!validTypes.includes(firstChar)) {
         try {
           console.log("Invalid type '" + value + "' at row " + row);
-          setInvalidCellBackground(
-            SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details")!,
-            row,
-            col,
-            "#FFC7CE",
-          ); // Light red for invalid type
+          if (detailsSheet) {
+            setLintNote(
+              detailsSheet.getRange(row, col),
+              `Invalid type '${value}'. Expected: text (t), number (n), selectOne (s), or selectMultiple (m).`,
+              "error",
+            );
+          }
         } catch (error) {
           console.error(
             "Error highlighting invalid type at row " +
@@ -989,21 +2337,48 @@ function lintDetailsSheet(): void {
             error,
           );
         }
+      } else if (value.length > 1) {
+        // Valid first char but longer than a single abbreviation - advisory for clarity
+        if (detailsSheet) {
+          setLintNote(
+            detailsSheet.getRange(row, col),
+            `Type '${value}' is valid (starts with '${firstChar}') but consider using the full type name for clarity.`,
+            "advisory",
+          );
+        }
       }
     },
-    // Rule 4: Validate options column
+    // Rule 4: Validate options column (canonical parsing + ambiguous colon + ignored options)
     (value, row, col) => {
       try {
         // Get the type from column 3 (index 2) to determine if options are required
         const typeValue = sheet.getRange(row, 3).getValue();
         const typeStr = String(typeValue || "").trim();
 
-        // Determine if this is a select field (requires options)
-        const isSelectField = (() => {
-          if (isEmptyOrWhitespace(typeStr)) return true; // blank → selectOne
-          const firstChar = typeStr.toLowerCase().charAt(0);
-          return firstChar === "s" || firstChar === "m"; // s* → selectOne, m* → selectMultiple
-        })();
+        // Determine the field type category
+        // Mirror payloadBuilder: empty type defaults to selectOne (case "" in switch)
+        const firstChar = isEmptyOrWhitespace(typeStr)
+          ? "s"
+          : typeStr.toLowerCase().charAt(0);
+        const isSelectField = firstChar === "s" || firstChar === "m";
+        const isTextOrNumberField = firstChar === "t" || firstChar === "n";
+
+        // Task 7: Warn when text/number fields contain ignored options
+        if (isTextOrNumberField && !isEmptyOrWhitespace(value)) {
+          const resolvedType = firstChar === "t" ? "text" : "number";
+          const cell = sheet.getRange(row, col);
+          setLintNote(
+            cell,
+            `Options on ${resolvedType} fields are ignored during config generation. Consider removing them.`,
+            "warning",
+          );
+          // Still capitalize for presentation, but the warning is the main feedback
+          const capitalizedList = validateAndCapitalizeCommaList(value);
+          if (capitalizedList !== value) {
+            sheet.getRange(row, col).setValue(capitalizedList);
+          }
+          return;
+        }
 
         if (isSelectField) {
           // Select fields MUST have options
@@ -1011,65 +2386,72 @@ function lintDetailsSheet(): void {
             console.log(
               "Select field at row " + row + " is missing required options",
             );
-            setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for missing options
+            setLintNote(
+              sheet.getRange(row, col),
+              "Select fields (selectOne / selectMultiple) require at least one option.",
+              "error",
+            );
             return;
           }
 
-          // Validate that options are non-empty after trimming
-          const options = value
-            .split(",")
-            .map((opt) => opt.trim())
-            .filter((opt) => opt !== "");
+          // Parse options using canonical parser (mirrors builder's parseOptions)
+          const parsed = parseCanonicalOptions(value);
 
-          if (options.length === 0) {
+          if (parsed.length === 0) {
             console.log(
               "Select field at row " +
                 row +
                 " has empty options after trimming",
             );
-            setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for empty options
+            setLintNote(
+              sheet.getRange(row, col),
+              "Options column appears non-empty but contains no valid options after parsing.",
+              "error",
+            );
             return;
           }
 
-          // Check for and remove duplicate option values (after slugification)
-          // This catches: same labels ("Red, Red") and different labels with same slug ("Test 1, Test  1")
-          const seenValues = new Map<string, string>(); // value -> original label
-          const uniqueOptions: string[] = [];
-          const removedDuplicates: string[] = [];
-          const fieldNameValue = sheet.getRange(row, 1).getValue();
-          const fieldIndex = Math.max(row - 2, 0);
-          const fieldKey = typeof createFieldTagKey === "function"
-            ? createFieldTagKey(String(fieldNameValue || ""), fieldIndex)
-            : slugify(String(fieldNameValue || "")) || "field";
+          // Task 5: Check for ambiguous colon usage
+          const ambiguityWarnings = detectAmbiguousColonUsage(parsed);
+          if (ambiguityWarnings.length > 0) {
+            const cell = sheet.getRange(row, col);
+            appendLintNote(
+              cell,
+              ambiguityWarnings.join(" "),
+              "warning",
+            );
+          }
 
-          for (let i = 0; i < options.length; i++) {
-            const label = options[i];
-            const optValue = typeof createOptionValue === "function"
-              ? createOptionValue(label, fieldKey, i)
-              : slugify(label) || `${fieldKey || "option"}-${i + 1}`;
-            if (seenValues.has(optValue)) {
-              // Duplicate found - skip it and record for warning
-              removedDuplicates.push(label);
+          // Task 4: Check for duplicate canonical values
+          const seenValues = new Map<string, string>(); // canonical value -> raw representation
+          const uniqueEntries: string[] = [];
+          const removedDuplicates: string[] = [];
+
+          for (const opt of parsed) {
+            // Preserve the original format: if the raw entry used "value:label",
+            // keep that format; otherwise just use the label.
+            const displayForm = opt.raw.includes(":") ? opt.raw : (opt.label || opt.value);
+            if (seenValues.has(opt.value)) {
+              removedDuplicates.push(opt.label || opt.value);
             } else {
-              seenValues.set(optValue, label);
-              uniqueOptions.push(label);
+              seenValues.set(opt.value, displayForm);
+              uniqueEntries.push(displayForm);
             }
           }
 
           if (removedDuplicates.length > 0) {
-            // Update cell with deduplicated options
-            const deduplicatedValue = uniqueOptions.join(", ");
+            // Update cell with deduplicated options, preserving value:label format
+            const deduplicatedValue = uniqueEntries.join(", ");
             sheet.getRange(row, col).setValue(deduplicatedValue);
 
-            // Add warning note about removed duplicates
+            // Add warning note about removed duplicates (append to preserve
+            // any colon-ambiguity warning already on the cell)
             const cell = sheet.getRange(row, col);
-            cell.setNote(
-              LINT_NOTE_PREFIX +
-                `Removed ${removedDuplicates.length} duplicate option(s): "${removedDuplicates.join('", "')}". ` +
-                "Each option must produce a unique slug value.",
+            appendLintNote(
+              cell,
+              `Removed ${removedDuplicates.length} duplicate option(s): "${removedDuplicates.join('", "')}". Each option must produce a unique canonical value.`,
+              "warning",
             );
-            // Use yellow background for warning (not error)
-            setInvalidCellBackground(sheet, row, col, "#FFF3CD");
 
             console.log(
               `Row ${row}: Removed ${removedDuplicates.length} duplicate option(s): ${removedDuplicates.join(", ")}`,
@@ -1083,7 +2465,7 @@ function lintDetailsSheet(): void {
             sheet.getRange(row, col).setValue(capitalizedList);
           }
         } else {
-          // For number/text fields, just capitalize if options are provided (optional warning could be added here)
+          // For other non-select, non-text/number fields, just capitalize if options are provided
           if (!isEmptyOrWhitespace(value)) {
             const capitalizedList = validateAndCapitalizeCommaList(value);
             if (capitalizedList !== value) {
@@ -1110,6 +2492,402 @@ function lintDetailsSheet(): void {
 
   // Detail name and type are required fields
   lintSheet("Details", detailsValidations, [0, 2]);
+
+  // Phase 2: Post-lintSheet() edge-case checks
+  checkUnreferencedDetails(); // Task: unreferenced details (must run after lintSheet clears col A)
+  checkDuplicateDetailIds(); // Task 2: duplicate effective IDs in col E
+  checkSlugCollisions("Details", 1); // Task 3: slug collisions in col A
+  checkManualIdHygiene("Details", 5, rawDetailIds); // Task 6: ID hygiene in col E
+}
+
+/**
+ * Phase 5 Task 1: Validates the Icons sheet.
+ * Checks for missing icon IDs, duplicate icon IDs, missing icon sources,
+ * and unsupported icon source formats.
+ */
+function lintIconsSheet(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const iconsSheet = spreadsheet.getSheetByName("Icons");
+  if (!iconsSheet) return; // Icons sheet is optional
+
+  const lastRow = iconsSheet.getLastRow();
+  if (lastRow <= 1) return; // Header-only or empty
+
+  const logger = getScopedLogger("LintIconsSheet");
+
+  // Clear previous lint artifacts on columns A and B
+  const dataRange = iconsSheet.getRange(2, 1, lastRow - 1, 2);
+  clearLintArtifacts(dataRange);
+
+  const data = dataRange.getValues();
+  const seenIds = new Map<string, number[]>();
+
+  for (let i = 0; i < data.length; i++) {
+    const row = i + 2;
+    const iconId = String(data[i][0] || "").trim();
+    const iconSource = String(data[i][1] || "").trim();
+
+    // Skip fully blank rows — builder ignores them too (buildIconsFromSheet
+    // skips rows when either iconId or iconStr is empty).
+    if (!iconId && !iconSource) continue;
+
+    // Check for missing icon ID (col A)
+    if (!iconId) {
+      setLintNote(
+        iconsSheet.getRange(row, 1),
+        "Icon ID is required.",
+        "error",
+      );
+      logger.warn(`Row ${row}: missing icon ID`);
+      continue;
+    }
+
+    // Check for missing icon source (col B)
+    if (!iconSource) {
+      setLintNote(
+        iconsSheet.getRange(row, 2),
+        "Icon source is required.",
+        "error",
+      );
+      logger.warn(`Row ${row}: missing icon source for ID "${iconId}"`);
+      continue;
+    }
+
+    // Check for unsupported icon source format.
+    // Mirrors parseIconSource() in payloadBuilder: only rows that resolve to a
+    // packaged icon asset should contribute to duplicate-ID tracking.
+    const isSvg = iconSource.startsWith("<svg");
+    const isDataUri = iconSource.toLowerCase().startsWith("data:image/svg+xml");
+    const isDriveUrl = iconSource.startsWith("https://drive.google.com/file/d/");
+    const isHttpUrl = /^https?:\/\//i.test(iconSource);
+    // Builder's isSvgUrl() requires the URL to contain ".svg"
+    const isSvgHttpUrl = isHttpUrl && iconSource.toLowerCase().includes(".svg");
+    let contributesIconAsset = false;
+
+    if (isSvg) {
+      contributesIconAsset = true;
+      // Inline SVG — check for basic structural validity
+      if (!iconSource.includes("</svg>") && !iconSource.trim().endsWith("/>")) {
+        setLintNote(
+          iconsSheet.getRange(row, 2),
+          'Inline SVG markup appears incomplete (missing closing tag). The builder will include this icon as-is, but malformed SVG may cause rendering issues in CoMapeo.',
+          "warning",
+        );
+      }
+    } else if (isDataUri) {
+      // Data URI — verify it actually decodes to valid SVG content
+      if (!isSupportedSvgDataUri(iconSource)) {
+        setLintNote(
+          iconsSheet.getRange(row, 2),
+          "SVG data URI is malformed or does not decode to valid SVG content. This icon will be silently dropped during config generation.",
+          "error",
+        );
+      } else {
+        contributesIconAsset = true;
+      }
+    } else if (isDriveUrl) {
+      // Drive URL — verify the file is accessible and is SVG
+      const fileId = extractDriveFileId(iconSource);
+      if (fileId) {
+        let info = driveIconInfoCache.get(fileId);
+        if (!info) {
+          info = getDriveIconInfo(fileId);
+        }
+        if (info.errorMessage) {
+          setLintNote(
+            iconsSheet.getRange(row, 2),
+            info.errorMessage,
+            "error",
+          );
+        } else if (!info.isSvg) {
+          setLintNote(
+            iconsSheet.getRange(row, 2),
+            "Google Drive icon file is not SVG. Non-SVG Drive files are silently dropped during config generation.",
+            "error",
+          );
+        } else {
+          contributesIconAsset = true;
+        }
+      } else {
+        setLintNote(
+          iconsSheet.getRange(row, 2),
+          "Google Drive URL does not contain a valid file ID.",
+          "error",
+        );
+      }
+    } else if (!isSvgHttpUrl) {
+      if (isHttpUrl) {
+        // HTTP URL but not an SVG — will be silently dropped by parseIconSource()
+        setLintNote(
+          iconsSheet.getRange(row, 2),
+          "HTTP(S) icon URLs must point directly to an SVG file (URL must contain \".svg\"). Non-SVG URLs are silently dropped during config generation.",
+          "error",
+        );
+      } else {
+        setLintNote(
+          iconsSheet.getRange(row, 2),
+          "Unsupported icon source format. Expected inline SVG (<svg…>), data:image/svg+xml URI, Google Drive URL (must use /file/d/ format), or HTTP(S) URL ending in .svg.",
+          "error",
+        );
+      }
+      logger.warn(
+        `Row ${row}: unsupported icon source format for ID "${iconId}"`,
+      );
+    } else {
+      contributesIconAsset = true;
+    }
+
+    if (contributesIconAsset) {
+      if (!seenIds.has(iconId)) {
+        seenIds.set(iconId, [row]);
+      } else {
+        seenIds.get(iconId)?.push(row);
+      }
+    }
+  }
+
+  // Flag duplicate IDs
+  seenIds.forEach((rows, id) => {
+    if (rows.length > 1) {
+      logger.warn(
+        `Duplicate icon ID "${id}" in rows: ${rows.join(", ")}`,
+      );
+      for (const row of rows) {
+        const otherRows = rows.filter((r) => r !== row);
+        appendLintNote(
+          iconsSheet.getRange(row, 1),
+          `Duplicate icon ID "${id}" (also in row${otherRows.length > 1 ? "s" : ""} ${otherRows.join(", ")}).`,
+          "error",
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Returns exact icon ID collisions between Icons sheet rows and
+ * category-derived icon rows. This must mirror buildIconsFromSheet(), which
+ * deduplicates by exact icon.id values rather than sanitized variants.
+ */
+function findCrossSheetIconIdCollisions(
+  iconsEntries: Array<{ id: string; row: number }>,
+  categoryEntries: Array<{ id: string; row: number }>,
+): Array<{
+  iconId: string;
+  iconRow: number;
+  categoryId: string;
+  categoryRow: number;
+}> {
+  const categoryEntriesById = new Map<string, Array<{ id: string; row: number }>>();
+  for (const entry of categoryEntries) {
+    if (!entry.id) continue;
+    if (!categoryEntriesById.has(entry.id)) {
+      categoryEntriesById.set(entry.id, []);
+    }
+    categoryEntriesById.get(entry.id)?.push(entry);
+  }
+
+  const collisions: Array<{
+    iconId: string;
+    iconRow: number;
+    categoryId: string;
+    categoryRow: number;
+  }> = [];
+
+  for (const iconEntry of iconsEntries) {
+    const matchingCategoryEntries = categoryEntriesById.get(iconEntry.id);
+    if (!matchingCategoryEntries) continue;
+    for (const categoryEntry of matchingCategoryEntries) {
+      collisions.push({
+        iconId: iconEntry.id,
+        iconRow: iconEntry.row,
+        categoryId: categoryEntry.id,
+        categoryRow: categoryEntry.row,
+      });
+    }
+  }
+
+  return collisions;
+}
+
+/**
+ * Check for whether a string is a recognised icon source that the builder would
+ * accept. Data URIs are decoded to verify valid SVG content; Drive URLs are
+ * accepted by prefix (full validation is done separately in lintIconsSheet).
+ * Used by collision checks that need to know if a row contributes an icon asset.
+ */
+function hasRecognisedIconSource(iconStr: string): boolean {
+  if (!iconStr) return false;
+  if (iconStr.startsWith("<svg")) return true;
+  if (iconStr.toLowerCase().startsWith("data:image/svg+xml")) {
+    // Mirror parseIconSource: must actually decode to valid SVG
+    const svg = decodeDataSvgForLint(iconStr);
+    return !!svg && svg.trim().startsWith("<svg");
+  }
+  if (iconStr.startsWith("https://drive.google.com/file/d/")) {
+    const fileId = extractDriveFileId(iconStr);
+    return fileId ? !!loadDriveSvgForLint(fileId) : false;
+  }
+  if (/^https?:\/\//i.test(iconStr) && iconStr.toLowerCase().includes(".svg")) return true;
+  return false;
+}
+
+/**
+ * Phase 5 Task 2: Checks for exact icon ID collisions between the Icons sheet
+ * and Categories sheet. The builder merges icons from both sources,
+ * deduplicating by exact ID, so lint must do the same.
+ */
+function checkCrossSheetIconCollisions(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const iconsSheet = spreadsheet.getSheetByName("Icons");
+  const categoriesSheet = spreadsheet.getSheetByName("Categories");
+  if (!iconsSheet || !categoriesSheet) return;
+
+  const iconsLastRow = iconsSheet.getLastRow();
+  const categoriesLastRow = categoriesSheet.getLastRow();
+  if (iconsLastRow <= 1 || categoriesLastRow <= 1) return;
+
+  const logger = getScopedLogger("LintCrossSheetIconCollisions");
+
+  // Read Icons sheet IDs and sources (mirror buildIconsFromSheet(): both ID and
+  // source must be present, and unsupported sources are ignored)
+  const iconsData = iconsSheet
+    .getRange(2, 1, iconsLastRow - 1, 2)
+    .getValues();
+  const iconsEntries: Array<{ id: string; row: number }> = [];
+  for (let i = 0; i < iconsData.length; i++) {
+    const rawIconId = String(iconsData[i][0] || "").trim();
+    const iconStr = String(iconsData[i][1] || "").trim();
+    if (!rawIconId || !iconStr || !hasRecognisedIconSource(iconStr)) {
+      continue;
+    }
+    const sanitizedIconId = sanitizeIconSlug(rawIconId);
+    if (sanitizedIconId !== rawIconId) {
+      appendLintNote(
+        iconsSheet.getRange(i + 2, 1),
+        `Icon ID "${rawIconId}" contains a file extension. The ID is used as-is in the config, but file name generation strips the extension — so using "${rawIconId}" as an ID will produce a file named "${sanitizedIconId}.svg" (or .png), meaning the config references "${rawIconId}" but the actual file is "${sanitizedIconId}.svg". Consider using "${sanitizedIconId}" directly to keep the ID and file name consistent.`,
+        "warning",
+      );
+    }
+    iconsEntries.push({ id: rawIconId, row: i + 2 });
+  }
+
+  // Read Categories: resolve columns by header name (mirrors buildIconsFromSheet).
+  const catLastCol = Math.max(categoriesSheet.getLastColumn(), 6);
+  const catHeaders = categoriesSheet.getRange(1, 1, 1, catLastCol).getValues()[0];
+  const catHeaderMap = createLintHeaderMap(catHeaders);
+  const catNameCol = getLintColumnIndex(catHeaderMap, "name") ?? 0;
+  const catIconCol = getLintColumnIndex(catHeaderMap, "icon", "icons") ?? 1;
+  const catCategoryIdCol = getLintColumnIndex(catHeaderMap, "category id", "id");
+  const catIconIdCol = getLintColumnIndex(catHeaderMap, "icon id", "iconid");
+
+  const catData = categoriesSheet.getRange(2, 1, categoriesLastRow - 1, catLastCol).getValues();
+  const categoryEntries: Array<{ id: string; row: number }> = [];
+  for (let i = 0; i < catData.length; i++) {
+    const name = String(catData[i][catNameCol] || "").trim();
+    const iconRaw = catData[i][catIconCol];
+    const iconStr = typeof iconRaw === "string" ? iconRaw.trim() : "";
+    // Mirror buildIconsFromSheet(): only category rows with a name and a
+    // supported icon source contribute packaged icon assets.
+    if (!name || !iconStr || !hasRecognisedIconSource(iconStr)) continue;
+    // Mirror buildIconsFromSheet(): slugify(name) || `category-${index+1}`
+    // The builder falls back to `category-N` when slugify produces an empty
+    // string (e.g. non-Latin or punctuation-only names).
+    const explicitCategoryId = catCategoryIdCol !== undefined
+      ? String(catData[i][catCategoryIdCol] || "").trim()
+      : "";
+    const categoryId = explicitCategoryId || slugify(name) || `category-${i + 1}`;
+    // Builder uses iconIdCol ("icon id") when present, otherwise falls back to categoryId
+    const explicitIconId = catIconIdCol !== undefined
+      ? String(catData[i][catIconIdCol] || "").trim()
+      : "";
+    const iconId = explicitIconId || categoryId;
+    if (iconId) {
+      categoryEntries.push({ id: iconId, row: i + 2 });
+    }
+  }
+
+  const collisions = findCrossSheetIconIdCollisions(iconsEntries, categoryEntries);
+  for (const collision of collisions) {
+    logger.warn(
+      `Icon ID collision: "${collision.iconId}" (Icons row ${collision.iconRow}) vs "${collision.categoryId}" (Categories row ${collision.categoryRow})`,
+    );
+    appendLintNote(
+      iconsSheet.getRange(collision.iconRow, 1),
+      `Icon ID "${collision.iconId}" collides with a category-derived ID in Categories row ${collision.categoryRow}. Entries will be merged — if this Icons sheet row provides SVG data, it may override the category icon.`,
+      "warning",
+    );
+    appendLintNote(
+      categoriesSheet.getRange(collision.categoryRow, 2),
+      `Category icon ID "${collision.categoryId}" collides with an Icons sheet entry in row ${collision.iconRow}. Entries will be merged — if the Icons sheet entry provides SVG data, it may take priority over the category icon.`,
+      "warning",
+    );
+  }
+}
+
+/**
+ * Warns when multiple translation rows in the same sheet have source values
+ * that slugify to the same key. Later rows would silently overwrite earlier ones
+ * during config generation.
+ */
+function checkTranslationSourceOverwrites(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const translationSheets = sheets(true);
+
+  for (const sheetName of translationSheets) {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet) continue;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) continue;
+
+    try {
+      // Source column is always column A (index 0) for all translation sheets
+      const sourceRange = sheet.getRange(2, 1, lastRow - 1, 1);
+      clearSourceOverwriteLintArtifacts(sourceRange);
+      const sourceValues = sourceRange.getValues();
+
+      // Track slug → array of { row, originalValue }
+      const slugMap = new Map<string, Array<{ row: number; value: string }>>();
+
+      for (let i = 0; i < sourceValues.length; i++) {
+        const value = String(sourceValues[i][0] || "").trim();
+        if (!value) continue;
+
+        const slug = slugify(value);
+        if (!slug) continue;
+
+        const entry = { row: i + 2, value };
+        if (!slugMap.has(slug)) {
+          slugMap.set(slug, [entry]);
+        } else {
+          slugMap.get(slug)?.push(entry);
+        }
+      }
+
+      // Warn on duplicate slugs
+      slugMap.forEach((entries, slug) => {
+        if (entries.length > 1) {
+          for (const entry of entries) {
+            const otherRows = entries
+              .filter((e) => e.row !== entry.row)
+              .map((e) => e.row);
+            const cell = sheet.getRange(entry.row, 1);
+            appendLintNote(
+              cell,
+              `Source value "${entry.value}" produces the same key as row ${otherRows.join(", ")}. Later values may overwrite earlier ones.`,
+              "warning",
+            );
+          }
+        }
+      });
+    } catch (error) {
+      console.error(
+        `Error checking source overwrites in ${sheetName}:`,
+        error,
+      );
+    }
+  }
 }
 
 function lintTranslationSheets(): void {
@@ -1162,6 +2940,12 @@ function lintTranslationSheets(): void {
 
   // After basic linting, validate translation sheet consistency
   validateTranslationSheetConsistency();
+
+  // Phase 4: Warn on source-value slug collisions that cause silent overwrites
+  checkTranslationSourceOverwrites();
+
+  // Phase 4 (continued): Warn on duplicate translated-value slugs per column
+  checkDuplicateTranslationSlugs();
 }
 
 /**
@@ -1259,15 +3043,20 @@ function validateSheetConsistency(
     const sourceRowCount = sourceSheet.getLastRow();
     const translationRowCount = translationSheet.getLastRow();
 
-    if (translationRowCount > 0 && translationSheet.getLastColumn() > 0) {
+    if (translationRowCount > 1 && translationSheet.getLastColumn() > 0) {
+      const dataRange = translationSheet.getRange(
+        2,
+        1,
+        translationRowCount - 1,
+        translationSheet.getLastColumn(),
+      );
       clearRangeBackgroundIfMatches(
-        translationSheet.getRange(
-          1,
-          1,
-          translationRowCount,
-          translationSheet.getLastColumn(),
-        ),
+        dataRange,
         ["#FFC7CE", "#FFF2CC", "#FF0000"], // Include bright red for primary column mismatches
+      );
+      clearRangeFontColorIfMatches(
+        dataRange,
+        ["#FFFFFF"], // White text paired with red backgrounds for primary column mismatches
       );
     }
 
@@ -1278,12 +3067,22 @@ function validateSheetConsistency(
           `Source has ${sourceRowCount} rows, translation has ${translationRowCount} rows`,
       );
 
+      // Clear any stale row-count mismatch note from a prior lint run to prevent
+      // duplicate accumulation (the background/font clear above only covers dataRange,
+      // rows 2+, so A1 is excluded and the note would persist indefinitely).
+      clearRangeLintNoteLinesWithPrefix(
+        translationSheet.getRange(1, 1),
+        `${LINT_NOTE_PREFIX}Row count mismatch:`,
+      );
+
       // Highlight the discrepancy in the translation sheet
       // Use cached translationRowCount instead of calling getLastRow() again
       if (translationRowCount > 0) {
-        translationSheet
-          .getRange(1, 1, Math.min(translationRowCount, 1), 1)
-          .setBackground("#FFF2CC"); // Light yellow warning
+        appendLintNote(
+          translationSheet.getRange(1, 1),
+          `Row count mismatch: source has ${sourceRowCount} rows, translation has ${translationRowCount} rows. Re-sync translation sheets before generating config.`,
+          "warning",
+        );
       }
     }
 
@@ -1377,6 +3176,7 @@ function validateSheetConsistency(
         const sourceOptions = String(detailsData[i][0] || "").trim();
         if (!sourceOptions) continue; // Skip if no options in source
 
+        // Source options use comma-only splitting to match parseOptions() in the builder.
         const sourceOptionCount = sourceOptions
           .split(",")
           .map((opt) => opt.trim())
@@ -1390,7 +3190,7 @@ function validateSheetConsistency(
           if (!translatedOptions) continue;
 
           const translatedOptionCount = translatedOptions
-            .split(",")
+            .split(/[;,，、]/)
             .map((opt) => opt.trim())
             .filter((opt) => opt !== "").length;
 
@@ -2124,12 +3924,845 @@ function fixTranslationMismatches(
 }
 
 /**
+ * Mirrors buildLocales() normalization for Metadata!primaryLanguage values.
+ * Accepts either a recognized language name or a locale token like en / pt-BR.
+ */
+function normalizeMetadataPrimaryLanguageValue(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  // Use the shared resolver so lint accepts the same BCP-47 tags the builder does
+  // (e.g. zh-Hant, es-419) instead of a narrower ad-hoc pattern.
+  const resolved = resolvePrimaryLanguageInput(trimmedValue);
+  if (resolved?.code) {
+    return resolved.code;
+  }
+
+  return null;
+}
+
+function getMetadataPrimaryLanguageLintMessage(value: string): string {
+  return `Metadata primaryLanguage: "${value}" is not a recognized language name or locale code. Use a display name or locale token (e.g. "English", "Português", "en", "pt-BR").`;
+}
+
+/**
+ * Validates explicit Metadata sheet values for unsafe characters.
+ * Only checks rows that are present – does NOT flag missing rows.
+ * Keys validated: name, version, primaryLanguage.
+ */
+function lintMetadataSheet(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const metadataSheet = spreadsheet.getSheetByName("Metadata");
+  if (!metadataSheet) return;
+
+  const lastRow = metadataSheet.getLastRow();
+  if (lastRow <= 1) return; // Header-only or empty
+
+  // Clear previous lint artifacts on both key (A) and value (B) columns
+  clearLintArtifacts(metadataSheet.getRange(2, 1, lastRow - 1, 2));
+
+  // Matches containsUnsafeNameCharacters() in importService: slashes, backslashes, ellipsis
+  // These are the only characters that strict build validation actually rejects (errors).
+  const STRICT_UNSAFE_PATTERN = /[\\/]|\.\.\./;
+
+  const data = metadataSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+
+  // Track seen keys to detect duplicates. The builder uses exact key
+  // matching (sheetData[i][0] === key), so lint must do the same to
+  // avoid false-positive duplicate warnings on differently-cased keys
+  // (e.g. "PrimaryLanguage" vs "primaryLanguage" are distinct to the builder).
+  const seenKeys = new Set<string>();
+  let resolvedPrimaryLanguage = false;
+  // Track whether a valid primaryLanguage has been seen.
+  // The builder's buildLocales() normalizes via normalizeLocaleInput() and skips
+  // invalid values, continuing to the next row. Only valid values block later rows.
+  let seenValidPrimaryLanguage = false;
+
+  // Keys the builder looks up with exact equality (no trim). If a cell
+  // contains " name " the builder will NOT match it and will silently
+  // append a default row instead. Lint must use exact key matching for
+  // these to avoid false parity.
+  const EXACT_MATCH_KEYS = new Set(["name", "version", "description", "legacyCompat"]);
+
+  for (let i = 0; i < data.length; i++) {
+    const key = String(data[i][0] ?? "");
+    const trimmedKey = key.trim();
+    const rawValue = data[i][1];
+    // Match builder semantics: no trim, no falsy coercion (builder uses
+    // String(sheetData[i][1]) which serializes 0 as "0").
+    const value = String(rawValue ?? "");
+    // Trimmed variant used only for primaryLanguage validation, where the
+    // language name should be trimmed for lookup purposes.
+    const trimmedValue = String(rawValue ?? "").trim();
+    const row = i + 2;
+
+    // Detect whitespace-padded keys that the builder will not match.
+    // e.g. " name " looks like "name" after trimming, but the builder's
+    // exact equality check (sheetData[i][0] === "name") will miss it.
+    if (
+      trimmedKey &&
+      key !== trimmedKey &&
+      EXACT_MATCH_KEYS.has(trimmedKey)
+    ) {
+      const cell = metadataSheet.getRange(row, 1);
+      appendLintNote(
+        cell,
+        `Metadata key "${key}" has leading/trailing whitespace. The builder uses exact key matching and will not recognize this row — it will be silently ignored and a default value generated instead. Remove the whitespace so the key is exactly "${trimmedKey}".`,
+        "warning",
+      );
+    }
+
+    // Detect case-only typos in metadata keys (e.g. "Name" instead of "name").
+    // The builder uses exact key matching, so a different case is silently ignored.
+    // Only flag when the key has no whitespace issues and doesn't match exactly.
+    const allRecognizedKeys = new Set([
+      ...EXACT_MATCH_KEYS,
+      "primaryLanguage",
+    ]);
+    const lowerTrimmedKey = trimmedKey.toLowerCase();
+    if (
+      trimmedKey &&
+      key === trimmedKey && // no whitespace issues (already checked above)
+      !allRecognizedKeys.has(trimmedKey) && // not an exact match
+      [...allRecognizedKeys].some((k) => k.toLowerCase() === lowerTrimmedKey) // matches when lowercased
+    ) {
+      const correctKey = [...allRecognizedKeys].find(
+        (k) => k.toLowerCase() === lowerTrimmedKey,
+      )!;
+      const cell = metadataSheet.getRange(row, 1);
+      appendLintNote(
+        cell,
+        `Metadata key "${key}" differs in casing from the recognized key "${correctKey}". The builder uses exact key matching and will not recognize this row — it will be silently ignored. Use exactly "${correctKey}".`,
+        "warning",
+      );
+    }
+
+    // Flag duplicate keys as a warning — the builder uses only the first row.
+    // Use exact key matching (same as builder) for non-primaryLanguage keys,
+    // trimmed matching for primaryLanguage (builder resolves it differently).
+    const effectiveKey = trimmedKey === "primaryLanguage" ? trimmedKey : key;
+    const isDuplicate = effectiveKey && seenKeys.has(effectiveKey);
+
+    if (trimmedKey === "primaryLanguage") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (trimmedKey) seenKeys.add(trimmedKey);
+      if (!trimmedValue) continue;
+
+      // Track whether a VALID primaryLanguage has been seen — the builder's
+      // buildLocales() normalizes values via normalizeLocaleInput() and skips
+      // invalid ones, continuing to the next row. Only valid values block
+      // later rows from being used.
+      // (trimmedValue is guaranteed non-empty here due to the continue above.)
+      const wasPriorValid = seenValidPrimaryLanguage;
+
+      // Mirror buildLocales(): accept recognized display names and ISO-style locale tokens.
+      const normalizedPrimaryLanguage = normalizeMetadataPrimaryLanguageValue(trimmedValue);
+      const isValid = normalizedPrimaryLanguage !== null;
+
+      // Only mark as "seen" when the builder would actually use this value.
+      // Invalid values are skipped by buildLocales(), so they don't block later rows.
+      if (isValid) seenValidPrimaryLanguage = true;
+
+      if (isDuplicate) {
+        if (resolvedPrimaryLanguage || wasPriorValid) {
+          // A valid primaryLanguage was already found — the builder uses the
+          // first valid occurrence, so this row is definitely ignored.
+          appendLintNote(
+            cell,
+            'Duplicate metadata key "primaryLanguage". The builder uses the first valid occurrence — this row is ignored.',
+            "warning",
+          );
+        } else if (!isValid) {
+          // No prior non-empty primaryLanguage AND this one is invalid — still a
+          // chance later rows could be valid (builder would skip this invalid value).
+          appendLintNote(
+            cell,
+            getMetadataPrimaryLanguageLintMessage(trimmedValue),
+            "error",
+          );
+        } else {
+          // No prior valid primaryLanguage and this one IS valid — it would
+          // become the effective value if no earlier valid row claimed it.
+          appendLintNote(
+            cell,
+            'Duplicate metadata key "primaryLanguage". This row is used only if all earlier primaryLanguage rows are blank or have invalid locale codes.',
+            "warning",
+          );
+        }
+        if (!isValid || resolvedPrimaryLanguage || wasPriorValid) continue;
+      } else {
+        if (!isValid) {
+          appendLintNote(
+            cell,
+            getMetadataPrimaryLanguageLintMessage(trimmedValue),
+            "error",
+          );
+          // Don't set resolvedPrimaryLanguage — the builder scans until it finds a valid locale,
+          // so subsequent valid primaryLanguage rows should still be checked.
+          continue;
+        }
+      }
+
+      // If this is a valid duplicate with no prior valid resolution, it becomes
+      // the effective primaryLanguage — fall through to set resolvedPrimaryLanguage.
+      resolvedPrimaryLanguage = true;
+      continue;
+    }
+
+    if (isDuplicate) {
+      const cell = metadataSheet.getRange(row, 2);
+      appendLintNote(
+        cell,
+        `Duplicate metadata key "${key}". The builder only reads the first occurrence — this row is ignored.`,
+        "warning",
+      );
+      continue;
+    }
+    if (effectiveKey) seenKeys.add(effectiveKey);
+
+    // Use exact key matching for builder-recognized keys (name, version, etc.)
+    // to match builder semantics (sheetData[i][0] === key).
+    if (key === "name") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (!trimmedValue) {
+        appendLintNote(
+          cell,
+          'Metadata "name" is present but blank. Config generation keeps the blank value and strict validation will fail.',
+          "error",
+        );
+        continue;
+      }
+      if (STRICT_UNSAFE_PATTERN.test(value)) {
+        appendLintNote(
+          cell,
+          `Metadata "${key}" contains characters that will fail config generation: slashes, backslashes, and ellipses (…) are not allowed.`,
+          "error",
+        );
+      }
+      continue;
+    }
+
+    if (key === "version") {
+      const cell = metadataSheet.getRange(row, 2);
+      if (value) {
+        // The builder always overwrites version with today's date (yy.MM.dd),
+        // so unsafe-character checks are unnecessary — any slashes/backslashes
+        // in the user's value are replaced before config generation.
+        // Only advise when the value doesn't match the auto-generated pattern.
+        const looksLikeAutoDate = /^\d{2}\.\d{2}\.\d{2}$/.test(value.trim());
+        if (!looksLikeAutoDate) {
+          appendLintNote(
+            cell,
+            `Metadata "version" is always overwritten with today's date (yy.MM.dd) when generating config. The current value "${value}" will be ignored.`,
+            "advisory",
+          );
+        }
+      }
+      continue;
+    }
+
+    if (!value) continue; // Skip empty values for remaining keys
+  }
+}
+
+/**
+ * Decodes a data:image/svg+xml URI (plain or base64) to extract the raw SVG
+ * content. Returns null if the URI cannot be decoded. Mirrors the decode logic
+ * from payloadBuilder's decodeDataSvg() for use in lint checks.
+ */
+function decodeDataSvgForLint(dataUri: string): string | null {
+  try {
+    if (dataUri.includes(";base64,")) {
+      const base64 = dataUri.split(";base64,")[1];
+      const decoded = Utilities.newBlob(
+        Utilities.base64Decode(base64),
+      ).getDataAsString();
+      return decoded;
+    }
+
+    const commaIndex = dataUri.indexOf(",");
+    if (commaIndex === -1) return null;
+    const payload = dataUri.substring(commaIndex + 1);
+    return decodeURIComponent(payload);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function loadDriveSvgForLint(fileId: string): string | null {
+  return getDriveIconInfo(fileId).svgContent;
+}
+
+/**
+ * Phase 6 Task 1: Checks inline SVG sizes in Categories column B and Icons column B.
+ * - Warning if SVG > 300 KB (307200 bytes)
+ * - Error if SVG > 2 MB (2097152 bytes)
+ */
+function checkInlineSvgSizes(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const logger = getScopedLogger("LintInlineSvgSizes");
+
+  const SVG_WARN_BYTES = 307200; // 300 KB
+  const SVG_ERROR_BYTES = 2097152; // 2 MB
+
+  const sheetsToCheck = [
+    { name: "Categories", col: 2 },
+    { name: "Icons", col: 2 },
+  ];
+
+  for (const { name, col } of sheetsToCheck) {
+    const sheet = spreadsheet.getSheetByName(name);
+    if (!sheet) continue;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) continue;
+
+    // Read both column A (name/ID) and column B (icon source) so we can skip
+    // rows that the builder would also skip (no name for Categories, no ID for Icons).
+    const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+
+    for (let i = 0; i < values.length; i++) {
+      const rowKey = String(values[i][0] || "").trim();
+      // Mirror buildIconsFromSheet eligibility: skip rows without a name (Categories)
+      // or without an ID (Icons), just as the builder does.
+      if (!rowKey) continue;
+
+      const value = String(values[i][1] || "").trim();
+      // Normalize icon source to extract inline SVG content for size checking.
+      // parseIconSource() handles inline <svg>, data:image/svg+xml URIs, and
+      // Drive URLs. Only measure sources that resolve to inline svgData.
+      let svgContent: string | null = null;
+      if (value.startsWith("<svg")) {
+        svgContent = value;
+      } else if (value.toLowerCase().startsWith("data:image/svg+xml")) {
+        // Decode data URI to get the actual SVG content for size measurement
+        svgContent = decodeDataSvgForLint(value);
+      } else if (value.startsWith("https://drive.google.com/file/d/")) {
+        const fileId = extractDriveFileId(value);
+        if (fileId) {
+          svgContent = loadDriveSvgForLint(fileId);
+        }
+      }
+      // Remote non-Drive URLs are not measured here because they require network
+      // access, but Drive SVGs are inlined by the builder and must match export-time
+      // size validation.
+      if (!svgContent) continue;
+
+      const sizeBytes = Utilities.newBlob(svgContent).getBytes().length;
+      const sizeKB = Math.round(sizeBytes / 1024);
+
+      if (sizeBytes > SVG_ERROR_BYTES) {
+        const row = i + 2;
+        appendLintNote(
+          sheet.getRange(row, col),
+          `Inline SVG is ${sizeKB}KB (limit: 300KB warning, 2MB error)`,
+          "error",
+        );
+        logger.warn(
+          `${name} row ${row}: inline SVG is ${sizeKB}KB (exceeds 2MB error limit)`,
+        );
+      } else if (sizeBytes > SVG_WARN_BYTES) {
+        const row = i + 2;
+        appendLintNote(
+          sheet.getRange(row, col),
+          `Inline SVG is ${sizeKB}KB (limit: 300KB warning, 2MB error)`,
+          "warning",
+        );
+        logger.warn(
+          `${name} row ${row}: inline SVG is ${sizeKB}KB (exceeds 300KB warning limit)`,
+        );
+      }
+    }
+  }
+}
+
+function createLintHeaderMap(headers: any[]): Record<string, number> {
+  const headerMap: Record<string, number> = {};
+  headers.forEach((header, index) => {
+    const key = String(header || "")
+      .trim()
+      .toLowerCase();
+    if (key) {
+      headerMap[key] = index;
+    }
+  });
+  return headerMap;
+}
+
+function getLintColumnIndex(
+  headerMap: Record<string, number>,
+  ...names: string[]
+): number | undefined {
+  for (const name of names) {
+    const key = name.toLowerCase();
+    if (headerMap[key] !== undefined) {
+      return headerMap[key];
+    }
+  }
+  return undefined;
+}
+
+function buildLintCategorySummaries(
+  data: SheetData,
+): Array<{ id: string; name: string }> {
+  const rows = data.Categories?.slice(1) || [];
+  const headers = data.Categories?.[0] || [];
+  const headerMap = createLintHeaderMap(headers);
+  const nameCol = getLintColumnIndex(headerMap, "name") ?? CATEGORY_COL.NAME;
+  const idCol = getLintColumnIndex(headerMap, "category id", "id");
+
+  return rows
+    .map((row, index) => {
+      const name = String(row[nameCol] || "").trim();
+      if (!name) {
+        return null;
+      }
+
+      const explicitId =
+        idCol !== undefined ? String(row[idCol] || "").trim() : "";
+      return {
+        id: explicitId || slugify(name) || `category-${index + 1}`,
+        name,
+      };
+    })
+    .filter(
+      (
+        category,
+      ): category is {
+        id: string;
+        name: string;
+      } => Boolean(category),
+    );
+}
+
+function buildLintFieldSummaries(
+  data: SheetData,
+): Array<{
+  id: string;
+  name: string;
+  helperText?: string;
+  options?: SelectOption[];
+}> {
+  const rows = data.Details?.slice(1) || [];
+  const headers = data.Details?.[0] || [];
+  const headerMap = createLintHeaderMap(headers);
+  const nameCol = getLintColumnIndex(headerMap, "name", "label") ?? DETAILS_COL.NAME;
+  const helperCol =
+    getLintColumnIndex(headerMap, "helper text", "helper", "help") ??
+    DETAILS_COL.HELPER_TEXT;
+  const typeCol = getLintColumnIndex(headerMap, "type") ?? DETAILS_COL.TYPE;
+  const optionsCol = getLintColumnIndex(headerMap, "options") ?? DETAILS_COL.OPTIONS;
+  const idCol = getLintColumnIndex(headerMap, "id") ?? DETAILS_COL.ID;
+  type LintFieldSummary = {
+    id: string;
+    name: string;
+    helperText?: string;
+    options?: SelectOption[];
+  };
+
+  return rows
+    .map((row, index) => {
+      const name = String(row[nameCol] || "").trim();
+      if (!name) {
+        return null;
+      }
+
+      const helperText = String(row[helperCol] || "");
+      const typeRaw = String(row[typeCol] || "")
+        .trim()
+        .toLowerCase();
+      const optionsStr = String(row[optionsCol] || "");
+      const explicitId = String(row[idCol] || "").trim();
+
+      let options: SelectOption[] | undefined;
+      let resolvedType: "selectOne" | "selectMultiple" | "number" | "text";
+      const typeKey = typeRaw.charAt(0);
+      switch (typeKey) {
+        case "m":
+          resolvedType = "selectMultiple";
+          options = parseOptions(optionsStr);
+          break;
+        case "n":
+          resolvedType = "number";
+          break;
+        case "t":
+          resolvedType = "text";
+          break;
+        case "s":
+        case "":
+        default:
+          resolvedType = "selectOne";
+          options = parseOptions(optionsStr);
+          break;
+      }
+
+      const isSelectType =
+        resolvedType === "selectOne" || resolvedType === "selectMultiple";
+      if (isSelectType && (!options || options.length === 0)) {
+        return null;
+      }
+
+      if (options && options.length > 0) {
+        const seenValues = new Set<string>();
+        options = options.filter((option) => {
+          if (seenValues.has(option.value)) {
+            return false;
+          }
+          seenValues.add(option.value);
+          return true;
+        });
+      }
+
+      const fieldSummary: LintFieldSummary = {
+        id: explicitId || slugify(name) || `field-${index + 1}`,
+        name,
+      };
+
+      if (helperText) {
+        fieldSummary.helperText = helperText;
+      }
+
+      if (options && options.length > 0) {
+        fieldSummary.options = options;
+      }
+
+      return fieldSummary;
+    })
+    .filter(
+      (field): field is LintFieldSummary => field !== null,
+    );
+}
+
+function buildLintTranslationsByLocale(
+  data: SheetData,
+  categories: Array<{ id: string; name: string }>,
+  fields: Array<{
+    id: string;
+    name: string;
+    helperText?: string;
+    options?: SelectOption[];
+  }>,
+): {
+  translationsByLocale: Record<string, any>;
+  localeHeaderRefs: Record<
+    string,
+    Array<{ sheetName: string; column: number; header: string }>
+  >;
+} {
+  const translationsByLocale: Record<string, any> = {};
+  const localeHeaderRefs: Record<
+    string,
+    Array<{ sheetName: string; column: number; header: string }>
+  > = {};
+
+  const ensureLocaleEntry = (locale: string): Record<string, any> => {
+    if (!translationsByLocale[locale]) {
+      translationsByLocale[locale] = {};
+    }
+    return translationsByLocale[locale];
+  };
+
+  const ensureCategoryEntry = (
+    locale: string,
+    categoryId: string,
+  ): Record<string, string> => {
+    const localeEntry = ensureLocaleEntry(locale);
+    localeEntry.category = localeEntry.category || {};
+    localeEntry.category[categoryId] = localeEntry.category[categoryId] || {};
+    return localeEntry.category[categoryId];
+  };
+
+  const ensureFieldEntry = (
+    locale: string,
+    fieldId: string,
+  ): Record<string, string> => {
+    const localeEntry = ensureLocaleEntry(locale);
+    localeEntry.field = localeEntry.field || {};
+    localeEntry.field[fieldId] = localeEntry.field[fieldId] || {};
+    return localeEntry.field[fieldId];
+  };
+
+  const categoryIdByName = new Map<string, string>();
+  categories.forEach((category) => {
+    categoryIdByName.set(category.name, category.id);
+  });
+
+  const fieldIdByName = new Map<string, string>();
+  fields.forEach((field) => {
+    fieldIdByName.set(field.name, field.id);
+  });
+
+  const fieldsByHelperText = new Map<string, string[]>();
+  fields.forEach((field) => {
+    if (!field.helperText) {
+      return;
+    }
+    const fieldIds = fieldsByHelperText.get(field.helperText) || [];
+    fieldIds.push(field.id);
+    fieldsByHelperText.set(field.helperText, fieldIds);
+  });
+
+  const fieldsByOptionsString = new Map<
+    string,
+    Array<{ id: string; optionCount: number }>
+  >();
+  fields.forEach((field) => {
+    if (!field.options || field.options.length === 0) {
+      return;
+    }
+    const optionsString = field.options
+      .map((option) => {
+        const value = option?.value || "";
+        const label = option?.label || "";
+        if (!label) {
+          return "";
+        }
+        return value === slugify(label) ? label : `${value}:${label}`;
+      })
+      .filter(Boolean)
+      .join(", ");
+    if (!optionsString) {
+      return;
+    }
+    const matches = fieldsByOptionsString.get(optionsString) || [];
+    matches.push({ id: field.id, optionCount: field.options.length });
+    fieldsByOptionsString.set(optionsString, matches);
+  });
+
+  const processSheet = (
+    sheetName: string,
+    handler: (row: any[], locale: string, value: string) => void,
+  ) => {
+    const sheetData = data[sheetName];
+    if (!sheetData || sheetData.length <= 1) {
+      return;
+    }
+
+    const headers = sheetData[0];
+    const langColumns = extractLanguagesFromHeaders(headers);
+    langColumns.forEach((entry) => {
+      const refs = localeHeaderRefs[entry.lang] || [];
+      refs.push({
+        sheetName,
+        column: entry.index + 1,
+        header: String(headers[entry.index] || "").trim(),
+      });
+      localeHeaderRefs[entry.lang] = refs;
+    });
+
+    sheetData.slice(1).forEach((row) => {
+      langColumns.forEach((entry) => {
+        const value = String(row[entry.index] || "").trim();
+        if (!value) {
+          return;
+        }
+        handler(row, entry.lang, value);
+      });
+    });
+  };
+
+  processSheet("Category Translations", (row, locale, value) => {
+    const sourceName = String(row[TRANSLATION_COL.SOURCE_TEXT] || "").trim();
+    const categoryId = categoryIdByName.get(sourceName);
+    if (!categoryId) {
+      return;
+    }
+    ensureCategoryEntry(locale, categoryId).name = value;
+  });
+
+  processSheet("Detail Label Translations", (row, locale, value) => {
+    const sourceName = String(row[TRANSLATION_COL.SOURCE_TEXT] || "").trim();
+    const fieldId = fieldIdByName.get(sourceName);
+    if (!fieldId) {
+      return;
+    }
+    ensureFieldEntry(locale, fieldId).label = value;
+  });
+
+  processSheet("Detail Helper Text Translations", (row, locale, value) => {
+    const sourceHelperText = String(
+      row[TRANSLATION_COL.SOURCE_TEXT] || "",
+    ).trim();
+    const matchingFieldIds = fieldsByHelperText.get(sourceHelperText) || [];
+    matchingFieldIds.forEach((fieldId) => {
+      ensureFieldEntry(locale, fieldId).helperText = value;
+    });
+  });
+
+  processSheet("Detail Option Translations", (row, locale, value) => {
+    const sourceOptions = String(row[TRANSLATION_COL.SOURCE_TEXT] || "").trim();
+    const matchingFields = fieldsByOptionsString.get(sourceOptions) || [];
+    const translatedOptions = splitTranslatedOptions(value);
+    matchingFields.forEach((field) => {
+      for (
+        let optionIndex = 0;
+        optionIndex < translatedOptions.length &&
+        optionIndex < field.optionCount;
+        optionIndex++
+      ) {
+        ensureFieldEntry(locale, field.id)[`options.${optionIndex}`] =
+          translatedOptions[optionIndex];
+      }
+    });
+  });
+
+  Object.keys(translationsByLocale).forEach((locale) => {
+    const entry = translationsByLocale[locale];
+    const hasCategories = Boolean(
+      entry.category && Object.keys(entry.category).length > 0,
+    );
+    const hasFields = Boolean(entry.field && Object.keys(entry.field).length > 0);
+    if (!hasCategories && !hasFields) {
+      delete translationsByLocale[locale];
+    }
+  });
+
+  return { translationsByLocale, localeHeaderRefs };
+}
+
+function collectStrictLintMetrics(): {
+  categoryCount: number;
+  fieldCount: number;
+  iconCount: number;
+  optionCount: number;
+  translationEntryCount: number;
+  translationsByLocale: Record<string, any>;
+  localeHeaderRefs: Record<
+    string,
+    Array<{ sheetName: string; column: number; header: string }>
+  >;
+} {
+  const data = getSpreadsheetData();
+  const categories = buildLintCategorySummaries(data);
+  const fields = buildLintFieldSummaries(data);
+  const { translationsByLocale, localeHeaderRefs } = buildLintTranslationsByLocale(
+    data,
+    categories,
+    fields,
+  );
+
+  let iconCount = 0;
+  try {
+    iconCount = buildIconsFromSheet(data).length;
+  } catch (error) {
+    getScopedLogger("LintStrictMetrics").warn(
+      "Falling back to Icons sheet row count while calculating entity totals:",
+      error,
+    );
+    const iconsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Icons");
+    iconCount = iconsSheet ? Math.max(0, iconsSheet.getLastRow() - 1) : 0;
+  }
+
+  const optionCount = fields.reduce(
+    (total, field) => total + (field.options?.length || 0),
+    0,
+  );
+  const translationEntryCount =
+    typeof countTranslationEntries === "function"
+      ? countTranslationEntries(translationsByLocale)
+      : 0;
+
+  return {
+    categoryCount: categories.length,
+    fieldCount: fields.length,
+    iconCount,
+    optionCount,
+    translationEntryCount,
+    translationsByLocale,
+    localeHeaderRefs,
+  };
+}
+
+/**
+ * Phase 6 Task 2: Checks per-locale translation payload sizes.
+ * Uses the merged per-locale translation object so lint matches strict validation.
+ */
+function checkTranslationPayloadSizes(metrics: {
+  translationsByLocale: Record<string, any>;
+  localeHeaderRefs: Record<
+    string,
+    Array<{ sheetName: string; column: number; header: string }>
+  >;
+}): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const logger = getScopedLogger("LintTranslationPayloadSizes");
+
+  const PAYLOAD_LIMIT_BYTES = 1048576; // 1 MB
+
+  Object.keys(metrics.translationsByLocale).forEach((locale) => {
+    const localePayload = metrics.translationsByLocale[locale];
+    const localeBytes = getByteLength(JSON.stringify(localePayload || {}));
+    if (localeBytes <= PAYLOAD_LIMIT_BYTES) {
+      return;
+    }
+
+    const sizeKB = Math.round(localeBytes / 1024);
+    const refs = metrics.localeHeaderRefs[locale] || [];
+    refs.forEach((ref) => {
+      const sheet = spreadsheet.getSheetByName(ref.sheetName);
+      if (!sheet) {
+        return;
+      }
+      appendLintNote(
+        sheet.getRange(1, ref.column),
+        `Combined translations for locale '${locale}' exceed 1MB limit (${sizeKB}KB) after merging all translation sheets. This will fail strict validation.`,
+        "error",
+      );
+    });
+    logger.warn(
+      `Merged translation payload for locale ${locale} is ${sizeKB}KB across ${refs.length} sheet column(s)`,
+    );
+  });
+}
+
+/**
+ * Phase 6 Task 3: Checks strict total entity count parity.
+ * Includes categories, fields, icons, option entries, and translation entries.
+ */
+function checkTotalEntityCounts(metrics: {
+  categoryCount: number;
+  fieldCount: number;
+  iconCount: number;
+  optionCount: number;
+  translationEntryCount: number;
+}): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const logger = getScopedLogger("LintTotalEntityCounts");
+
+  const ENTITY_LIMIT = 10000;
+  const totalCount =
+    metrics.categoryCount +
+    metrics.fieldCount +
+    metrics.iconCount +
+    metrics.optionCount +
+    metrics.translationEntryCount;
+
+  if (totalCount > ENTITY_LIMIT) {
+    const categoriesSheet = spreadsheet.getSheetByName("Categories");
+    const cell = categoriesSheet
+      ? categoriesSheet.getRange(1, 1)
+      : spreadsheet.getActiveSheet().getRange(1, 1);
+    appendLintNote(
+      cell,
+      `Total entity count (${totalCount}) exceeds 10,000 limit. Categories: ${metrics.categoryCount}, Details: ${metrics.fieldCount}, Icons: ${metrics.iconCount}, Options: ${metrics.optionCount}, Translations: ${metrics.translationEntryCount}. This will fail strict validation.`,
+      "error",
+    );
+    logger.warn(
+      `Total entity count ${totalCount} exceeds limit (Categories: ${metrics.categoryCount}, Details: ${metrics.fieldCount}, Icons: ${metrics.iconCount}, Options: ${metrics.optionCount}, Translations: ${metrics.translationEntryCount})`,
+    );
+  }
+}
+
+/**
  * Main linting function that validates all sheets in the spreadsheet.
  *
  * @param showAlerts - Whether to show UI alerts (default: true). Set to false when called from other functions.
  */
 function lintAllSheets(showAlerts: boolean = true): void {
   try {
+    // Clear cross-run caches so Drive file changes are picked up
+    driveIconInfoCache.clear();
+
     console.log("Starting linting process...");
 
     console.log("Linting Categories sheet...");
@@ -2138,8 +4771,28 @@ function lintAllSheets(showAlerts: boolean = true): void {
     console.log("Linting Details sheet...");
     lintDetailsSheet();
 
+    console.log("Linting Icons sheet...");
+    lintIconsSheet();
+
+    // Phase 5: Cross-sheet icon checks
+    checkCrossSheetIconCollisions();
+
+    // Phase 6 Task 1: Inline SVG size warnings/errors
+    checkInlineSvgSizes();
+
     console.log("Linting Translation sheets...");
     lintTranslationSheets();
+
+    const strictLintMetrics = collectStrictLintMetrics();
+
+    // Phase 6 Task 2: Per-locale translation payload size checks
+    checkTranslationPayloadSizes(strictLintMetrics);
+
+    console.log("Linting Metadata sheet...");
+    lintMetadataSheet();
+
+    // Phase 6 Task 3: Total entity count check
+    checkTotalEntityCounts(strictLintMetrics);
 
     console.log("Finished linting all sheets.");
 
@@ -2148,16 +4801,14 @@ function lintAllSheets(showAlerts: boolean = true): void {
       const ui = SpreadsheetApp.getUi();
       ui.alert(
         "Linting Complete",
-        "All sheets have been linted. Please check for:\n" +
-          "- BRIGHT RED cells with white text: CRITICAL translation mismatch - primary language values don't match source sheet\n" +
-          "- Yellow highlighted cells: Required fields missing, unreferenced details, or translation row mismatches\n" +
-          "- Light red highlighted cells: Invalid values, missing options, invalid Universal flags, duplicate values, or option count mismatches\n" +
-          "- Red text in Categories icon column: Missing icons or Drive access issues (hover for details)\n" +
-          "- Red text in Categories fields column: Invalid field references (hover for details)\n" +
-          "- Orange text in Categories icon column: HTTP URLs (security warning - still works, but HTTPS recommended)\n" +
-          "- Invalid translation headers: Unrecognized formats are highlighted in light red\n\n" +
-          "⚠️  IMPORTANT: Bright red cells will cause translation failures. Re-sync translation sheets before generating config.\n" +
-          "ℹ️  TIP: For icons, paste inline SVG from https://icons.earthdefenderstoolkit.com for best results. Plain text still works (auto lookup), but is less accurate.",
+        "All sheets have been linted.\n\n" +
+          "Review highlighted cells before generating config:\n" +
+          "- Bright red with white text: Critical translation mismatch. Re-sync translations before export.\n" +
+          "- Light red (#FFC7CE): Errors that can block or break config generation.\n" +
+          "- Yellow (#FFF2CC): Warnings that need review.\n" +
+          "- Light yellow (#FFFFCC): Advisory guidance.\n" +
+          "- Red/orange text in icon columns: Icon source, access, or format issues.\n\n" +
+          "Open the note on each flagged cell for the specific fix.",
         ui.ButtonSet.OK,
       );
     }

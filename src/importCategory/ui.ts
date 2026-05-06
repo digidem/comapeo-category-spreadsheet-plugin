@@ -3,19 +3,16 @@
  * This file contains functions related to the user interface.
  */
 
-// Reference to the global locale variable
-declare const locale: string;
-
 /**
  * Creates the HTML for the import category dialog.
  * @returns HTML string for the dialog
  */
 function createImportCategoryHtml(): string {
-  const title = importCategoryDialogTexts[locale].title;
-  const messages = importCategoryDialogTexts[locale].message
+  const title = importCategoryDialogTexts[activeLocale].title;
+  const messages = importCategoryDialogTexts[activeLocale].message
     .map((msg) => "<p>" + msg + "</p>")
     .join("");
-  const buttonText = importCategoryDialogTexts[locale].buttonText;
+  const buttonText = importCategoryDialogTexts[activeLocale].buttonText;
 
   return (
     "<!DOCTYPE html>" +
@@ -113,7 +110,7 @@ function createImportCategoryHtml(): string {
     '      progressContainer.style.display = "none";' +
     "      " +
     "      // Get success message from dialog texts" +
-    "      const successMsg = " + JSON.stringify(importCategoryDialogTexts) + "['" + locale + "'].successMessage;" +
+    "      const successMsg = " + JSON.stringify(importCategoryDialogTexts) + "['" + activeLocale + "'].successMessage;" +
     "      " +
     "      // Build detailed success message" +
     "      let message = \"<div style='text-align: left; max-width: 600px; margin: 0 auto;'>\";" +

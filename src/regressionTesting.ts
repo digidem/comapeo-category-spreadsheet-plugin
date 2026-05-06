@@ -302,9 +302,10 @@ function sanitizeRowData(
     default:
       // For any other sheet, sanitize all text content
       for (let i = 0; i < sanitized.length; i++) {
-        if (sanitized[i] && typeof sanitized[i] === "string") {
+        const cellValue = sanitized[i];
+        if (cellValue && typeof cellValue === "string") {
           // Replace with generic test content
-          sanitized[i] = `TEST_${sanitized[i].substring(0, 20)}`;
+          sanitized[i] = `TEST_${cellValue.substring(0, 20)}`;
         }
       }
       break;

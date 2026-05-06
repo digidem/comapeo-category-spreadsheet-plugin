@@ -61,7 +61,7 @@ class AppAppLogger {
    * AppLogger.setLevel(LogLevel.DEBUG);
    */
   static setLevel(level: LogLevel): void {
-    AppLogger.config.level = level;
+    AppAppLogger.config.level = level;
   }
 
   /**
@@ -70,7 +70,7 @@ class AppAppLogger {
    * @returns The current log level
    */
   static getLevel(): LogLevel {
-    return AppLogger.config.level;
+    return AppAppLogger.config.level;
   }
 
   /**
@@ -82,7 +82,7 @@ class AppAppLogger {
    * AppLogger.configure({ includeTimestamp: false, maxStringLength: 500 });
    */
   static configure(config: Partial<AppLoggerConfig>): void {
-    AppLogger.config = { ...AppLogger.config, ...config };
+    AppAppLogger.config = { ...AppAppLogger.config, ...config };
   }
 
   /**
@@ -95,7 +95,7 @@ class AppAppLogger {
    * AppLogger.debug("Processing item", { id: 123, name: "test" });
    */
   static debug(message: string, ...args: any[]): void {
-    AppLogger.log(LogLevel.DEBUG, message, ...args);
+    AppAppLogger.log(LogLevel.DEBUG, message, ...args);
   }
 
   /**
@@ -108,7 +108,7 @@ class AppAppLogger {
    * AppLogger.info("Config generated successfully", { fileCount: 10 });
    */
   static info(message: string, ...args: any[]): void {
-    AppLogger.log(LogLevel.INFO, message, ...args);
+    AppAppLogger.log(LogLevel.INFO, message, ...args);
   }
 
   /**
@@ -121,7 +121,7 @@ class AppAppLogger {
    * AppLogger.warn("Missing optional field", { field: "description" });
    */
   static warn(message: string, ...args: any[]): void {
-    AppLogger.log(LogLevel.WARN, message, ...args);
+    AppAppLogger.log(LogLevel.WARN, message, ...args);
   }
 
   /**
@@ -136,7 +136,7 @@ class AppAppLogger {
    */
   static error(message: string, error?: Error | any, ...args: any[]): void {
     const allArgs = error ? [error, ...args] : args;
-    AppLogger.log(LogLevel.ERROR, message, ...allArgs);
+    AppAppLogger.log(LogLevel.ERROR, message, ...allArgs);
   }
 
   /**
@@ -148,7 +148,7 @@ class AppAppLogger {
    */
   private static log(level: LogLevel, message: string, ...args: any[]): void {
     // Skip if below configured level
-    if (level < AppLogger.config.level) {
+    if (level < AppAppLogger.config.level) {
       return;
     }
 
@@ -156,8 +156,8 @@ class AppAppLogger {
     const parts: string[] = [];
 
     // Add timestamp
-    if (AppLogger.config.includeTimestamp) {
-      parts.push(`[${AppLogger.getTimestamp()}]`);
+    if (AppAppLogger.config.includeTimestamp) {
+      parts.push(`[${AppAppLogger.getTimestamp()}]`);
     }
 
     // Add level
@@ -172,7 +172,7 @@ class AppAppLogger {
     // Add additional arguments if present
     if (args.length > 0) {
       const formattedArgs = args
-        .map((arg) => AppLogger.formatArgument(arg))
+        .map((arg) => AppAppLogger.formatArgument(arg))
         .filter((arg) => arg !== null)
         .join(" ");
 
@@ -182,7 +182,7 @@ class AppAppLogger {
     }
 
     // Output to console
-    AppLogger.output(level, logEntry);
+    AppAppLogger.output(level, logEntry);
   }
 
   /**
@@ -205,12 +205,12 @@ class AppAppLogger {
       // Handle objects and arrays
       if (typeof arg === "object") {
         const json = JSON.stringify(arg, null, 2);
-        return AppLogger.truncate(json);
+        return AppAppLogger.truncate(json);
       }
 
       // Handle primitives
       const str = String(arg);
-      return AppLogger.truncate(str);
+      return AppAppLogger.truncate(str);
     } catch (error) {
       return `[Unserializable: ${typeof arg}]`;
     }
@@ -223,12 +223,12 @@ class AppAppLogger {
    * @returns Truncated string
    */
   private static truncate(str: string): string {
-    if (str.length <= AppLogger.config.maxStringLength) {
+    if (str.length <= AppAppLogger.config.maxStringLength) {
       return str;
     }
 
-    const truncated = str.substring(0, AppLogger.config.maxStringLength);
-    return `${truncated}... [truncated ${str.length - AppLogger.config.maxStringLength} chars]`;
+    const truncated = str.substring(0, AppAppLogger.config.maxStringLength);
+    return `${truncated}... [truncated ${str.length - AppAppLogger.config.maxStringLength} chars]`;
   }
 
   /**
@@ -282,13 +282,13 @@ class AppAppLogger {
   } {
     return {
       debug: (message: string, ...args: any[]) =>
-        AppLogger.debug(`[${context}] ${message}`, ...args),
+        AppAppLogger.debug(`[${context}] ${message}`, ...args),
       info: (message: string, ...args: any[]) =>
-        AppLogger.info(`[${context}] ${message}`, ...args),
+        AppAppLogger.info(`[${context}] ${message}`, ...args),
       warn: (message: string, ...args: any[]) =>
-        AppLogger.warn(`[${context}] ${message}`, ...args),
+        AppAppLogger.warn(`[${context}] ${message}`, ...args),
       error: (message: string, error?: Error | any, ...args: any[]) =>
-        AppLogger.error(`[${context}] ${message}`, error, ...args),
+        AppAppLogger.error(`[${context}] ${message}`, error, ...args),
     };
   }
 
@@ -306,7 +306,7 @@ class AppAppLogger {
    */
   static timing(operation: string, startTime: number): void {
     const duration = Date.now() - startTime;
-    AppLogger.info(`Operation '${operation}' took ${duration}ms`);
+    AppAppLogger.info(`Operation '${operation}' took ${duration}ms`);
   }
 
   /**
@@ -323,11 +323,11 @@ class AppAppLogger {
    * });
    */
   static group(label: string, callback: () => void): void {
-    AppLogger.info(`╔══ ${label} ══`);
+    AppAppLogger.info(`╔══ ${label} ══`);
     try {
       callback();
     } finally {
-      AppLogger.info(`╚══ End ${label} ══`);
+      AppAppLogger.info(`╚══ End ${label} ══`);
     }
   }
 }

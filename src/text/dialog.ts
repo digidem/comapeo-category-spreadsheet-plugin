@@ -140,25 +140,6 @@ let processingDialogTitle = {
   es: "Generando Categoría CoMapeo",
 };
 
-let importCategoryDialogTexts: Record<string, DialogText> = {
-  es: {
-    title: "Importar archivo de categoría",
-    message: [
-      "Selecciona un archivo de categoría de CoMapeo (.comapeocat o .mapeosettings) para importar.",
-      "El archivo será procesado y sus datos se cargarán en la hoja de cálculo actual.",
-    ],
-    buttonText: "Seleccionar archivo",
-  },
-  en: {
-    title: "Import category file",
-    message: [
-      "Select a CoMapeo category file (.comapeocat or .mapeosettings) to import.",
-      "The file will be processed and its data will be loaded into the current spreadsheet.",
-    ],
-    buttonText: "Select file",
-  },
-};
-
 let iconErrorDialogTexts: Record<string, IconErrorDialogText> = {
   en: {
     title: "Icon Processing Report",

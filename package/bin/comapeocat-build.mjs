@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+import fs from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { Command } from '@commander-js/extra-typings'
+import * as v from 'valibot'
+
+import { isParseError } from '../src/lib/errors.js'
+import { validateBcp47 } from '../src/lib/validate-bcp-47.js'
+import {
+	CategorySchema,
+	CategorySchemaDeprecated,
+} from '../src/schema/category.js'
+import { MetadataSchemaInput } from '../src/schema/metadata.js'
+import { Writer } from '../src/writer.js'
+import { generateCategorySelection } from './helpers/generate-category-selection.js'
+import { lint } from './helpers/lint.js'
+import { messagesToTranslations } from './helpers/messages-to-translations.js'
+import { migrateDefaults } from './helpers/migrate-defaults.js'
+import { migrateGeometry } from './helpers/migrate-geometry.js'
+import { readFiles } from './helpers/read-files.js'
+
+// Read package.json to get the tool name and version
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const packageJson = JSON.parse(
+	readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'),
+)
+
+const program = new Command()
+
+program
+	.description('Build a CoMapeo Categories file from <inputDir>')
+	.option('-o, --output <file>', 'output .comapeocat file')
+	.option('--name <name>', 'name of the category set')
+	.option('--version <version>', 'version of the category set')
+	.option('--addCategoryIdTags', 'add a categoryId tag to each category', false)
+	.argument(
+		'[inputDir]',
+		'directory containing categories, fields, categorySelection and icons',
+		process.cwd(),
+	)
+	.action(async (dir, { output, addCategoryIdTags, ...metadata }) => {
+		await lint(dir).catch(handleError)
+
+		// Buffer the archive in memory first so that validation/finish errors
+		// don't leave a partial/corrupt file on disk.
+		const writer = new Writer()
+		writer.on('error', handleError)
+		const chunks = []
+		writer.outputStream.on('data', (chunk) => chunks.push(chunk))
+		const finishPromise = new Promise((resolve, reject) => {
+			writer.outputStream.on('end', resolve)
+			writer.outputStream.on('error', reject)
+		})
+
+		/** @type {Map<string, import('../src/schema/category.js').CategoryDeprecatedSortInput>} */
+		const categoriesMap = new Map()
+		/** @type {import('../src/schema/metadata.js').MetadataInput | undefined} */
+		let fileMetadata
+		/** @type {import('../src/schema/categorySelection.js').CategorySelectionInput | undefined} */
+		let categorySelection
+		try {
+			for await (const { type, id, value } of readFiles(dir)) {
+				switch (type) {
+					case 'category': {
+						v.assert(v.union([CategorySchema, CategorySchemaDeprecated]), value)
+						// Migrate deprecated geometry field to appliesTo first
+						const migratedGeometry = migrateGeometry(value)
+						// We don't migrate the sort field yet
+						categoriesMap.set(id, migratedGeometry)
+						// v.parse validates the schema and removes the sort field
+						const parsedCategory = v.parse(CategorySchema, migratedGeometry)
+						if (addCategoryIdTags) {
+							// Use addTags rather than tags so that categoryId is not used for
+							// matching, because that could result in unexpected behaviour
+							// when categories are updated.
+							parsedCategory.addTags = {
+								...parsedCategory.addTags,
+								categoryId: id,
+							}
+						}
+						writer.addCategory(id, parsedCategory)
+						break
+					}
+					case 'field':
+						writer.addField(id, value)
+						break
+					case 'categorySelection':
+						categorySelection = value
+						break
+					case 'defaults':
+						// categorySelection takes precedence over defaults
+						if (categorySelection) break
+						categorySelection = migrateDefaults(value)
+						break
+					case 'icon':
+						await writer.addIcon(id, value)
+						break
+					case 'messages':
+						await writer.addTranslations(
+							validateBcp47(id),
+							messagesToTranslations(value),
+						)
+						break
+					case 'metadata':
+						fileMetadata = value
+						break
+				}
+			}
+			// Metadata from the command line overrides metadata from the file, fallback to package.json
+			const mergedMetadata = {
+				builderName: packageJson.name,
+				builderVersion: packageJson.version,
+				...fileMetadata,
+				...metadata,
+			}
+			if (!mergedMetadata.name) {
+				console.error('You must provide a name via --name or in metadata.json')
+				process.exit(1)
+			}
+			v.assert(MetadataSchemaInput, mergedMetadata)
+			writer.setMetadata(mergedMetadata)
+
+			if (!categorySelection) {
+				categorySelection = generateCategorySelection(categoriesMap)
+			}
+			writer.setCategorySelection(categorySelection)
+
+			writer.finish()
+			await finishPromise
+
+			// All validation passed — now write the buffered archive to the destination
+			const buffer = Buffer.concat(chunks)
+			if (output) {
+				fs.writeFileSync(output, buffer)
+			} else {
+				process.stdout.write(buffer)
+			}
+		} catch (err) {
+			handleError(err)
+		}
+
+		if (output) {
+			console.log(`\n✓ Successfully wrote category archive ${output}`)
+		}
+	})
+
+program.parseAsync(process.argv)
+
+/** @param {unknown} err */
+function handleError(err) {
+	if (isParseError(err)) {
+		// For parse errors, don't print full stack trace and error properties,
+		// which can confuse the user.
+		console.error(err.message)
+	} else {
+		console.error(err)
+	}
+	process.exit(1)
+}

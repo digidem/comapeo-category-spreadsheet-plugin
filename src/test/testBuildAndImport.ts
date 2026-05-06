@@ -123,6 +123,41 @@ function createDetailRow(
   return [name, `Description for ${name}`, type, options, fieldId, universal];
 }
 
+/**
+ * Helper: Creates a deterministic ASCII string of the requested size.
+ * Using ASCII keeps the byte-length calculations aligned with string length.
+ */
+function createAsciiPayload(size: number, fillChar: string = "a"): string {
+  return fillChar.repeat(size);
+}
+
+/**
+ * Helper: Builds a select field with a large option list.
+ */
+function createSelectFieldWithOptions(optionCount: number): Field {
+  return {
+    id: "field-1",
+    tagKey: "field-1",
+    name: "Field",
+    type: "selectOne",
+    options: Array.from({ length: optionCount }, (_value, index) => ({
+      label: `Option ${index}`,
+      value: `option-${index}`
+    }))
+  };
+}
+
+/**
+ * Helper: Builds a flat translation map for translated option labels.
+ */
+function createOptionTranslationMap(optionCount: number): { [key: string]: string } {
+  const translations: { [key: string]: string } = {};
+  for (let index = 0; index < optionCount; index++) {
+    translations[`options.${index}`] = `Translated option ${index}`;
+  }
+  return translations;
+}
+
 // =============================================================================
 // Build Flow Tests
 // =============================================================================
@@ -415,6 +450,16 @@ function testValidateBuildRequest(): boolean {
       return false;
     }
 
+    const strictTrackOnlyRequest = JSON.parse(JSON.stringify(strictValidRequest));
+    strictTrackOnlyRequest.categories[0].appliesTo = ["track"];
+    try {
+      validateBuildRequest(strictTrackOnlyRequest, { strict: true });
+      console.log("PASS: Strict validation accepts track-only categories");
+    } catch (e) {
+      console.error("FAIL: Strict validation should not require observation coverage", e);
+      return false;
+    }
+
     const missingOptions = JSON.parse(JSON.stringify(strictValidRequest));
     missingOptions.fields[0].type = "selectOne";
     missingOptions.fields[0].options = [];
@@ -446,7 +491,182 @@ function testValidateBuildRequest(): boolean {
       console.log("PASS: Unknown field reference detected");
     }
 
+    const duplicateFieldIds = JSON.parse(JSON.stringify(strictValidRequest));
+    duplicateFieldIds.fields.push({
+      id: "FIELD-1",
+      tagKey: "FIELD-1",
+      name: "Duplicate Field",
+      type: "text"
+    });
+    try {
+      validateBuildRequest(duplicateFieldIds, { strict: true });
+      console.error("FAIL: Case-insensitive duplicate field IDs should throw");
+      return false;
+    } catch (e) {
+      const message = String((e as Error).message || e);
+      if (!message.includes("Duplicate field id detected:")) {
+        console.error(`FAIL: Unexpected duplicate field ID error: ${message}`);
+        return false;
+      }
+      console.log("PASS: Case-insensitive duplicate field IDs are rejected");
+    }
+
     console.log("=== Validate BuildRequest: ALL TESTS PASSED ===");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + error.message);
+    return false;
+  }
+}
+
+function testStrictMergedTranslationPayloadLimit(): boolean {
+  console.log("=== Test: Strict Merged Translation Payload Limit ===");
+
+  try {
+    const halfLimitBytes = 600 * 1024;
+    const strictTranslationRequest: BuildRequest = {
+      metadata: { name: "Merged Translation Payload", version: "1.0.0" },
+      locales: ["es"],
+      categories: [
+        {
+          id: "cat-1",
+          name: "Category",
+          appliesTo: ["observation"],
+          defaultFieldIds: ["field-1"],
+          fields: ["field-1"]
+        }
+      ],
+      fields: [
+        {
+          id: "field-1",
+          tagKey: "field-1",
+          name: "Field",
+          type: "text"
+        }
+      ],
+      translations: {
+        es: {
+          categories: {
+            "cat-1": {
+              name: createAsciiPayload(halfLimitBytes, "c")
+            }
+          },
+          fields: {
+            "field-1": {
+              label: createAsciiPayload(halfLimitBytes, "f")
+            }
+          }
+        }
+      }
+    };
+
+    const localeTranslations = strictTranslationRequest.translations?.es;
+    const categoryBytes = JSON.stringify(localeTranslations?.categories || {}).length;
+    const fieldBytes = JSON.stringify(localeTranslations?.fields || {}).length;
+    const mergedBytes = JSON.stringify(localeTranslations || {}).length;
+
+    if (categoryBytes >= 1 * 1024 * 1024) {
+      console.error(`FAIL: Category translation payload should stay under 1 MB, got ${categoryBytes} bytes`);
+      return false;
+    }
+    if (fieldBytes >= 1 * 1024 * 1024) {
+      console.error(`FAIL: Field translation payload should stay under 1 MB, got ${fieldBytes} bytes`);
+      return false;
+    }
+    if (mergedBytes <= 1 * 1024 * 1024) {
+      console.error(`FAIL: Merged locale payload should exceed 1 MB, got ${mergedBytes} bytes`);
+      return false;
+    }
+    console.log("PASS: Individual translation sections stay under 1 MB while merged locale exceeds it");
+
+    try {
+      validateBuildRequest(strictTranslationRequest, { strict: true });
+      console.error("FAIL: Strict validation should reject merged locale payloads above 1 MB");
+      return false;
+    } catch (error) {
+      const message = String((error as Error).message || error);
+      if (!message.includes('Translations for locale "es" exceed 1 MB')) {
+        console.error(`FAIL: Unexpected strict validation error for merged locale payload: ${message}`);
+        return false;
+      }
+      console.log("PASS: Strict validation rejects the merged locale payload");
+    }
+
+    console.log("=== Strict Merged Translation Payload Limit: ALL TESTS PASSED ===");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + error.message);
+    return false;
+  }
+}
+
+function testStrictTotalEntityOverflowIncludesOptionsAndTranslations(): boolean {
+  console.log("=== Test: Strict Total Entity Overflow Includes Options and Translations ===");
+
+  try {
+    const optionCount = 5001;
+    const field = createSelectFieldWithOptions(optionCount);
+    const strictEntityRequest: BuildRequest = {
+      metadata: { name: "Entity Overflow Payload", version: "1.0.0" },
+      locales: ["es"],
+      categories: [
+        {
+          id: "cat-1",
+          name: "Category",
+          appliesTo: ["observation"],
+          defaultFieldIds: ["field-1"],
+          fields: ["field-1"]
+        }
+      ],
+      fields: [field],
+      translations: {
+        es: {
+          fields: {
+            "field-1": createOptionTranslationMap(optionCount)
+          }
+        }
+      }
+    };
+
+    const categoryCount = strictEntityRequest.categories.length;
+    const fieldCount = strictEntityRequest.fields.length;
+    const iconCount = strictEntityRequest.icons?.length || 0;
+    const optionTotal = strictEntityRequest.fields.reduce(
+      (total, currentField) => total + (currentField.options?.length || 0),
+      0
+    );
+    const translationTotal = Object.values(strictEntityRequest.translations?.es?.fields || {})
+      .reduce((total, fieldTranslations) => total + Object.values(fieldTranslations).filter((value) => Boolean(value)).length, 0);
+    const totalEntities = categoryCount + fieldCount + iconCount + optionTotal + translationTotal;
+
+    if (categoryCount + fieldCount + iconCount >= 10000) {
+      console.error("FAIL: Base entity counts should remain below the legacy row-count limit");
+      return false;
+    }
+    if (optionTotal <= 0 || translationTotal <= 0) {
+      console.error("FAIL: Test setup should include both options and translations");
+      return false;
+    }
+    if (totalEntities <= 10000) {
+      console.error(`FAIL: Total entities should exceed 10,000 once options and translations are counted, got ${totalEntities}`);
+      return false;
+    }
+    console.log("PASS: Options and translated option entries push the payload past 10,000 entities");
+
+    try {
+      validateBuildRequest(strictEntityRequest, { strict: true });
+      console.error("FAIL: Strict validation should reject payloads over the combined entity limit");
+      return false;
+    } catch (error) {
+      const message = String((error as Error).message || error);
+      if (!message.includes("Combined counts (categories + fields + icons + options + translations) exceed 10000")) {
+        console.error(`FAIL: Unexpected strict validation error for total entity overflow: ${message}`);
+        return false;
+      }
+      console.log("PASS: Strict validation rejects the combined entity overflow");
+    }
+
+    console.log("=== Strict Total Entity Overflow Includes Options and Translations: ALL TESTS PASSED ===");
     return true;
   } catch (error) {
     console.error("FAIL: Exception thrown - " + error.message);
@@ -911,15 +1131,22 @@ function testUniversalFieldDoesNotSetRequired(): boolean {
   }
 }
 
-function testCategoriesRequireAppliesSelection(): boolean {
-  console.log("=== Test: Categories Require Applies Selection ===");
+function testCategoriesAppliesParsing(): boolean {
+  console.log("=== Test: Categories Applies Parsing ===");
+
+  // Reset mutable global so prior tests (e.g. testUniversalFieldsAddedToAllCategories)
+  // that trigger the auto-create Applies path don't leak state into this test.
+  if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined") {
+    AUTO_CREATED_APPLIES_COLUMN = false;
+  }
 
   try {
     const testData: SheetData = {
       documentName: "Applies Validation" as any,
       Categories: [
         ["Name", "Icon", "Fields", "Applies", "Category ID", "Icon ID"],
-        ["Track Missing", "", "field-a", "", "track-missing", "track-missing"]
+        ["Blank Applies", "", "field-a", "", "blank-applies", "blank-applies"],
+        ["Track Only", "", "field-a", "Track", "track-only", "track-only"]
       ],
       Details: [
         ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
@@ -928,30 +1155,129 @@ function testCategoriesRequireAppliesSelection(): boolean {
     } as SheetData;
 
     const fields = buildFields(testData);
+    const categories = buildCategories(testData, fields);
+    if (categories.length !== 2) {
+      console.error(`FAIL: Expected 2 categories, got ${categories.length}`);
+      return false;
+    }
+
+    const blankApplies = categories.find((category) => category.id === "blank-applies");
+    if (!blankApplies) {
+      console.error("FAIL: Could not find category with blank Applies value");
+      return false;
+    }
+    if (
+      !blankApplies.appliesTo ||
+      blankApplies.appliesTo.length !== 1 ||
+      blankApplies.appliesTo[0] !== "observation"
+    ) {
+      console.error(
+        `FAIL: Blank Applies should default to observation, got ${JSON.stringify(blankApplies.appliesTo)}`,
+      );
+      return false;
+    }
+    console.log("PASS: Blank Applies defaults to observation");
+
+    const trackOnly = categories.find((category) => category.id === "track-only");
+    if (!trackOnly) {
+      console.error("FAIL: Could not find track-only category");
+      return false;
+    }
+    if (
+      !trackOnly.appliesTo ||
+      trackOnly.appliesTo.length !== 1 ||
+      trackOnly.appliesTo[0] !== "track"
+    ) {
+      console.error(
+        `FAIL: Track Applies should remain track-only, got ${JSON.stringify(trackOnly.appliesTo)}`,
+      );
+      return false;
+    }
+    console.log("PASS: Track-only Applies values remain track-only during category parsing");
+
+    console.log("=== Categories Applies Parsing: ALL TESTS PASSED ===");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + (error as Error).message);
+    return false;
+  }
+}
+
+function testBuildCategoriesRequiresObservationCoverage(): boolean {
+  console.log("=== Test: Build Categories Requires Observation Coverage ===");
+
+  try {
+    const testData: SheetData = {
+      documentName: "Observation Coverage" as any,
+      Categories: [
+        ["Name", "Icon", "Fields", "Applies", "Category ID", "Icon ID"],
+        ["Track One", "", "field-a", "track", "track-one", "track-one"],
+        ["Track Two", "", "field-a", "track", "track-two", "track-two"],
+      ],
+      Details: [
+        ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
+        ["Field A", "Helper", "t", "", "field-a", "FALSE"],
+      ],
+    } as SheetData;
+
+    const fields = buildFields(testData);
 
     try {
       buildCategories(testData, fields);
-      console.error("FAIL: Missing Applies value should throw an error");
+      console.error("FAIL: buildCategories should reject sheets without observation coverage");
       return false;
     } catch (error) {
-      const message = (error as Error).message || String(error);
-      if (!message.includes("Applies")) {
-        console.error(`FAIL: Error message should reference Applies column, got '${message}'`);
+      const message = String((error as Error).message || error);
+      if (!message.includes('At least one category must include "observation"')) {
+        console.error(`FAIL: Unexpected builder error for missing observation coverage: ${message}`);
         return false;
       }
-      console.log("PASS: Missing Applies value triggers validation error");
     }
 
-    testData.Categories[1][3] = "Track";
+    console.log("PASS: Builder rejects all-track Categories sheets with no observation coverage");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + (error as Error).message);
+    return false;
+  }
+}
 
-    const categories = buildCategories(testData, fields);
-    if (!categories[0].appliesTo || !categories[0].appliesTo?.includes("track")) {
-      console.error("FAIL: Category should include 'track' after valid Applies input");
+function testBuildCategoriesRequiresTrackCoverage(): boolean {
+  console.log("=== Test: Build Categories Requires Track Coverage ===");
+
+  // Reset mutable global so prior tests don't leak state.
+  if (typeof AUTO_CREATED_APPLIES_COLUMN !== "undefined") {
+    AUTO_CREATED_APPLIES_COLUMN = false;
+  }
+
+  try {
+    const testData: SheetData = {
+      documentName: "Track Coverage" as any,
+      Categories: [
+        ["Name", "Icon", "Fields", "Applies", "Category ID", "Icon ID"],
+        ["Observation One", "", "field-a", "observation", "obs-one", "obs-one"],
+      ],
+      Details: [
+        ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
+        ["Field A", "Helper", "t", "", "field-a", "FALSE"],
+      ],
+    } as SheetData;
+
+    const fields = buildFields(testData);
+
+    try {
+      buildCategories(testData, fields);
+      console.error("FAIL: buildCategories should reject sheets without track coverage");
       return false;
+    } catch (error) {
+      const message = String((error as Error).message || error);
+      if (!message.includes("track")) {
+        console.error(`FAIL: Unexpected builder error for missing track coverage: ${message}`);
+        return false;
+      }
     }
-    console.log("PASS: Valid Applies entry sets appliesTo correctly");
 
-    console.log("=== Categories Require Applies Selection: ALL TESTS PASSED ===");
+    console.log("PASS: Builder rejects all-observation Categories sheets with no track coverage");
     return true;
   } catch (error) {
     console.error("FAIL: Exception thrown - " + (error as Error).message);
@@ -1271,6 +1597,51 @@ function testIconsRespectStoredCategoryIds(): boolean {
     }
 
     console.log("PASS: Icons respect stored Category and Icon IDs");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + error.message);
+    return false;
+  }
+}
+
+function testCrossSheetIconCollisionsUseExactIds(): boolean {
+  console.log("=== Test: Cross-Sheet Icon Collisions Use Exact IDs ===");
+
+  try {
+    const noCollision = findCrossSheetIconIdCollisions(
+      [{ id: "tree", row: 2 }],
+      [{ id: "tree.svg", row: 5 }],
+    );
+    if (noCollision.length !== 0) {
+      console.error(
+        'FAIL: "tree" and "tree.svg" should not collide when matching exact icon IDs',
+      );
+      return false;
+    }
+
+    const exactCollision = findCrossSheetIconIdCollisions(
+      [{ id: "tree", row: 2 }],
+      [
+        { id: "tree", row: 5 },
+        { id: "tree", row: 6 },
+      ],
+    );
+    if (exactCollision.length !== 2) {
+      console.error(
+        `FAIL: Expected 2 exact-ID collisions, got ${exactCollision.length}`,
+      );
+      return false;
+    }
+
+    if (
+      exactCollision[0].iconId !== "tree" ||
+      exactCollision[0].categoryId !== "tree"
+    ) {
+      console.error("FAIL: Collision payload should preserve the exact icon IDs");
+      return false;
+    }
+
+    console.log("PASS: Cross-sheet icon collisions use exact IDs");
     return true;
   } catch (error) {
     console.error("FAIL: Exception thrown - " + error.message);
@@ -1829,11 +2200,15 @@ function runBuildAndImportTests(): void {
     { name: "Build Payload Creation", fn: testBuildPayloadCreation },
     { name: "Import Parsing", fn: testImportParsing },
     { name: "Validate BuildRequest", fn: testValidateBuildRequest },
+    { name: "Strict Merged Translation Payload Limit", fn: testStrictMergedTranslationPayloadLimit },
+    { name: "Strict Total Entity Overflow Includes Options and Translations", fn: testStrictTotalEntityOverflowIncludesOptionsAndTranslations },
 
     // Universal fields tests
     { name: "Universal Fields Added to All Categories", fn: testUniversalFieldsAddedToAllCategories },
     { name: "Universal Field Does Not Set Required", fn: testUniversalFieldDoesNotSetRequired },
-    { name: "Categories Require Applies Selection", fn: testCategoriesRequireAppliesSelection },
+    { name: "Build Categories Requires Observation Coverage", fn: testBuildCategoriesRequiresObservationCoverage },
+    { name: "Build Categories Requires Track Coverage", fn: testBuildCategoriesRequiresTrackCoverage },
+    { name: "Categories Applies Parsing", fn: testCategoriesAppliesParsing },
 
     // Round-trip integration tests
     { name: "Integer Field Round-Trip", fn: testIntegerFieldRoundTrip },
@@ -1842,6 +2217,7 @@ function runBuildAndImportTests(): void {
     // ID preservation tests
     { name: "Category ID Preservation", fn: testCategoryIdPreservation },
     { name: "Icons Respect Stored Category IDs", fn: testIconsRespectStoredCategoryIds },
+    { name: "Cross-Sheet Icon Collisions Use Exact IDs", fn: testCrossSheetIconCollisionsUseExactIds },
     { name: "Field ID Preservation", fn: testFieldIdPreservation },
     { name: "Option Value Preservation", fn: testOptionValuePreservation },
 

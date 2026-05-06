@@ -368,7 +368,7 @@ function testLanguageRecognitionIntegration(): void {
   });
 
   // Test 17: VALIDATION FUNCTIONS WITH NATIVE NAMES (Critical Fix Verification)
-  runTest("isValidLanguageForA1Cell accepts both name forms", () => {
+  runTest("isValidLanguageForA1Cell accepts names and locale codes", () => {
     // English names
     if (!isValidLanguageForA1Cell("Portuguese")) {
       throw new Error("Should accept 'Portuguese'");
@@ -385,6 +385,20 @@ function testLanguageRecognitionIntegration(): void {
       throw new Error("Should accept 'Español'");
     }
 
+    // Canonical and locale code forms
+    if (!isValidLanguageForA1Cell("pt")) {
+      throw new Error("Should accept 'pt'");
+    }
+    if (!isValidLanguageForA1Cell("PT")) {
+      throw new Error("Should accept 'PT'");
+    }
+    if (!isValidLanguageForA1Cell("zh-CN")) {
+      throw new Error("Should accept 'zh-CN'");
+    }
+    if (!isValidLanguageForA1Cell("pt-BR")) {
+      throw new Error("Should accept 'pt-BR'");
+    }
+
     // Case variations
     if (!isValidLanguageForA1Cell("PORTUGUÊS")) {
       throw new Error("Should accept 'PORTUGUÊS'");
@@ -399,7 +413,109 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 18: CACHE CLEARING (Critical Fix Verification)
+  // Test 18: PRIMARY LANGUAGE LOCALE HELPERS (Critical Fix Verification)
+  runTest("Primary language locale helpers resolve canonical and BCP 47 inputs", () => {
+    const canonicalCode = normalizePrimaryLanguageLocaleCode("zh-CN");
+    if (canonicalCode !== "zh-CN") {
+      throw new Error(`Expected canonical zh-CN, got '${canonicalCode}'`);
+    }
+
+    const localeCode = normalizePrimaryLanguageLocaleCode("pt-BR");
+    if (localeCode !== "pt-br") {
+      throw new Error(`Expected normalized pt-br, got '${localeCode}'`);
+    }
+
+    const invalidLocaleCode = normalizePrimaryLanguageLocaleCode("pt_BR");
+    if (invalidLocaleCode !== null) {
+      throw new Error(`Expected null for invalid locale token, got '${invalidLocaleCode}'`);
+    }
+
+    const nativeName = resolvePrimaryLanguageInput("Português");
+    if (!nativeName || nativeName.code !== "pt" || nativeName.comparisonCode !== "pt") {
+      throw new Error("Expected Portuguese native name to resolve to pt");
+    }
+
+    const canonicalLanguageCode = resolvePrimaryLanguageInput("PT");
+    if (!canonicalLanguageCode || canonicalLanguageCode.code !== "pt") {
+      throw new Error("Expected PT to resolve to canonical pt");
+    }
+
+    const localeTag = resolvePrimaryLanguageInput("pt-BR");
+    if (!localeTag || localeTag.code !== "pt-br" || localeTag.comparisonCode !== "pt-br") {
+      throw new Error("Expected pt-BR to resolve to runtime pt-br and comparison pt-br (full locale preserved)");
+    }
+
+    const canonicalLocaleTag = resolvePrimaryLanguageInput("zh-CN");
+    if (
+      !canonicalLocaleTag ||
+      canonicalLocaleTag.code !== "zh-CN" ||
+      canonicalLocaleTag.comparisonCode !== "zh-CN"
+    ) {
+      throw new Error("Expected zh-CN to preserve canonical locale casing");
+    }
+  });
+
+  // Test 19: PRIMARY LANGUAGE LOCALE IDENTITY (Critical Fix Verification)
+  runTest("filterLanguagesByPrimary preserves locale primary identity", () => {
+    const originalSpreadsheetApp = (globalThis as any).SpreadsheetApp;
+
+    try {
+      (globalThis as any).SpreadsheetApp = {
+        getActiveSpreadsheet(): any {
+          return {
+            getSheetByName(name: string): any {
+              if (name === "Metadata") {
+                return {
+                  getDataRange(): any {
+                    return {
+                      getValues(): any[][] {
+                        return [
+                          ["Key", "Value"],
+                          ["primaryLanguage", "pt-BR"],
+                        ];
+                      },
+                    };
+                  },
+                };
+              }
+              if (name === "Categories") {
+                return {
+                  getRange(): any {
+                    return {
+                      getValue(): string {
+                        return "pt-BR";
+                      },
+                    };
+                  },
+                };
+              }
+              return null;
+            },
+          };
+        },
+      };
+
+      const primaryLanguages = filterLanguagesByPrimary(
+        { en: "English", pt: "Portuguese", es: "Spanish" },
+        true,
+      );
+      const primaryEntries = Object.entries(primaryLanguages);
+
+      if (primaryEntries.length !== 1) {
+        throw new Error(`Expected exactly one primary language entry, got ${primaryEntries.length}`);
+      }
+      if (primaryEntries[0][0] !== "pt-br") {
+        throw new Error(`Expected primary locale key 'pt-br', got '${primaryEntries[0][0]}'`);
+      }
+      if (primaryEntries[0][1] !== "Portuguese") {
+        throw new Error(`Expected locale primary to reuse base display name, got '${primaryEntries[0][1]}'`);
+      }
+    } finally {
+      (globalThis as any).SpreadsheetApp = originalSpreadsheetApp;
+    }
+  });
+
+  // Test 20: CACHE CLEARING (Critical Fix Verification)
   runTest("clearLanguagesCache clears both caches", () => {
     // This test verifies the cache clearing function works
     // In practice, we can't easily test the actual cache clearing
@@ -418,7 +534,7 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 19: GETPRIMARYLANGUAGE OPTIMIZATION (Critical Fix Verification)
+  // Test 21: GETPRIMARYLANGUAGE OPTIMIZATION (Critical Fix Verification)
   runTest("getPrimaryLanguage returns correct result efficiently", () => {
     // Mock data - in real usage this comes from cell A1
     // We test with both English and native names
@@ -437,7 +553,7 @@ function testLanguageRecognitionIntegration(): void {
     }
   });
 
-  // Test 20: TURKISH LOCALE FIX (Moderate Issue Verification)
+  // Test 22: TURKISH LOCALE FIX (Moderate Issue Verification)
   runTest("normalizeLanguageName handles Turkish locale correctly", () => {
     // This verifies that 'I' becomes 'i', not 'ı' (Turkish behavior)
     // We can't directly test normalizeLanguageName since it's not exported,

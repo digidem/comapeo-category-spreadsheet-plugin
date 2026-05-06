@@ -41,7 +41,6 @@ function resolvePresetForTranslationRow(
   columnToLanguageMap: Record<number, string>,
   primaryLanguageCode: string,
   lookup: ReturnType<typeof buildPresetLookup>,
-  log: any,
 ): CoMapeoPreset | undefined {
   const fallbackPreset = presets[translationIndex];
 
@@ -168,7 +167,8 @@ function buildColumnMapForSheet(sheetName: string): {
  * // Returns: { "en": {...}, "es": {...}, "fr": {...} }
  */
 function processTranslations(data, fields, presets) {
-  getScopedLogger("ProcessTranslations").info("Starting processTranslations...");
+  const log = getScopedLogger("ProcessTranslations");
+  log.info("Starting processTranslations...");
   const primaryLanguage = getPrimaryLanguage();
 
   // Build initial column map from Category Translations to determine available languages
@@ -187,12 +187,32 @@ function processTranslations(data, fields, presets) {
     }
   }
 
-  // Initialize messages object for all detected languages
-  const messages: CoMapeoTranslations = Object.fromEntries(
-    initialMapping.targetLanguages.map((lang) => [lang, {}]),
-  );
-
+  // Collect languages from ALL translation sheets before initializing messages.
+  // This prevents crashes when a later sheet exposes languages not present in
+  // Category Translations (e.g. Category Translations has es, Detail Label
+  // Translations also has fr).
+  const allDetectedLanguages = new Set<string>(initialMapping.targetLanguages);
   const translationSheets = sheets(true);
+
+  for (const sheetName of translationSheets) {
+    if (sheetName === "Category Translations") continue; // already scanned
+    const mapping = buildColumnMapForSheet(sheetName);
+    for (const lang of mapping.targetLanguages) {
+      allDetectedLanguages.add(lang);
+    }
+  }
+
+  // Initialize messages object for all detected languages across all sheets
+  const messages: CoMapeoTranslations = Object.fromEntries(
+    [...allDetectedLanguages].map((lang) => [lang, {}]),
+  );
+  const ensureLanguageMessages = (lang: string) => {
+    if (!messages[lang]) {
+      messages[lang] = {};
+    }
+    return messages[lang];
+  };
+
   getScopedLogger("ProcessTranslations").info("Processing translation sheets:", translationSheets);
   const presetLookup = buildPresetLookup(presets);
 
@@ -258,7 +278,7 @@ function processTranslations(data, fields, presets) {
 
         // Defensive check: skip if translation value is missing
         if (translationValue === undefined || translationValue === null) {
-          getScopedLogger("ProcessTranslations").warn(`⚠️  Missing translation value at column ${colIdx} for language ${lang}`);
+          log.warn(`⚠️  Missing translation value at column ${colIdx} for language ${lang}`);
           continue;
         }
 
@@ -276,7 +296,6 @@ function processTranslations(data, fields, presets) {
             columnToLanguageMap,
             primaryLanguage.code,
             presetLookup,
-            log,
           );
         }
 
@@ -293,35 +312,37 @@ function processTranslations(data, fields, presets) {
             ? (item as CoMapeoPreset).icon
             : (item as CoMapeoField).tagKey;
 
-        getScopedLogger("ProcessTranslations").info(
+        log.info(
           `Processing ${messageType} for language: ${lang} (column ${colIdx}), key: ${key}`,
         );
+        const languageMessages = ensureLanguageMessages(lang);
 
         switch (sheetName) {
           case "Category Translations":
-            messages[lang][`${messageType}.${key}.name`] = {
+            languageMessages[`${messageType}.${key}.name`] = {
               message: translationValue,
               description: `Name for preset '${key}'`,
             };
-            getScopedLogger("ProcessTranslations").info(`Added category translation for ${key}: "${translationValue}"`);
+            log.info(`Added category translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Label Translations":
-            messages[lang][`${messageType}.${key}.label`] = {
+            languageMessages[`${messageType}.${key}.label`] = {
               message: translationValue,
               description: `Label for field '${key}'`,
             };
-            getScopedLogger("ProcessTranslations").info(`Added label translation for ${key}: "${translationValue}"`);
+            log.info(`Added label translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Helper Text Translations":
-            messages[lang][`${messageType}.${key}.helperText`] = {
+            languageMessages[`${messageType}.${key}.helperText`] = {
               message: translationValue,
               description: `Helper text for field '${key}'`,
             };
-            getScopedLogger("ProcessTranslations").info(`Added helper text translation for ${key}: "${translationValue}"`);
+            log.info(`Added helper text translation for ${key}: "${translationValue}"`);
             break;
           case "Detail Option Translations": {
-            const fieldType = getFieldType((item as CoMapeoField).type || "");
-            getScopedLogger("ProcessTranslations").info(`Processing options for field type: ${fieldType}`);
+            const field = item as CoMapeoField;
+            const fieldType = getFieldType(field.type || "");
+            log.info(`Processing options for field type: ${fieldType}`);
 
             if (
               fieldType !== "number" &&
@@ -332,27 +353,27 @@ function processTranslations(data, fields, presets) {
               const options = translationValue
                 .split(",")
                 .map((opt) => opt.trim());
-              getScopedLogger("ProcessTranslations").info(`Found ${options.length} options to process`);
+              log.info(`Found ${options.length} options to process`);
 
               for (const [optionIndex, option] of options.entries()) {
-                if (item.options?.[optionIndex]) {
-                  const optionKey = `${messageType}.${key}.options.${item.options[optionIndex].value}`;
+                if (field.options?.[optionIndex]) {
+                  const optionKey = `${messageType}.${key}.options.${field.options[optionIndex].value}`;
                   const optionValue = {
                     message: {
                       label: option,
-                      value: item.options[optionIndex].value,
+                      value: field.options[optionIndex].value,
                     },
-                    description: `Option '${option}' for field '${(item as CoMapeoField).label}'`,
+                    description: `Option '${option}' for field '${field.label}'`,
                   };
-                  messages[lang][optionKey] = optionValue;
-                  getScopedLogger("ProcessTranslations").info(`Added option translation: ${option} for ${key}`);
+                  languageMessages[optionKey] = optionValue;
+                  log.info(`Added option translation: ${option} for ${key}`);
                 }
               }
             }
             break;
           }
           default:
-            getScopedLogger("ProcessTranslations").info(`Unhandled sheet name: ${sheetName}`);
+            log.info(`Unhandled sheet name: ${sheetName}`);
             break;
         }
       }

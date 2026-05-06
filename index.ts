@@ -4,9 +4,13 @@
 let activeUserLocale = Session.getActiveUserLocale().split("_")[0];
 const supportedLocales = ["en", "es"];
 const defaultLocale = "en";
-let locale = supportedLocales.includes(activeUserLocale)
+let activeLocale = supportedLocales.includes(activeUserLocale)
   ? activeUserLocale
   : defaultLocale;
+// Compatibility alias: downstream files (dialog.ts, generateCoMapeoConfig.ts,
+// translation.ts) reference `locale` as a global. GAS shares a single global
+// scope across all .ts files, so both names must resolve to the same value.
+let locale = activeLocale;
 
 
 function onOpen() {
@@ -19,34 +23,34 @@ function onOpen() {
     }
   }
   const ui = SpreadsheetApp.getUi();
-  const mainMenu = ui.createMenu(menuTexts[locale].menu)
+  const mainMenu = ui.createMenu(menuTexts[activeLocale].menu)
     .addItem(
-      menuTexts[locale].translateCoMapeoCategory,
+      menuTexts[activeLocale].translateCoMapeoCategory,
       "translateCoMapeoCategory",
     )
-    .addItem(menuTexts[locale].generateIcons, "generateIcons")
+    .addItem(menuTexts[activeLocale].generateIcons, "generateIcons")
     .addSeparator()
-    .addItem(menuTexts[locale].generateCoMapeoCategory, "generateCoMapeoCategory")
-    .addItem(menuTexts[locale].importCoMapeoCategory, "importCoMapeoCategory")
+    .addItem(menuTexts[activeLocale].generateCoMapeoCategory, "generateCoMapeoCategory")
+    .addItem(menuTexts[activeLocale].importCoMapeoCategory, "importCoMapeoCategory")
     .addSeparator()
-    .addItem(menuTexts[locale].lintAllSheets, "lintAllSheets")
-    .addItem(menuTexts[locale].cleanAllSheets, "cleanAllSheets")
+    .addItem(menuTexts[activeLocale].lintAllSheets, "lintAllSheets")
+    .addItem(menuTexts[activeLocale].cleanAllSheets, "cleanAllSheets")
     .addSeparator();
 
-  const debugMenu = ui.createMenu(menuTexts[locale].debugMenuTitle)
+  const debugMenu = ui.createMenu(menuTexts[activeLocale].debugMenuTitle)
     .addItem("Create Test Spreadsheet for Regression", "createTestSpreadsheetForRegression")
     .addItem("Test Runner", "runAllTests")
     .addItem("Capture Baseline Performance Metrics", "captureAndDocumentBaselineMetrics")
     .addItem("Turn on legacy compatibility", "toggleLegacyCompatibility")
     .addItem(
-      menuTexts[locale].generateCoMapeoCategoryDebug,
+      menuTexts[activeLocale].generateCoMapeoCategoryDebug,
       "generateCoMapeoCategoryDebug",
     );
 
   mainMenu
     .addSubMenu(debugMenu)
     .addSeparator()
-    .addItem(menuTexts[locale].openHelpPage, "openHelpPage")
+    .addItem(menuTexts[activeLocale].openHelpPage, "openHelpPage")
     .addItem("About / Version", "showVersionInfo")
     .addToUi();
 
@@ -76,8 +80,8 @@ function translateCoMapeoCategory() {
     showSelectTranslationLanguagesDialog();
   } catch (error) {
     SpreadsheetApp.getUi().alert(
-      translateMenuTexts[locale].error,
-      translateMenuTexts[locale].errorText + error.message,
+      translateMenuTexts[activeLocale].error,
+      translateMenuTexts[activeLocale].errorText + error.message,
       SpreadsheetApp.getUi().ButtonSet.OK,
     );
   }
@@ -88,14 +92,14 @@ function translateToSelectedLanguages(selectedLanguages: string[]) {
   try {
     autoTranslateSheetsBidirectional(selectedLanguages as TranslationLanguage[]);
     ui.alert(
-      translateMenuTexts[locale].completed,
-      translateMenuTexts[locale].completedText,
+      translateMenuTexts[activeLocale].completed,
+      translateMenuTexts[activeLocale].completedText,
       ui.ButtonSet.OK,
     );
   } catch (error) {
     ui.alert(
-      translateMenuTexts[locale].error,
-      translateMenuTexts[locale].errorText + error.message,
+      translateMenuTexts[activeLocale].error,
+      translateMenuTexts[activeLocale].errorText + error.message,
       ui.ButtonSet.OK,
     );
   }
@@ -106,8 +110,8 @@ function translateToSelectedLanguages(selectedLanguages: string[]) {
 function generateIcons() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    iconMenuTexts[locale].action,
-    iconMenuTexts[locale].actionText,
+    iconMenuTexts[activeLocale].action,
+    iconMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -116,8 +120,8 @@ function generateIcons() {
       generateIconsConfig();
     } catch (error) {
       ui.alert(
-        iconMenuTexts[locale].error,
-        iconMenuTexts[locale].errorText + error.message,
+        iconMenuTexts[activeLocale].error,
+        iconMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }
@@ -140,8 +144,8 @@ function showVersionInfo() {
 function generateCoMapeoCategory() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    categoryMenuTexts[locale].action,
-    categoryMenuTexts[locale].actionText,
+    categoryMenuTexts[activeLocale].action,
+    categoryMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -150,8 +154,8 @@ function generateCoMapeoCategory() {
       generateCoMapeoConfig();
     } catch (error) {
       ui.alert(
-        categoryMenuTexts[locale].error,
-        categoryMenuTexts[locale].errorText + error.message,
+        categoryMenuTexts[activeLocale].error,
+        categoryMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }
@@ -161,8 +165,8 @@ function generateCoMapeoCategory() {
 function generateCoMapeoCategoryDebug() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    categoryDebugMenuTexts[locale].action,
-    categoryDebugMenuTexts[locale].actionText,
+    categoryDebugMenuTexts[activeLocale].action,
+    categoryDebugMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -171,8 +175,8 @@ function generateCoMapeoCategoryDebug() {
       generateCoMapeoConfigWithDriveWrites();
     } catch (error) {
       ui.alert(
-        categoryDebugMenuTexts[locale].error,
-        categoryDebugMenuTexts[locale].errorText + error.message,
+        categoryDebugMenuTexts[activeLocale].error,
+        categoryDebugMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }
@@ -182,8 +186,8 @@ function generateCoMapeoCategoryDebug() {
 function importCoMapeoCategory() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    importMenuTexts[locale].action,
-    importMenuTexts[locale].actionText,
+    importMenuTexts[activeLocale].action,
+    importMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -192,8 +196,8 @@ function importCoMapeoCategory() {
       importCoMapeoCatFile();
     } catch (error) {
       ui.alert(
-        importMenuTexts[locale].error,
-        importMenuTexts[locale].errorText + error.message,
+        importMenuTexts[activeLocale].error,
+        importMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }
@@ -203,8 +207,8 @@ function importCoMapeoCategory() {
 function lintCoMapeoCategory() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    lintMenuTexts[locale].action,
-    lintMenuTexts[locale].actionText,
+    lintMenuTexts[activeLocale].action,
+    lintMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -212,14 +216,14 @@ function lintCoMapeoCategory() {
     try {
       lintAllSheets();
       ui.alert(
-        lintMenuTexts[locale].completed,
-        lintMenuTexts[locale].completedText,
+        lintMenuTexts[activeLocale].completed,
+        lintMenuTexts[activeLocale].completedText,
         ui.ButtonSet.OK,
       );
     } catch (error) {
       ui.alert(
-        lintMenuTexts[locale].error,
-        lintMenuTexts[locale].errorText + error.message,
+        lintMenuTexts[activeLocale].error,
+        lintMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }
@@ -229,8 +233,8 @@ function lintCoMapeoCategory() {
 function cleanAllSheets() {
   const ui = SpreadsheetApp.getUi();
   const result = ui.alert(
-    cleanAllMenuTexts[locale].action,
-    cleanAllMenuTexts[locale].actionText,
+    cleanAllMenuTexts[activeLocale].action,
+    cleanAllMenuTexts[activeLocale].actionText,
     ui.ButtonSet.YES_NO,
   );
 
@@ -238,14 +242,14 @@ function cleanAllSheets() {
     try {
       removeTranslationAndMetadataSheets();
       ui.alert(
-        cleanAllMenuTexts[locale].completed,
-        cleanAllMenuTexts[locale].completedText,
+        cleanAllMenuTexts[activeLocale].completed,
+        cleanAllMenuTexts[activeLocale].completedText,
         ui.ButtonSet.OK,
       );
     } catch (error) {
       ui.alert(
-        cleanAllMenuTexts[locale].error,
-        cleanAllMenuTexts[locale].errorText + error.message,
+        cleanAllMenuTexts[activeLocale].error,
+        cleanAllMenuTexts[activeLocale].errorText + error.message,
         ui.ButtonSet.OK,
       );
     }

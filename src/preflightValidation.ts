@@ -4,7 +4,7 @@
  * to catch potential issues early and provide better user feedback.
  */
 
-interface ValidationResult {
+interface PreflightValidationResult {
   passed: boolean;
   message?: string;
   details?: string;
@@ -13,9 +13,9 @@ interface ValidationResult {
 interface PreflightCheckResults {
   allPassed: boolean;
   checks: {
-    driveQuota: ValidationResult;
-    apiHealth: ValidationResult;
-    networkConnectivity: ValidationResult;
+    driveQuota: PreflightValidationResult;
+    apiHealth: PreflightValidationResult;
+    networkConnectivity: PreflightValidationResult;
   };
 }
 
@@ -27,7 +27,7 @@ const PREFLIGHT_CACHE_KEY = "preflight_checks";
 const PREFLIGHT_CACHE_TTL = 300; // 5 minutes
 const PREFLIGHT_FORCE_KEY = "force_refresh";
 
-function checkDriveQuota(): ValidationResult {
+function checkDriveQuota(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking Drive quota...");
@@ -68,7 +68,7 @@ function checkDriveQuota(): ValidationResult {
  * Check API server health and accessibility
  * @returns Validation result with API status
  */
-function checkApiHealth(): ValidationResult {
+function checkApiHealth(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking API health...");
@@ -141,7 +141,7 @@ function checkApiHealth(): ValidationResult {
  * Check network connectivity
  * @returns Validation result with connectivity status
  */
-function checkNetworkConnectivity(): ValidationResult {
+function checkNetworkConnectivity(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking network connectivity...");
