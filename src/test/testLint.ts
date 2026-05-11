@@ -7,6 +7,29 @@
  *
  * Depends on globals from src/builders/payloadBuilder.ts:
  * normalizeFieldTokens(), splitTranslatedOptions() (loaded earlier by GAS alphabetical order).
+ *
+ * ## Mock Framework
+ *
+ * The mock framework below simulates the GAS Spreadsheet API so lint functions can run
+ * without a real spreadsheet. It replaces `SpreadsheetApp`, `setLintNote`, and
+ * `appendLintNote` on `globalThis` for the duration of each test callback.
+ *
+ * ### Color Constant Synchronization
+ *
+ * The mock uses hardcoded color values that **must stay synchronized** with the
+ * production constants in `src/lint.ts`:
+ *
+ * | Mock value | Production constant | Used for |
+ * |---|---|---|
+ * | `#FFC7CE` | `LINT_WARNING_BACKGROUND_COLORS[0]` | Error background |
+ * | `#FFF2CC` | `LINT_WARNING_BACKGROUND_COLORS[3]` | Warning background |
+ * | `#FFFFCC` | `LINT_WARNING_BACKGROUND_COLORS[2]` | Advisory background |
+ * | `#FF0000` | `LINT_WARNING_FONT_COLORS[2]` | Critical mismatch (preserved by escalation) |
+ * | `red` | `LINT_WARNING_FONT_COLORS[0]` | Error font color |
+ * | `orange` | `LINT_WARNING_FONT_COLORS[1]` | Warning font color |
+ *
+ * If production changes its color palette, this mock **must** be updated or tests
+ * will silently pass on wrong behavior.
  */
 
 function testFieldTokenParity(): boolean {
@@ -149,13 +172,27 @@ function testTranslationDelimiterParity(): boolean {
   return true;
 }
 
+/** Records a single lint call (setLintNote or appendLintNote) for test assertions. */
 type MockLintCall = {
+  /** 1-based row number of the linted cell */
   row: number;
+  /** 1-based column number of the linted cell */
   col: number;
+  /** The lint message passed to setLintNote/appendLintNote */
   message: string;
+  /** Severity level assigned by the lint check */
   severity: "error" | "warning" | "advisory";
 };
 
+/**
+ * Represents the mutable state of a single cell in the mock spreadsheet.
+ * Tracks value, note text, background color, and font color — the properties
+ * that lint functions read and write.
+ *
+ * Invariant: `background` and `fontColor` start as `null` (no styling applied).
+ * After a lint call, they hold the color string set by `setMockLintStyle` or
+ * `appendMockLintStyle`.
+ */
 type MockCellState = {
   value: any;
   note: string;
@@ -163,10 +200,27 @@ type MockCellState = {
   fontColor: string | null;
 };
 
+/**
+ * Represents an entire mock sheet as a 2D grid of cell states.
+ * Rows and columns are 0-indexed internally; the mock Range translates
+ * from 1-based GAS coordinates.
+ */
 type MockSheetState = {
   cells: MockCellState[][];
 };
 
+/**
+ * Ranks lint severity by background color for escalation logic.
+ *
+ * | Rank | Meaning | Color |
+ * |---|---|---|
+ * | 0 | No lint styling | default/white |
+ * | 1 | Advisory | `#FFFFCC` |
+ * | 2 | Warning | `#FFF2CC` |
+ * | 3 | Error | `#FFC7CE` or `#FF0000` |
+ *
+ * Higher rank = more severe. `appendMockLintStyle` only upgrades, never downgrades.
+ */
 function getSeverityRank(
   background: string | null,
 ): 0 | 1 | 2 | 3 {
@@ -183,6 +237,10 @@ function getSeverityRank(
   }
 }
 
+/**
+ * Sets the lint styling on a cell, overwriting any previous styling.
+ * Maps severity to the same background/font colors used in production `setLintNote`.
+ */
 function setMockLintStyle(
   cellState: MockCellState,
   severity: "error" | "warning" | "advisory",
@@ -202,6 +260,12 @@ function setMockLintStyle(
   }
 }
 
+/**
+ * Upgrades lint styling on a cell, following severity escalation rules.
+ * Only applies styling if the new severity is higher than the current rank.
+ * Preserves `#FF0000` critical-mismatch styling — mirrors production
+ * `appendLintNote()` which skips background/font changes for `#FF0000` cells.
+ */
 function appendMockLintStyle(
   cellState: MockCellState,
   severity: "error" | "warning" | "advisory",
@@ -229,6 +293,10 @@ function appendMockLintStyle(
   }
 }
 
+/**
+ * Appends a lint note message to the cell, prefixing with `[Lint] `.
+ * If the cell already has a note, the new message is appended on a new line.
+ */
 function appendMockLintNote(
   cellState: MockCellState,
   message: string,
@@ -242,6 +310,7 @@ function appendMockLintNote(
   }
 }
 
+/** Overwrites the cell's note with a lint-prefixed message. */
 function setMockLintNote(
   cellState: MockCellState,
   message: string,
@@ -256,6 +325,18 @@ function getMockCellState(target: any): MockCellState {
   return target as MockCellState;
 }
 
+/**
+ * Runs a callback with a fully mocked GAS Spreadsheet environment.
+ *
+ * @param sheets - Map of sheet names to 2D arrays of cell values (row-major, 0-indexed).
+ *   Each value becomes the `value` field of a `MockCellState`. Rows are automatically
+ *   padded to equal width.
+ * @param callback - Receives an array of `MockLintCall` objects that accumulate during
+ *   the lint execution. Assert against these to verify lint behavior.
+ *
+ * During execution, `SpreadsheetApp`, `setLintNote`, and `appendLintNote` are replaced
+ * on `globalThis`. Originals are restored in a `finally` block.
+ */
 function runWithMockedLintSpreadsheet(
   sheets: Record<string, any[][]>,
   callback: (lintCalls: MockLintCall[]) => void,
@@ -1351,6 +1432,270 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
   }
 }
 
+/**
+ * Happy-path: no collisions when Icons and Categories have disjoint IDs.
+ */
+function testCrossSheetIconCollisionsNoCollision(): boolean {
+  console.log("=== testCrossSheetIconCollisionsNoCollision ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Icons: [
+          ["Icon ID", "Source"],
+          ["tree", "<svg>...</svg>"],
+          ["river", "<svg>...</svg>"],
+        ],
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies"],
+          ["Forest", "<svg>...</svg>", "", "observation"],
+          ["Mountain", "<svg>...</svg>", "", "observation"],
+        ],
+      },
+      (lintCalls) => {
+        checkCrossSheetIconCollisions();
+        if (lintCalls.length !== 0) {
+          throw new Error(
+            `Expected 0 lint calls for disjoint IDs, got ${lintCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: No collision when IDs are disjoint");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Edge-case: collision detected when Icons and Categories share an icon ID.
+ */
+function testCrossSheetIconCollisionsDetectsCollision(): boolean {
+  console.log("=== testCrossSheetIconCollisionsDetectsCollision ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Icons: [
+          ["Icon ID", "Source"],
+          ["forest", "<svg>...</svg>"],
+        ],
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies"],
+          ["Forest", "<svg>...</svg>", "", "observation"],
+        ],
+      },
+      (lintCalls) => {
+        checkCrossSheetIconCollisions();
+        // Should produce warnings for both Icons and Categories sheets
+        const warningCalls = lintCalls.filter(
+          (call) => call.severity === "warning" && call.message.includes("collides"),
+        );
+        if (warningCalls.length < 1) {
+          throw new Error(
+            `Expected at least 1 collision warning, got ${warningCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: Collision detected when IDs overlap");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Happy-path: total entity count within limits produces no lint calls.
+ */
+function testTotalEntityCountsUnderLimit(): boolean {
+  console.log("=== testTotalEntityCountsUnderLimit ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies"],
+          ["Test", "", "", "observation"],
+        ],
+      },
+      (lintCalls) => {
+        checkTotalEntityCounts({
+          categoryCount: 100,
+          fieldCount: 200,
+          iconCount: 50,
+          optionCount: 300,
+          translationEntryCount: 500,
+        });
+        if (lintCalls.length !== 0) {
+          throw new Error(
+            `Expected 0 lint calls when under limit, got ${lintCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: No warning when total entity count is under limit");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Edge-case: total entity count exceeding 10,000 triggers error.
+ */
+function testTotalEntityCountsOverLimit(): boolean {
+  console.log("=== testTotalEntityCountsOverLimit ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies"],
+          ["Test", "", "", "observation"],
+        ],
+      },
+      (lintCalls) => {
+        checkTotalEntityCounts({
+          categoryCount: 5000,
+          fieldCount: 3000,
+          iconCount: 1000,
+          optionCount: 500,
+          translationEntryCount: 1000,
+        });
+        const errorCalls = lintCalls.filter(
+          (call) => call.severity === "error" && call.message.includes("exceeds"),
+        );
+        if (errorCalls.length !== 1) {
+          throw new Error(
+            `Expected 1 error call for over-limit, got ${errorCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: Error raised when total entity count exceeds limit");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Happy-path: translation payload under 1MB produces no lint calls.
+ */
+function testTranslationPayloadSizesUnderLimit(): boolean {
+  console.log("=== testTranslationPayloadSizesUnderLimit ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        "Translations-en": [
+          ["Source", "en"],
+          ["test", "small payload"],
+        ],
+      },
+      (lintCalls) => {
+        checkTranslationPayloadSizes({
+          translationsByLocale: { en: { test: "hello" } },
+          localeHeaderRefs: {
+            en: [{ sheetName: "Translations-en", column: 2, header: "en" }],
+          },
+        });
+        if (lintCalls.length !== 0) {
+          throw new Error(
+            `Expected 0 lint calls for small payload, got ${lintCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: No warning when translation payload is under 1MB");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Edge-case: translation payload exceeding 1MB triggers error on header cells.
+ */
+function testTranslationPayloadSizesOverLimit(): boolean {
+  console.log("=== testTranslationPayloadSizesOverLimit ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        "Translations-en": [
+          ["Source", "en"],
+          ["test", "x".repeat(100)],
+        ],
+      },
+      (lintCalls) => {
+        // Create a payload that exceeds 1MB
+        const largePayload: Record<string, string> = {};
+        for (let i = 0; i < 20000; i++) {
+          largePayload[`key_${i}`] = "a".repeat(60);
+        }
+        checkTranslationPayloadSizes({
+          translationsByLocale: { en: largePayload },
+          localeHeaderRefs: {
+            en: [{ sheetName: "Translations-en", column: 2, header: "en" }],
+          },
+        });
+        const errorCalls = lintCalls.filter(
+          (call) => call.severity === "error" && call.message.includes("exceed"),
+        );
+        if (errorCalls.length < 1) {
+          throw new Error(
+            `Expected at least 1 error for oversized payload, got ${errorCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: Error raised when translation payload exceeds 1MB");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Happy-path: small inline SVG produces no lint warnings.
+ * Note: checkInlineSvgSizes uses Utilities.newBlob which is not mocked,
+ * so this test verifies the function exits cleanly with no SVG data.
+ */
+function testInlineSvgSizesNoSvgData(): boolean {
+  console.log("=== testInlineSvgSizesNoSvgData ===");
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies"],
+          ["Forest", "https://example.com/icon.png", "", "observation"],
+        ],
+        Icons: [
+          ["Icon ID", "Source"],
+          ["tree", "https://example.com/tree.png"],
+        ],
+      },
+      (lintCalls) => {
+        checkInlineSvgSizes();
+        // No inline SVGs → no lint calls
+        if (lintCalls.length !== 0) {
+          throw new Error(
+            `Expected 0 lint calls for non-SVG sources, got ${lintCalls.length}: ${JSON.stringify(lintCalls)}`,
+          );
+        }
+      },
+    );
+    console.log("PASS: No warnings for non-SVG icon sources");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 function runLintParityTests(): void {
   console.log("=== Lint Parity Regression Tests ===");
 
@@ -1399,6 +1744,13 @@ function runLintParityTests(): void {
       fn: testDriveIconInfoCacheKeepsLintSourceRecognitionConsistent,
     },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
+    { name: "Cross-Sheet Icon Collisions No Collision", fn: testCrossSheetIconCollisionsNoCollision },
+    { name: "Cross-Sheet Icon Collisions Detects Collision", fn: testCrossSheetIconCollisionsDetectsCollision },
+    { name: "Total Entity Counts Under Limit", fn: testTotalEntityCountsUnderLimit },
+    { name: "Total Entity Counts Over Limit", fn: testTotalEntityCountsOverLimit },
+    { name: "Translation Payload Sizes Under Limit", fn: testTranslationPayloadSizesUnderLimit },
+    { name: "Translation Payload Sizes Over Limit", fn: testTranslationPayloadSizesOverLimit },
+    { name: "Inline SVG Sizes No SVG Data", fn: testInlineSvgSizesNoSvgData },
   ];
 
   let passed = 0;

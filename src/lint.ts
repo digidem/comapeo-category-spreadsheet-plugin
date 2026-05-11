@@ -25,6 +25,13 @@ function setInvalidCellBackground(
   sheet.getRange(row, col).setBackground(color);
 }
 
+/**
+ * Lint warning background colors.
+ *
+ * IMPORTANT: The mock framework in `src/test/testLint.ts` hardcodes these same
+ * color values. If you change this palette, update the mock constants too or
+ * tests will silently pass on wrong behavior.
+ */
 const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFC7CE",
   "#FFEB9C",
@@ -32,6 +39,11 @@ const LINT_WARNING_BACKGROUND_COLORS = [
   "#FFF2CC",
   "#FFF3CD",
 ];
+/**
+ * Lint warning font colors.
+ *
+ * IMPORTANT: See `src/test/testLint.ts` color synchronization table.
+ */
 const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000"];
 const LINT_WARNING_FONT_COLORS_WITHOUT_WHITE = LINT_WARNING_FONT_COLORS.filter(
   (color) => color.toUpperCase() !== "#FFFFFF",
