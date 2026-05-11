@@ -25,26 +25,13 @@ function setInvalidCellBackground(
   sheet.getRange(row, col).setBackground(color);
 }
 
-/**
- * Lint warning background colors.
- *
- * IMPORTANT: The mock framework in `src/test/testLint.ts` hardcodes these same
- * color values. If you change this palette, update the mock constants too or
- * tests will silently pass on wrong behavior.
- */
-const LINT_WARNING_BACKGROUND_COLORS = [
-  "#FFC7CE",
-  "#FFEB9C",
-  "#FFFFCC",
-  "#FFF2CC",
-  "#FFF3CD",
-];
+// LINT_WARNING_BACKGROUND_COLORS is defined in lint-colors.ts (shared with tests)
 /**
  * Lint warning font colors.
  *
  * IMPORTANT: See `src/test/testLint.ts` color synchronization table.
  */
-const LINT_WARNING_FONT_COLORS = ["red", "orange", "#FF0000"];
+// LINT_WARNING_FONT_COLORS is defined in lint-colors.ts (shared with tests)
 const LINT_WARNING_FONT_COLORS_WITHOUT_WHITE = LINT_WARNING_FONT_COLORS.filter(
   (color) => color.toUpperCase() !== "#FFFFFF",
 );
@@ -151,9 +138,24 @@ function clearRangeLintNoteLinesWithPrefix(
   fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
   backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
 ): void {
+  if (!prefix) return; // Empty prefix would match all lines — treat as no-op.
+  clearRangeLintNoteLinesWithPrefixes(range, [prefix], fontColorsToClear, backgroundColorsToClear);
+}
+
+/**
+ * Batch version of clearRangeLintNoteLinesWithPrefix.
+ * Removes all lines starting with any of the given prefixes from notes in the range.
+ * Reads notes/fontColors/backgrounds only once regardless of how many prefixes are provided.
+ */
+function clearRangeLintNoteLinesWithPrefixes(
+  range: GoogleAppsScript.Spreadsheet.Range,
+  prefixes: string[],
+  fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
+  backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
+): void {
   if (!range) return;
   if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
-  if (!prefix) return;
+  if (!prefixes || prefixes.length === 0) return;
 
   const normalizedWarningColors = fontColorsToClear.map((color) =>
     color.toUpperCase(),
@@ -171,10 +173,12 @@ function clearRangeLintNoteLinesWithPrefix(
   for (let row = 0; row < notes.length; row++) {
     for (let col = 0; col < notes[row].length; col++) {
       const note = notes[row][col];
-      if (!note || !note.includes(prefix)) continue;
+      if (!note) continue;
 
       const noteLines = note.split("\n");
-      const remainingLines = noteLines.filter((line) => !line.startsWith(prefix));
+      const remainingLines = noteLines.filter(
+        (line) => !prefixes.some((prefix) => line.startsWith(prefix)),
+      );
 
       if (remainingLines.length === noteLines.length) continue;
 
@@ -651,32 +655,24 @@ function validateAppliesColumn(): void {
   const lastCol = categoriesSheet.getLastColumn();
   if (lastCol > 0) {
     const headerRowRange = categoriesSheet.getRange(1, 1, 1, lastCol);
-    clearRangeLintNoteLinesWithPrefix(
+    clearRangeLintNoteLinesWithPrefixes(
       headerRowRange,
-      `${LINT_NOTE_PREFIX}No "Applies" header found.`,
-    );
-    clearRangeLintNoteLinesWithPrefix(
-      headerRowRange,
-      `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
-    );
-    clearRangeLintNoteLinesWithPrefix(
-      headerRowRange,
-      `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+      [
+        `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+        `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
+        `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+      ],
     );
 
     if (lastRow > 1) {
       const bodyRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
-      clearRangeLintNoteLinesWithPrefix(
+      clearRangeLintNoteLinesWithPrefixes(
         bodyRange,
-        `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
-      );
-      clearRangeLintNoteLinesWithPrefix(
-        bodyRange,
-        `${LINT_NOTE_PREFIX}All Applies tokens are unrecognized`,
-      );
-      clearRangeLintNoteLinesWithPrefix(
-        bodyRange,
-        `${LINT_NOTE_PREFIX}Applies value contains semicolons`,
+        [
+          `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
+          `${LINT_NOTE_PREFIX}All Applies tokens are unrecognized`,
+          `${LINT_NOTE_PREFIX}Applies value contains semicolons`,
+        ],
       );
     }
   }
@@ -700,7 +696,10 @@ function validateAppliesColumn(): void {
     // Applies-specific notes above. Intentionally avoid blanket-clearing the
     // sheet here because earlier lint phases may have already annotated other
     // columns, and those findings must be preserved.
-    const headerCell = categoriesSheet.getRange(1, 1);
+    // Place the warning at the expected Applies column position (column D)
+    // rather than A1, which is reserved for the Primary Language annotation.
+    const appliesExpectedCol = Math.max(lastCol + 1, 4);
+    const headerCell = categoriesSheet.getRange(1, appliesExpectedCol);
     appendLintNote(
       headerCell,
       'No "Applies" header found. The builder resolves this column by header name and may auto-create it, seeding the first category with "track, observation".',
@@ -724,17 +723,13 @@ function validateAppliesColumn(): void {
   // Also clear header cell artifacts (Applies-specific notes only, to avoid
   // wiping higher-priority annotations on the same cell, e.g. A1 language error)
   const headerCell = categoriesSheet.getRange(1, appliesColIndex);
-  clearRangeLintNoteLinesWithPrefix(
+  clearRangeLintNoteLinesWithPrefixes(
     headerCell,
-    `${LINT_NOTE_PREFIX}No "Applies" header found.`,
-  );
-  clearRangeLintNoteLinesWithPrefix(
-    headerCell,
-    `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
-  );
-  clearRangeLintNoteLinesWithPrefix(
-    headerCell,
-    `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+    [
+      `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+      `${LINT_NOTE_PREFIX}No category includes "observation" in Applies.`,
+      `${LINT_NOTE_PREFIX}No category includes "track" in Applies.`,
+    ],
   );
 
   if (lastRow <= 1) return;
@@ -2032,8 +2027,8 @@ function validatePrimaryLanguageInA1(): void {
   if (!a1Value) {
     setLintNote(
       cell,
-      'Categories A1 is blank and no Metadata primaryLanguage is set. The builder will default to "en" (English). Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
-      "warning",
+      'Categories A1 is blank and no Metadata primaryLanguage is set. Config generation will fail with an error. Set a valid language name or locale code (e.g. "English", "Português", "en", "pt-BR") in A1 or add a non-empty "primaryLanguage" row in the Metadata sheet.',
+      "error",
     );
     return;
   }
@@ -2130,7 +2125,7 @@ function lintCategoriesSheet(): void {
 
   const categoriesValidations = [
     // Rule 1: Capitalize the first letter of the category name
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       if (isEmptyOrWhitespace(value)) return;
 
       const capitalizedValue = capitalizeFirstLetter(value);
@@ -2155,7 +2150,7 @@ function lintCategoriesSheet(): void {
       // Icon column — no inline validation; see validateCategoryIcons()
     },
     // Rule 3: Validate field references using normalizeFieldTokens (matches build parsing)
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       if (isEmptyOrWhitespace(value)) return;
 
       try {
@@ -2257,7 +2252,7 @@ function lintDetailsSheet(): void {
 
   const detailsValidations = [
     // Rule 1: Capitalize the first letter of the detail name
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       if (isEmptyOrWhitespace(value)) return;
 
       const capitalizedValue = capitalizeFirstLetter(value);
@@ -2280,7 +2275,7 @@ function lintDetailsSheet(): void {
       }
     },
     // Rule 2: Capitalize the first letter of the helper text
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       if (isEmptyOrWhitespace(value)) return;
 
       const capitalizedValue = capitalizeFirstLetter(value);
@@ -2303,7 +2298,7 @@ function lintDetailsSheet(): void {
       }
     },
     // Rule 3: Validate the type column (t, n, m, blank, s, or select* are valid)
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       // Type column validation logic:
       // - blank/empty → selectOne (mirrors payloadBuilder case "" default)
       // - "s*" (select, single, etc.) → selectOne (valid)
@@ -2361,7 +2356,7 @@ function lintDetailsSheet(): void {
       }
     },
     // Rule 4: Validate options column (canonical parsing + ambiguous colon + ignored options)
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       try {
         // Get the type from column 3 (index 2) to determine if options are required
         const typeValue = sheet.getRange(row, 3).getValue();
@@ -2497,7 +2492,7 @@ function lintDetailsSheet(): void {
       // Column 5 - no validation
     },
     // Rule 6: Validate Universal flag column (TRUE, FALSE, or blank only)
-    (value, row, col) => {
+    (value: string, row: number, col: number) => {
       validateUniversalFlag(value, row, col, sheet);
     },
   ];

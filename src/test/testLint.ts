@@ -16,20 +16,19 @@
  *
  * ### Color Constant Synchronization
  *
- * The mock uses hardcoded color values that **must stay synchronized** with the
- * production constants in `src/lint.ts`:
+ * Color constants are now shared via `src/lint-colors.ts`. Both production
+ * (`src/lint.ts`) and this mock file reference the same `LINT_WARNING_BACKGROUND_COLORS`
+ * and `LINT_WARNING_FONT_COLORS` arrays. Changing the palette in `lint-colors.ts`
+ * automatically updates both production and tests.
  *
- * | Mock value | Production constant | Used for |
+ * | Constant | Index | Used for |
  * |---|---|---|
- * | `#FFC7CE` | `LINT_WARNING_BACKGROUND_COLORS[0]` | Error background |
- * | `#FFF2CC` | `LINT_WARNING_BACKGROUND_COLORS[3]` | Warning background |
- * | `#FFFFCC` | `LINT_WARNING_BACKGROUND_COLORS[2]` | Advisory background |
- * | `#FF0000` | `LINT_WARNING_FONT_COLORS[2]` | Critical mismatch (preserved by escalation) |
- * | `red` | `LINT_WARNING_FONT_COLORS[0]` | Error font color |
- * | `orange` | `LINT_WARNING_FONT_COLORS[1]` | Warning font color |
- *
- * If production changes its color palette, this mock **must** be updated or tests
- * will silently pass on wrong behavior.
+ * | `LINT_WARNING_BACKGROUND_COLORS[0]` | `#FFC7CE` | Error background |
+ * | `LINT_WARNING_BACKGROUND_COLORS[3]` | `#FFF2CC` | Warning background |
+ * | `LINT_WARNING_BACKGROUND_COLORS[2]` | `#FFFFCC` | Advisory background |
+ * | `LINT_WARNING_FONT_COLORS[2]` | `#FF0000` | Critical mismatch (preserved by escalation) |
+ * | `LINT_WARNING_FONT_COLORS[0]` | `red` | Error font color |
+ * | `LINT_WARNING_FONT_COLORS[1]` | `orange` | Warning font color |
  */
 
 function testFieldTokenParity(): boolean {
@@ -215,26 +214,23 @@ type MockSheetState = {
  * | Rank | Meaning | Color |
  * |---|---|---|
  * | 0 | No lint styling | default/white |
- * | 1 | Advisory | `#FFFFCC` |
- * | 2 | Warning | `#FFF2CC` |
- * | 3 | Error | `#FFC7CE` or `#FF0000` |
+ * | 1 | Advisory | `LINT_WARNING_BACKGROUND_COLORS[2]` |
+ * | 2 | Warning | `LINT_WARNING_BACKGROUND_COLORS[3]` |
+ * | 3 | Error | `LINT_WARNING_BACKGROUND_COLORS[0]` or `LINT_WARNING_FONT_COLORS[2]` |
  *
  * Higher rank = more severe. `appendMockLintStyle` only upgrades, never downgrades.
  */
 function getSeverityRank(
   background: string | null,
 ): 0 | 1 | 2 | 3 {
-  switch ((background || "").toUpperCase()) {
-    case "#FFFFCC":
-      return 1;
-    case "#FFF2CC":
-      return 2;
-    case "#FFC7CE":
-    case "#FF0000":
-      return 3;
-    default:
-      return 0;
-  }
+  const bg = (background || "").toUpperCase();
+  if (bg === LINT_WARNING_BACKGROUND_COLORS[2].toUpperCase()) return 1;
+  if (bg === LINT_WARNING_BACKGROUND_COLORS[3].toUpperCase()) return 2;
+  if (
+    bg === LINT_WARNING_BACKGROUND_COLORS[0].toUpperCase() ||
+    bg === LINT_WARNING_FONT_COLORS[2].toUpperCase()
+  ) return 3;
+  return 0;
 }
 
 /**
@@ -247,15 +243,15 @@ function setMockLintStyle(
 ): void {
   switch (severity) {
     case "error":
-      cellState.background = "#FFC7CE";
-      cellState.fontColor = "red";
+      cellState.background = LINT_WARNING_BACKGROUND_COLORS[0];
+      cellState.fontColor = LINT_WARNING_FONT_COLORS[0];
       break;
     case "warning":
-      cellState.background = "#FFF2CC";
-      cellState.fontColor = "orange";
+      cellState.background = LINT_WARNING_BACKGROUND_COLORS[3];
+      cellState.fontColor = LINT_WARNING_FONT_COLORS[1];
       break;
     case "advisory":
-      cellState.background = "#FFFFCC";
+      cellState.background = LINT_WARNING_BACKGROUND_COLORS[2];
       break;
   }
 }
@@ -274,9 +270,9 @@ function appendMockLintStyle(
 
   switch (severity) {
     case "error":
-      // Preserve #FF0000 critical-mismatch styling — mirrors production
+      // Preserve critical-mismatch styling — mirrors production
       // appendLintNote() which skips background/font changes for #FF0000 cells.
-      if ((cellState.background || "").toUpperCase() !== "#FF0000") {
+      if ((cellState.background || "").toUpperCase() !== LINT_WARNING_FONT_COLORS[2].toUpperCase()) {
         setMockLintStyle(cellState, "error");
       }
       break;
@@ -701,19 +697,19 @@ function testLintAppendAndClearSemantics(): boolean {
         if (cell.getNote() !== "[Lint] First warning\n[Lint] Second advisory") {
           throw new Error(`Unexpected stacked lint note: ${cell.getNote()}`);
         }
-        if (cell.getBackground() !== "#FFF2CC" || cell.getFontColor() !== "orange") {
+        if (cell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[3] || cell.getFontColor() !== LINT_WARNING_FONT_COLORS[1]) {
           throw new Error(
             `Warning styling should be preserved after advisory append, got ${cell.getBackground()} / ${cell.getFontColor()}`,
           );
         }
 
         appendLintNote(cell, "Third error", "error");
-        if (cell.getBackground() !== "#FFC7CE" || cell.getFontColor() !== "red") {
+        if (cell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[0] || cell.getFontColor() !== LINT_WARNING_FONT_COLORS[0]) {
           throw new Error("Error styling should escalate and persist");
         }
 
         appendLintNote(cell, "Fourth warning", "warning");
-        if (cell.getBackground() !== "#FFC7CE" || cell.getFontColor() !== "red") {
+        if (cell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[0] || cell.getFontColor() !== LINT_WARNING_FONT_COLORS[0]) {
           throw new Error("Error styling should not downgrade on warning append");
         }
 
@@ -725,14 +721,14 @@ function testLintAppendAndClearSemantics(): boolean {
         if (manualCell.getNote() !== "Manual note\n[Lint] Replaced lint note") {
           throw new Error(`Non-lint notes should be preserved on append, got: ${manualCell.getNote()}`);
         }
-        if (manualCell.getBackground() !== "#FFFFCC") {
+        if (manualCell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[2]) {
           throw new Error("Advisory append should apply lint advisory styling");
         }
 
         const clearCell = sheet.getRange(1, 1);
         clearCell.setNote("[Lint] first line\nmanual line\n[Lint] second line");
-        clearCell.setBackground("#FFF2CC");
-        clearCell.setFontColor("orange");
+        clearCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
+        clearCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
         clearLintArtifacts(clearCell);
         if (clearCell.getNote() !== "manual line") {
           throw new Error(`Expected non-lint note lines to be preserved, got "${clearCell.getNote()}"`);
@@ -746,18 +742,18 @@ function testLintAppendAndClearSemantics(): boolean {
 
         const emptyPrefixCell = sheet.getRange(1, 1);
         emptyPrefixCell.setNote("[Lint] keep me\nmanual line");
-        emptyPrefixCell.setBackground("#FFF2CC");
-        emptyPrefixCell.setFontColor("orange");
+        emptyPrefixCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
+        emptyPrefixCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
         clearRangeLintNoteLinesWithPrefix(emptyPrefixCell, "");
         if (emptyPrefixCell.getNote() !== "[Lint] keep me\nmanual line") {
           throw new Error(
             `Empty prefix should not clear lint note lines, got "${emptyPrefixCell.getNote()}"`,
           );
         }
-        if (emptyPrefixCell.getBackground() !== "#FFF2CC") {
+        if (emptyPrefixCell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[3]) {
           throw new Error("Empty prefix should not clear lint warning background");
         }
-        if (emptyPrefixCell.getFontColor() !== "orange") {
+        if (emptyPrefixCell.getFontColor() !== LINT_WARNING_FONT_COLORS[1]) {
           throw new Error("Empty prefix should not clear lint warning font color");
         }
       },
@@ -797,7 +793,7 @@ function testTranslationSourceOverwriteCleanupPreservesCriticalWhiteText(): bool
         criticalCell.setNote(
           '[Lint] Source value "River" produces the same key as row 3. Later values may overwrite earlier ones.',
         );
-        criticalCell.setBackground("#FF0000");
+        criticalCell.setBackground(LINT_WARNING_FONT_COLORS[2]);
         criticalCell.setFontColor("#FFFFFF");
 
         checkTranslationSourceOverwrites();
@@ -807,7 +803,7 @@ function testTranslationSourceOverwriteCleanupPreservesCriticalWhiteText(): bool
             `Expected critical white font color to be preserved, got ${criticalCell.getFontColor()}`,
           );
         }
-        if (criticalCell.getBackground() !== "#FF0000") {
+        if (criticalCell.getBackground() !== LINT_WARNING_FONT_COLORS[2]) {
           throw new Error(
             `Expected critical red background to be preserved, got ${criticalCell.getBackground()}`,
           );
@@ -1366,12 +1362,12 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
         if (bodyCell.getNote() !== '[Lint] Existing non-Applies lint on Fields cell') {
           throw new Error(`Expected existing body-cell lint note to be preserved, got "${bodyCell.getNote()}"`);
         }
-        if (bodyCell.getBackground() !== "#FFF2CC") {
+        if (bodyCell.getBackground() !== LINT_WARNING_BACKGROUND_COLORS[3]) {
           throw new Error(
             `Expected existing body-cell warning background to be preserved, got ${bodyCell.getBackground()}`,
           );
         }
-        if (bodyCell.getFontColor() !== "orange") {
+        if (bodyCell.getFontColor() !== LINT_WARNING_FONT_COLORS[1]) {
           throw new Error(
             `Expected existing body-cell warning font color to be preserved, got ${bodyCell.getFontColor()}`,
           );
@@ -1379,8 +1375,8 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
 
         const staleAppliesCell = categoriesSheet.getRange(2, 4);
         staleAppliesCell.setNote('[Lint] Unrecognized Applies token(s): "legacy"');
-        staleAppliesCell.setBackground("#FFF2CC");
-        staleAppliesCell.setFontColor("orange");
+        staleAppliesCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
+        staleAppliesCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
 
         validateAppliesColumn();
 
@@ -1401,8 +1397,8 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
         staleAppliesCell.setNote(
           '[Lint] All Applies tokens are unrecognized ("legacy"). The builder will silently default this row to "observation". Use "observation" or "track" explicitly.',
         );
-        staleAppliesCell.setBackground("#FFF2CC");
-        staleAppliesCell.setFontColor("orange");
+        staleAppliesCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
+        staleAppliesCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
 
         validateAppliesColumn();
 
