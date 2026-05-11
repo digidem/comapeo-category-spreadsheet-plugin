@@ -205,3 +205,30 @@ function finalizeDebugLogging() {
   debugLog(`Session completed at: ${new Date().toLocaleString()}`);
   flushDebugLogs();
 }
+
+/**
+ * Factory that creates a module-scoped safe debug logger.
+ *
+ * Each consumer file should call this once at module scope:
+ * ```
+ * const safeDebugLog = createSafeDebugLogger("PngIcons");
+ * ```
+ *
+ * The returned function tries `debugLog()` first (from this file),
+ * falling back to `console.log()` if unavailable.
+ *
+ * @param moduleName - Prefix string injected into every log message
+ */
+function createSafeDebugLogger(moduleName: string) {
+  return function safeDebugLog(message: string, forceFlush = false) {
+    try {
+      if (typeof debugLog === "function") {
+        debugLog(`[${moduleName}] ${message}`, forceFlush);
+        return;
+      }
+    } catch (_e) {
+      // Fall through to console
+    }
+    console.log(`[${moduleName}] ${message}`);
+  };
+}

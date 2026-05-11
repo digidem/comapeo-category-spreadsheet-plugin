@@ -17,28 +17,7 @@ interface SpriteProcessingResult {
   }>;
 }
 
-/**
- * Safe debug logger that falls back to Logger if debugLog is not available
- */
-function safeSpriteDebugLog(message: string, forceFlush = false) {
-  // Try debug logger first
-  try {
-    if (typeof debugLog === "function") {
-      debugLog(message, forceFlush);
-      return;
-    }
-  } catch (e) {
-    // Fall through to Logger
-  }
-
-  // Fall back to standard logger
-  try {
-    console.log(message);
-  } catch (e) {
-    // Last resort
-    console.log(message);
-  }
-}
+const safeSpriteDebugLog = createSafeDebugLogger("SpriteIcons");
 
 /**
  * Processes an SVG sprite blob and extracts individual icons
