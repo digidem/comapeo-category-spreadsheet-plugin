@@ -306,8 +306,9 @@ function compareToBaseline(): void {
     const currentDuration = Date.now() - currentStart;
 
     const baselineDuration = baseline.testSuites[0]?.duration || 1;
+    const baselineActual = baseline.testSuites[0]?.duration || 0;
     const percentChange =
-      ((currentDuration - baselineDuration) / baselineDuration) * 100;
+      ((currentDuration - baselineActual) / baselineDuration) * 100;
 
     log.info(`Current: ${currentDuration}ms (${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}%)`);
 

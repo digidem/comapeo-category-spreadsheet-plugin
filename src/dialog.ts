@@ -1017,7 +1017,10 @@ function showIconErrorDialog(errorSummary: IconErrorSummary): void {
 
 /**
  * Download icon error report as CSV
- * Called from the error dialog
+ * Called from the error dialog.
+ *
+ * Dialog remains open intentionally after download so the user can review
+ * the report before closing it manually (or via the auto-close timeout).
  */
 function downloadIconErrorReport(): void {
   // This function would be called from the dialog
