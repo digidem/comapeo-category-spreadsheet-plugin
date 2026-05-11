@@ -1237,7 +1237,7 @@ function populateCategoriesSheet(
 
     if (fieldIds && fieldIds.length > 0) {
       const fieldNames = fieldIds
-        .map(id => fieldIdToName.get(id) || id)  // Fall back to ID if name not found
+        .map((id: string) => fieldIdToName.get(id) || id)  // Fall back to ID if name not found
         .filter(Boolean);
       fieldsValue = fieldNames.join(', ');
     }

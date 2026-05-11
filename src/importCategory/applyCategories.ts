@@ -28,7 +28,7 @@ function applyCategories(
   // Create a map of icon name to icon URL for quick lookup
   safeCategoryDebugLog("Building icon map for lookup...");
   safeCategoryDebugLog(`Processing ${icons.length} icon(s) from extraction...`);
-  const iconMap = {};
+  const iconMap: Record<string, string> = {};
   let overwriteCount = 0;
   for (const icon of icons) {
     if (icon.name && icon.svg) {
@@ -76,7 +76,7 @@ function applyCategories(
       preset.fields.length > 0
     ) {
       // Create a map of field IDs to their labels for quick lookup
-      const fieldMap = {};
+      const fieldMap: Record<string, string> = {};
       for (const field of fields) {
         if (field.id && field.label) {
           fieldMap[field.id] = field.label;

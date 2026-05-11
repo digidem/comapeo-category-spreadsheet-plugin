@@ -16,13 +16,13 @@
  * const fields = processFields(data);
  * // Returns: [{ tagKey: "name", type: "text", label: "Name", helperText: "Enter name", options: [], universal: false }, ...]
  */
-function processFields(data) {
-  const details = data.Details.slice(1);
+function processFields(data: SheetData) {
+  const details = data.Details.slice(1) as FieldRow[];
   const errors: string[] = [];
   const warnings: string[] = [];
 
   // Validate all fields first
-  details.forEach((detail, index) => {
+  details.forEach((detail: FieldRow, index: number) => {
     const validation = validateFieldDefinition(detail, index + 2); // +2 for header row and 0-index
     if (!validation.valid && validation.error) {
       errors.push(validation.error);
@@ -47,7 +47,7 @@ function processFields(data) {
     );
   }
 
-  return details.map((detail, index) => {
+  return details.map((detail: FieldRow, index: number) => {
     const tagKey = createFieldTagKey(detail[0], index);
 
     return {

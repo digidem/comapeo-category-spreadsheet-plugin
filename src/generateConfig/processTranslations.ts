@@ -166,7 +166,7 @@ function buildColumnMapForSheet(sheetName: string): {
  * const translations = processTranslations(data, fields, presets);
  * // Returns: { "en": {...}, "es": {...}, "fr": {...} }
  */
-function processTranslations(data, fields, presets) {
+function processTranslations(data: Record<string, (string | number | boolean | undefined)[][]>, fields: CoMapeoField[], presets: CoMapeoPreset[]) {
   const log = getScopedLogger("ProcessTranslations");
   log.info("Starting processTranslations...");
   const primaryLanguage = getPrimaryLanguage();
@@ -264,7 +264,7 @@ function processTranslations(data, fields, presets) {
       translationIndex++
     ) {
       const translationRow = translations[translationIndex];
-      const translation = translationRow.map((t) =>
+      const translation = translationRow.map((t: string | number | boolean | undefined | null) =>
         t === null || t === undefined ? "" : t.toString().trim(),
       );
       getScopedLogger("ProcessTranslations").info(
@@ -352,7 +352,7 @@ function processTranslations(data, fields, presets) {
             ) {
               const options = translationValue
                 .split(",")
-                .map((opt) => opt.trim());
+                .map((opt: string) => opt.trim());
               log.info(`Found ${options.length} options to process`);
 
               for (const [optionIndex, option] of options.entries()) {

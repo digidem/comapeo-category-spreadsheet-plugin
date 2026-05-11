@@ -123,7 +123,7 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
 
       if (responseCode === 200) {
         const responseBlob = response.getBlob();
-        const contentType = response.getHeaders()['Content-Type'] || '';
+        const contentType = (response.getHeaders() as Record<string, string>)['Content-Type'] || '';
         getScopedLogger("ApiService").info('Content-Type:', contentType);
 
         // Verify we got a binary file response

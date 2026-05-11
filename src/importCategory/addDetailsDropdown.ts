@@ -254,7 +254,7 @@ function isMultiSelectValidationSupported(): boolean {
       .setAllowInvalid(true);
 
     // Check if the method exists
-    return typeof testRule["setAllowMultipleSelections"] === "function";
+    return typeof (testRule as unknown as Record<string, unknown>)["setAllowMultipleSelections"] === "function";
   } catch (error) {
     return false;
   }

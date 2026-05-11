@@ -58,7 +58,7 @@ function generateCoMapeoConfig() {
 
       if (response === ui.Button.YES) {
         // Fix and continue
-        const fixingDialogText = {
+        const fixingDialogText: Record<string, { title: string; message: string[] }> = {
           en: {
             title: "Fixing Translation Mismatches",
             message: [

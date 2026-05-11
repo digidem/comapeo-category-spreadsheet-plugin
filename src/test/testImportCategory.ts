@@ -148,7 +148,7 @@ function testImportCategory(url?: string) {
         extractionResult.files,
         extractionResult.tempFolder,
         {
-          onProgress: (stage, percent) => {
+          onProgress: (stage: string, percent: number) => {
             const overallPercent = 50 + Math.round(percent * 0.2); // Map 0-100 to 50-70
             updateProgress(
               overallPercent,
@@ -175,7 +175,7 @@ function testImportCategory(url?: string) {
     // Create a backup of the current sheets
     updateProgress(70, "Creating backup of current sheets...");
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const backupSheets = {};
+    const backupSheets: Record<string, unknown[][]> = {};
 
     // Backup Categories sheet
     const categoriesSheet = spreadsheet.getSheetByName("Categories");

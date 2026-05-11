@@ -401,11 +401,11 @@ function generatePerformanceReport(): void {
       log.info("\n--- BASELINE METRICS ---");
       log.info(`Total Duration: ${baseline.totalDuration}ms`);
       log.info(`Test Suites: ${baseline.testSuites.length}`);
-      log.info(`Passed: ${baseline.testSuites.filter(s => s.status === "PASSED").length}`);
-      log.info(`Failed: ${baseline.testSuites.filter(s => s.status === "FAILED").length}`);
+      log.info(`Passed: ${baseline.testSuites.filter((s: { status: string }) => s.status === "PASSED").length}`);
+      log.info(`Failed: ${baseline.testSuites.filter((s: { status: string }) => s.status === "FAILED").length}`);
 
       log.info("\nIndividual Test Suite Durations:");
-      baseline.testSuites.forEach(suite => {
+      baseline.testSuites.forEach((suite: { name: string; duration: number; status: string }) => {
         log.info(`  ${suite.name}: ${suite.duration}ms (${suite.status})`);
       });
     } else {

@@ -135,7 +135,7 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
   },
 };
 
-let processingDialogTitle = {
+let processingDialogTitle: Record<string, string> = {
   en: "Generating CoMapeo Category",
   es: "Generando Categoría CoMapeo",
 };

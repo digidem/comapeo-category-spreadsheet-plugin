@@ -4,7 +4,7 @@
  */
 
 // Dialog texts for different languages
-const importCategoryDialogTexts = {
+const importCategoryDialogTexts: Record<string, { title: string; message: string[]; buttonText: string; progressStages: { extracting: string; parsing: string; icons: string; applying: string; finalizing: string }; successMessage: { title: string; dropdownInfo: string[] } }> = {
   en: {
     title: "Import Category File",
     message: [
