@@ -1317,9 +1317,26 @@ function populateDetailsSheet(
 }
 
 /**
+ * Field types used by the CoMapeo API (broader than spreadsheet ValidFieldType).
+ * The import service maps from these API types to single-character spreadsheet codes.
+ */
+type ApiFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "integer"
+  | "multiselect"
+  | "select"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "photo"
+  | "location";
+
+/**
  * Maps API field type to spreadsheet type character
  */
-function mapFieldTypeToChar(type: string): string {
+function mapFieldTypeToChar(type: ApiFieldType | string): string {
   switch (type) {
     case 'text':
       return 't';
