@@ -8,11 +8,12 @@
  * @returns HTML string for the dialog
  */
 function createImportCategoryHtml(): string {
-  const title = importCategoryDialogTexts[activeLocale].title;
-  const messages = importCategoryDialogTexts[activeLocale].message
+  const locale = typeof activeLocale !== "undefined" ? activeLocale : "en";
+  const title = importCategoryDialogTexts[locale].title;
+  const messages = importCategoryDialogTexts[locale].message
     .map((msg) => "<p>" + msg + "</p>")
     .join("");
-  const buttonText = importCategoryDialogTexts[activeLocale].buttonText;
+  const buttonText = importCategoryDialogTexts[locale].buttonText;
 
   return (
     "<!DOCTYPE html>" +
@@ -110,7 +111,7 @@ function createImportCategoryHtml(): string {
     '      progressContainer.style.display = "none";' +
     "      " +
     "      // Get success message from dialog texts" +
-    "      const successMsg = " + JSON.stringify(importCategoryDialogTexts) + "['" + activeLocale + "'].successMessage;" +
+    "      const successMsg = " + JSON.stringify(importCategoryDialogTexts) + "['" + locale + "'].successMessage;" +
     "      " +
     "      // Build detailed success message" +
     "      let message = \"<div style='text-align: left; max-width: 600px; margin: 0 auto;'>\";" +
