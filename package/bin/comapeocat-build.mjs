@@ -135,7 +135,13 @@ program
 			// All validation passed — now write the buffered archive to the destination
 			const buffer = Buffer.concat(chunks)
 			if (output) {
+				fs.mkdirSync(dirname(output), { recursive: true })
 				fs.writeFileSync(output, buffer)
+			} else if (process.stdout.isTTY) {
+				console.error(
+					'Refusing to write binary output to a terminal. Use --output <file> to specify an output file.',
+				)
+				process.exit(1)
 			} else {
 				process.stdout.write(buffer)
 			}

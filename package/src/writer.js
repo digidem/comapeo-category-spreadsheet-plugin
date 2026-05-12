@@ -14,6 +14,9 @@ import {
 	MAX_JSON_SIZE,
 	MAX_ENTRIES,
 } from './lib/constants.js'
+
+/** Matches safe IDs: alphanumeric, hyphens, underscores only. Prevents path traversal. */
+const SAFE_ID_REGEX = /^[a-zA-Z0-9_-]+$/
 import {
 	AddAfterFinishError,
 	MissingCategorySelectionError,
@@ -90,6 +93,11 @@ export class Writer extends EventEmitter {
 	 */
 	addCategory(id, category) {
 		if (this.#finished) throw new AddAfterFinishError()
+		if (!SAFE_ID_REGEX.test(id)) {
+			throw new Error(
+				`Invalid category ID: "${id}". IDs must match ${SAFE_ID_REGEX.source}.`,
+			)
+		}
 		if (this.#categories.has(id)) {
 			throw new Error(
 				`Duplicate category ID: ${id}. Each category can only be added once.`,
@@ -133,6 +141,11 @@ export class Writer extends EventEmitter {
 	 */
 	addField(id, field) {
 		if (this.#finished) throw new AddAfterFinishError()
+		if (!SAFE_ID_REGEX.test(id)) {
+			throw new Error(
+				`Invalid field ID: "${id}". IDs must match ${SAFE_ID_REGEX.source}.`,
+			)
+		}
 		if (this.#fields.has(id)) {
 			throw new Error(`Duplicate field ID: ${id}. Each field can only be added once.`)
 		}
@@ -178,6 +191,11 @@ export class Writer extends EventEmitter {
 	 * @returns {Promise<string>} The parsed SVG that was added (extraneous data is stripped)
 	 */
 	async addIcon(id, svg) {
+		if (!SAFE_ID_REGEX.test(id)) {
+			throw new Error(
+				`Invalid icon ID: "${id}". IDs must match ${SAFE_ID_REGEX.source}.`,
+			)
+		}
 		// Validate icon size
 		const size = Buffer.byteLength(svg, 'utf-8')
 		if (size > MAX_ICON_SIZE) {
