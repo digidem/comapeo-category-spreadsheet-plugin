@@ -238,9 +238,9 @@ function clearRangeLintNoteLinesWithPrefixes(
  * stay consistent across all lint checks.
  *
  * severity → background / font color mapping:
- *   error    → #FFC7CE / red
- *   warning  → #FFF2CC / orange
- *   advisory → #FFFFCC / (default)
+ *   error    → LINT_ERROR_BG / red
+ *   warning  → LINT_WARNING_BG / orange
+ *   advisory → LINT_ADVISORY_BG / (default)
  */
 function setLintNote(
   cell: GoogleAppsScript.Spreadsheet.Range,
@@ -251,15 +251,15 @@ function setLintNote(
 
   switch (severity) {
     case "error":
-      cell.setBackground("#FFC7CE");
+      cell.setBackground(LINT_ERROR_BG);
       cell.setFontColor("red");
       break;
     case "warning":
-      cell.setBackground("#FFF2CC");
+      cell.setBackground(LINT_WARNING_BG);
       cell.setFontColor("orange");
       break;
     case "advisory":
-      cell.setBackground("#FFFFCC");
+      cell.setBackground(LINT_ADVISORY_BG);
       break;
   }
 }
@@ -288,35 +288,35 @@ function appendLintNote(
 
   // Apply severity styling (upgrade if higher severity than current)
   const currentBg = cell.getBackground().toUpperCase();
-  // Check for error-level backgrounds. #FFC7CE is the standard lint error
-  // background; #FF0000 is used by validateSheetConsistency for critical
+  // Check for error-level backgrounds. LINT_ERROR_BG is the standard lint error
+  // background; LINT_CRITICAL_BG is used by validateSheetConsistency for critical
   // primary-column mismatches and must also be treated as error-level so
   // that appendLintNote("warning") does not overwrite it.
   const isAlreadyError =
-    currentBg === "#FFC7CE" || currentBg === "#FF0000";
-  const isAlreadyWarning = currentBg === "#FFF2CC";
+    currentBg === LINT_ERROR_BG || currentBg === LINT_CRITICAL_BG;
+  const isAlreadyWarning = currentBg === LINT_WARNING_BG;
 
   switch (severity) {
     case "error":
-      // Preserve #FF0000 critical-mismatch styling; only set #FFC7CE if not
-      // already at a higher visual severity. #FF0000 cells use white text,
+      // Preserve LINT_CRITICAL_BG critical-mismatch styling; only set LINT_ERROR_BG if not
+      // already at a higher visual severity. LINT_CRITICAL_BG cells use white text,
       // so skip fontColor too to keep them readable.
-      if (currentBg !== "#FF0000") {
-        cell.setBackground("#FFC7CE");
+      if (currentBg !== LINT_CRITICAL_BG) {
+        cell.setBackground(LINT_ERROR_BG);
         cell.setFontColor("red");
       }
       break;
     case "warning":
       // Only set warning styling if not already at error level
       if (!isAlreadyError) {
-        cell.setBackground("#FFF2CC");
+        cell.setBackground(LINT_WARNING_BG);
         cell.setFontColor("orange");
       }
       break;
     case "advisory":
       // Only set advisory styling if no higher severity is present
       if (!isAlreadyError && !isAlreadyWarning) {
-        cell.setBackground("#FFFFCC");
+        cell.setBackground(LINT_ADVISORY_BG);
       }
       break;
   }
@@ -397,9 +397,9 @@ function appendLintNotePreserveBackground(
   const currentBg = cell.getBackground().toUpperCase();
   const currentFont = (cell.getFontColor() || "").toUpperCase();
   const isAlreadyError =
-    currentBg === "#FFC7CE" ||
+    currentBg === LINT_ERROR_BG ||
     currentFont === "RED" ||
-    currentFont === "#FF0000";
+    currentFont === LINT_CRITICAL_BG;
 
   switch (severity) {
     case "error":
@@ -1387,7 +1387,7 @@ function validateUniversalFlag(
     console.log(
       `Invalid Universal flag value "${value}" at row ${row} - must be TRUE, FALSE, or blank`,
     );
-    setInvalidCellBackground(sheet, row, col, "#FFC7CE"); // Light red for invalid
+    setInvalidCellBackground(sheet, row, col, LINT_ERROR_BG); // Light red for invalid
   }
 }
 
@@ -1673,7 +1673,7 @@ function lintSheet(
         const rangeAddresses = rows.map(
           (rowNumber) => `${columnLetter}${rowNumber}`,
         );
-        sheet.getRangeList(rangeAddresses).setBackground("#FFF2CC"); // Light yellow for required fields
+        sheet.getRangeList(rangeAddresses).setBackground(LINT_WARNING_BG); // Light yellow for required fields
       });
     }
 
@@ -2094,7 +2094,7 @@ function lintCategoriesSheet(): void {
       // Clear background colors in fields column (column 3)
       clearRangeBackgroundIfMatches(
         categoriesSheetRef.getRange(2, 3, lastRow - 1, 1),
-        ["#FFC7CE"],
+        [LINT_ERROR_BG],
       );
     }
   }
@@ -2235,17 +2235,17 @@ function lintDetailsSheet(): void {
     const lastColumn = sheet.getLastColumn();
     if (lastColumn >= 3) {
       clearRangeBackgroundIfMatches(sheet.getRange(2, 3, lastRow - 1, 1), [
-        "#FFC7CE",
+        LINT_ERROR_BG,
       ]);
     }
     if (lastColumn >= 4) {
       clearRangeBackgroundIfMatches(sheet.getRange(2, 4, lastRow - 1, 1), [
-        "#FFC7CE",
+        LINT_ERROR_BG,
       ]);
     }
     if (lastColumn >= 6) {
       clearRangeBackgroundIfMatches(sheet.getRange(2, 6, lastRow - 1, 1), [
-        "#FFC7CE",
+        LINT_ERROR_BG,
       ]);
     }
   }
@@ -3059,11 +3059,11 @@ function validateSheetConsistency(
       );
       clearRangeBackgroundIfMatches(
         dataRange,
-        ["#FFC7CE", "#FFF2CC", "#FF0000"], // Include bright red for primary column mismatches
+        [LINT_ERROR_BG, LINT_WARNING_BG, LINT_CRITICAL_BG], // Include bright red for primary column mismatches
       );
       clearRangeFontColorIfMatches(
         dataRange,
-        ["#FFFFFF"], // White text paired with red backgrounds for primary column mismatches
+        [LINT_CRITICAL_FONT], // White text paired with red backgrounds for primary column mismatches
       );
     }
 
@@ -3150,8 +3150,8 @@ function validateSheetConsistency(
           translationSheet.getRange(row, 1).getA1Notation(),
         );
         const rangeList = translationSheet.getRangeList(rangeStrings);
-        rangeList.setBackground("#FF0000"); // Bright red for critical mismatch
-        rangeList.setFontColor("#FFFFFF"); // White text for visibility
+        rangeList.setBackground(LINT_CRITICAL_BG); // Bright red for critical mismatch
+        rangeList.setFontColor(LINT_CRITICAL_FONT); // White text for visibility
       }
     }
 
@@ -3219,7 +3219,7 @@ function validateSheetConsistency(
           translationSheet.getRange(row, col).getA1Notation(),
         );
         const rangeList = translationSheet.getRangeList(rangeStrings);
-        rangeList.setBackground("#FFC7CE"); // Light red for mismatch
+        rangeList.setBackground(LINT_ERROR_BG); // Light red for mismatch
       }
     }
   } catch (error) {
@@ -3922,8 +3922,8 @@ function fixTranslationMismatches(
     const sheet = spreadsheet.getSheetByName(sheetName);
     if (sheet && sheet.getLastRow() > 1) {
       const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
-      clearRangeBackgroundIfMatches(range, ["#FF0000"]);
-      clearRangeFontColorIfMatches(range, ["#FFFFFF"]);
+      clearRangeBackgroundIfMatches(range, [LINT_CRITICAL_BG]);
+      clearRangeFontColorIfMatches(range, [LINT_CRITICAL_FONT]);
     }
   });
 
