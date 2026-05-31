@@ -21,9 +21,10 @@ function applyCategories(
   safeCategoryDebugLog("=== APPLYING CATEGORIES TO SPREADSHEET ===");
   safeCategoryDebugLog(`Applying ${presets.length} categories with ${icons.length} icons`);
 
-  // Set headers (assuming English as primary language)
-  sheet.getRange(1, 1, 1, 3).setValues([["English", "Icons", "Details"]]);
-  sheet.getRange(1, 1, 1, 3).setFontWeight("bold");
+  // Set headers ("Name" is the canonical column header; primary language is
+  // stored in the Metadata sheet under the "primaryLanguage" key.)
+  sheet.getRange(1, 1, 1, 3).setValues([['Name', 'Icon', 'Fields']]);
+  sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
 
   // Create a map of icon name to icon URL for quick lookup
   safeCategoryDebugLog("Building icon map for lookup...");

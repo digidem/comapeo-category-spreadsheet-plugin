@@ -327,7 +327,10 @@ function migrateSpreadsheetFormat(): void {
         let primaryLanguageExists = false;
         for (let i = 1; i < metadataData.length; i++) {
           if (metadataData[i][0] === 'primaryLanguage') {
-            primaryLanguageExists = true;
+            const existingValue = String(metadataData[i][1] || '').trim();
+            if (existingValue) {
+              primaryLanguageExists = true;
+            }
             break;
           }
         }

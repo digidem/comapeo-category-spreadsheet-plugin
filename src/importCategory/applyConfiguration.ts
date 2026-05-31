@@ -51,7 +51,7 @@ function applyConfigurationToSpreadsheet(
         detail: "Applying metadata...",
       });
     }
-    applyMetadata(metadataSheet, configData.metadata);
+    applyMetadata(metadataSheet, configData.metadata, configData);
   }
   getScopedLogger("ApplyConfiguration").debug("configData keys:", Object.keys(configData).join(", "));
   // Apply categories (presets)

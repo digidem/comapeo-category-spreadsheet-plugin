@@ -216,7 +216,7 @@ function testImportRegressionValidationFailure() {
   try {
     const categoriesSheet = getOrCreateSheet("Categories");
     categoriesSheet.clear();
-    categoriesSheet.getRange(1, 1, 1, 3).setValues([["English", "Icons", "Details"]]);
+    categoriesSheet.getRange(1, 1, 1, 3).setValues([["Name", "Icon", "Fields"]]);
     categoriesSheet.getRange(2, 1, 1, 3).setValues([["Sentinel Category", "", "Sentinel Field"]]);
 
     const archiveBlob = buildInvalidRegressionArchive();

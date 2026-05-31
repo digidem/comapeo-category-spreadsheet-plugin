@@ -2033,12 +2033,26 @@ function validatePrimaryLanguageInA1(): void {
     return;
   }
 
-  // Skip standard headers that are clearly not language names.
-  // However, these values WILL cause getPrimaryLanguage() to throw at runtime
-  // if Metadata has no primaryLanguage, so we flag them as errors rather than
-  // silently accepting them.
+  // "Name" is the correct column header in the new format — the primary
+  // language is stored in the Metadata sheet instead of A1.  Give a
+  // targeted warning pointing the user to Metadata rather than suggesting
+  // A1 is wrong.
   const lowerA1 = a1Value.toLowerCase();
-  const HEADER_WORDS = ["category", "categories", "name", "label", "type"];
+  if (lowerA1 === "name") {
+    setLintNote(
+      cell,
+      'Categories A1 is correctly set to "Name". ' +
+        'Set the primary language in the Metadata sheet instead: ' +
+        'add a row with key "primaryLanguage" and value (e.g. "English", "Português", "en", "pt-BR").',
+      "warning",
+    );
+    return;
+  }
+
+  // Other standard header words that are clearly not language names.
+  // These WILL cause getPrimaryLanguage() to throw at runtime if Metadata
+  // has no primaryLanguage, so we flag them as errors.
+  const HEADER_WORDS = ["category", "categories", "label", "type"];
   if (HEADER_WORDS.includes(lowerA1)) {
     setLintNote(
       cell,
