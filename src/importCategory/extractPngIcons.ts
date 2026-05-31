@@ -2,7 +2,21 @@
  * Functions for extracting and processing PNG icon files from the icons/ directory
  */
 
-const safePngDebugLog = createSafeDebugLogger("PngIcons");
+function safePngDebugLog(message: string, forceFlush = false): void {
+  try {
+    if (typeof createSafeDebugLogger === "function") {
+      createSafeDebugLogger("PngIcons")(message, forceFlush);
+      return;
+    }
+    if (typeof debugLog === "function") {
+      debugLog(`[PngIcons] ${message}`, forceFlush);
+      return;
+    }
+  } catch (_e) {
+    // Fall through to console.
+  }
+  console.log(`[PngIcons] ${message}`);
+}
 
 /**
  * Updates an existing Drive file in place so its file ID and URL stay stable.

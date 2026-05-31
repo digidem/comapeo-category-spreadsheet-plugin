@@ -17,7 +17,21 @@ interface SpriteProcessingResult {
   }>;
 }
 
-const safeSpriteDebugLog = createSafeDebugLogger("SpriteIcons");
+function safeSpriteDebugLog(message: string, forceFlush = false): void {
+  try {
+    if (typeof createSafeDebugLogger === "function") {
+      createSafeDebugLogger("SpriteIcons")(message, forceFlush);
+      return;
+    }
+    if (typeof debugLog === "function") {
+      debugLog(`[SpriteIcons] ${message}`, forceFlush);
+      return;
+    }
+  } catch (_e) {
+    // Fall through to console.
+  }
+  console.log(`[SpriteIcons] ${message}`);
+}
 
 /**
  * Processes an SVG sprite blob and extracts individual icons

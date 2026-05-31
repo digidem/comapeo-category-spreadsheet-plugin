@@ -3,7 +3,21 @@
  * This file contains functions related to applying categories to the spreadsheet.
  */
 
-const safeCategoryDebugLog = createSafeDebugLogger("Categories");
+function safeCategoryDebugLog(message: string, forceFlush = false): void {
+  try {
+    if (typeof createSafeDebugLogger === "function") {
+      createSafeDebugLogger("Categories")(message, forceFlush);
+      return;
+    }
+    if (typeof debugLog === "function") {
+      debugLog(`[Categories] ${message}`, forceFlush);
+      return;
+    }
+  } catch (_e) {
+    // Fall through to console.
+  }
+  console.log(`[Categories] ${message}`);
+}
 
 /**
  * Applies categories (presets) to the Categories sheet.
