@@ -747,7 +747,7 @@ function testLintAppendAndClearSemantics(): boolean {
         emptyPrefixCell.setNote("[Lint] keep me\nmanual line");
         emptyPrefixCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
         emptyPrefixCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
-        clearRangeLintNoteLinesWithPrefix(emptyPrefixCell, "");
+        clearRangeLintNotesWithPrefix(emptyPrefixCell, "");
         if (emptyPrefixCell.getNote() !== "[Lint] keep me\nmanual line") {
           throw new Error(
             `Empty prefix should not clear lint note lines, got "${emptyPrefixCell.getNote()}"`,

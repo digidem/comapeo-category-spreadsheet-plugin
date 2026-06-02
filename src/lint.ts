@@ -132,22 +132,22 @@ function clearRangeNotesWithPrefix(
   }
 }
 
-function clearRangeLintNoteLinesWithPrefix(
+function clearRangeLintNotesWithPrefix(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefix: string,
   fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
   backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
 ): void {
   if (!prefix) return; // Empty prefix would match all lines — treat as no-op.
-  clearRangeLintNoteLinesWithPrefixes(range, [prefix], fontColorsToClear, backgroundColorsToClear);
+  clearRangeLintNotesWithPrefixes(range, [prefix], fontColorsToClear, backgroundColorsToClear);
 }
 
 /**
- * Batch version of clearRangeLintNoteLinesWithPrefix.
+ * Batch version of clearRangeLintNotesWithPrefix.
  * Removes all lines starting with any of the given prefixes from notes in the range.
  * Reads notes/fontColors/backgrounds only once regardless of how many prefixes are provided.
  */
-function clearRangeLintNoteLinesWithPrefixes(
+function clearRangeLintNotesWithPrefixes(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefixes: string[],
   fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
@@ -342,13 +342,13 @@ function clearLintArtifacts(
 
   clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
   clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
-  clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+  clearRangeLintNotesWithPrefix(range, LINT_NOTE_PREFIX);
 }
 
 function clearSourceOverwriteLintArtifacts(
   range: GoogleAppsScript.Spreadsheet.Range,
 ): void {
-  clearRangeLintNoteLinesWithPrefix(
+  clearRangeLintNotesWithPrefix(
     range,
     SOURCE_OVERWRITE_LINT_NOTE_PREFIX,
     LINT_WARNING_FONT_COLORS_WITHOUT_WHITE,
@@ -591,7 +591,7 @@ function checkSlugCollisions(
   // checkForDuplicates() remain intact while stale slug warnings are refreshed.
   // This path preserves user-managed category colors and font choices, so it
   // only strips the note lines and leaves visual formatting untouched.
-  clearRangeLintNoteLinesWithPrefix(
+  clearRangeLintNotesWithPrefix(
     nameRange,
     SLUG_COLLISION_LINT_NOTE_PREFIX,
     [],
@@ -655,7 +655,7 @@ function validateAppliesColumn(): void {
   const lastCol = categoriesSheet.getLastColumn();
   if (lastCol > 0) {
     const headerRowRange = categoriesSheet.getRange(1, 1, 1, lastCol);
-    clearRangeLintNoteLinesWithPrefixes(
+    clearRangeLintNotesWithPrefixes(
       headerRowRange,
       [
         `${LINT_NOTE_PREFIX}No "Applies" header found.`,
@@ -666,7 +666,7 @@ function validateAppliesColumn(): void {
 
     if (lastRow > 1) {
       const bodyRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
-      clearRangeLintNoteLinesWithPrefixes(
+      clearRangeLintNotesWithPrefixes(
         bodyRange,
         [
           `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
@@ -726,7 +726,7 @@ function validateAppliesColumn(): void {
   // Also clear header cell artifacts (Applies-specific notes only, to avoid
   // wiping higher-priority annotations on the same cell, e.g. A1 language error)
   const headerCell = categoriesSheet.getRange(1, appliesColIndex);
-  clearRangeLintNoteLinesWithPrefixes(
+  clearRangeLintNotesWithPrefixes(
     headerCell,
     [
       `${LINT_NOTE_PREFIX}No "Applies" header found.`,
@@ -1170,7 +1170,7 @@ function checkForDuplicates(
     1,
   );
   if (preserveBackground) {
-    clearRangeLintNoteLinesWithPrefix(
+    clearRangeLintNotesWithPrefix(
       range,
       LINT_NOTE_PREFIX,
       LINT_WARNING_FONT_COLORS,
@@ -1178,7 +1178,7 @@ function checkForDuplicates(
     );
     clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
   } else {
-    clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+    clearRangeLintNotesWithPrefix(range, LINT_NOTE_PREFIX);
     clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
     clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
   }
@@ -1248,7 +1248,7 @@ function checkUnreferencedDetails(): void {
     if (detailsLastRow <= 1) return; // No details to check
 
     const detailRange = detailsSheet.getRange(2, 1, detailsLastRow - 1, 1);
-    clearRangeLintNoteLinesWithPrefix(
+    clearRangeLintNotesWithPrefix(
       detailRange,
       `${LINT_NOTE_PREFIX}Detail `,
     );
@@ -1423,7 +1423,7 @@ function checkDuplicateTranslationSlugs(): void {
 
       // Clear only duplicate-slug lint notes from prior runs, preserving
       // option-count mismatch backgrounds/fonts set by validateSheetConsistency().
-      clearRangeLintNoteLinesWithPrefix(
+      clearRangeLintNotesWithPrefix(
         sheet.getRange(2, 4, lastRow - 1, lastCol - 3),
         `${LINT_NOTE_PREFIX}Duplicate translation slug`,
       );
@@ -1601,7 +1601,7 @@ function lintSheet(
         }
         clearRangeFontColorIfMatches(colRange, LINT_WARNING_FONT_COLORS);
         // Clear stale [Lint] notes so re-linting produces a clean result
-        clearRangeLintNoteLinesWithPrefix(colRange, LINT_NOTE_PREFIX);
+        clearRangeLintNotesWithPrefix(colRange, LINT_NOTE_PREFIX);
       }
     }
 
@@ -3100,7 +3100,7 @@ function validateSheetConsistency(
       // Clear any stale row-count mismatch note from a prior lint run to prevent
       // duplicate accumulation (the background/font clear above only covers dataRange,
       // rows 2+, so A1 is excluded and the note would persist indefinitely).
-      clearRangeLintNoteLinesWithPrefix(
+      clearRangeLintNotesWithPrefix(
         translationSheet.getRange(1, 1),
         `${LINT_NOTE_PREFIX}Row count mismatch:`,
       );
@@ -4662,6 +4662,13 @@ function collectStrictLintMetrics(): {
     Array<{ sheetName: string; column: number; header: string }>
   >;
 } {
+  // Perf note (#29/#30): getSpreadsheetData() is invoked exactly once per lint
+  // run — only here, and lintAllSheets() calls collectStrictLintMetrics() once.
+  // A per-execution cache would therefore be dead code. The remaining overlap is
+  // between this single full-workbook snapshot and the per-sheet getRange() reads
+  // each lint check performs; eliminating that would require routing every check
+  // through a shared in-memory snapshot, i.e. a lint-engine redesign that is
+  // explicitly out of scope. The single read is acceptable for a manual lint.
   const data = getSpreadsheetData();
   const categories = buildLintCategorySummaries(data);
   const fields = buildLintFieldSummaries(data);
