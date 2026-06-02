@@ -232,6 +232,23 @@ function clearRangeLintNoteLinesWithPrefixes(
   }
 }
 
+type LintSeverity = "error" | "warning" | "advisory";
+
+/**
+ * Single source of truth for severity → visual style.
+ * `background`/`fontColor` of `null` mean "leave that property unchanged".
+ * Shared by setLintNote and setLintNotePreserveBackground so the two writers
+ * can never drift apart.
+ */
+const LINT_SEVERITY_STYLE: Record<
+  LintSeverity,
+  { background: string | null; fontColor: string | null }
+> = {
+  error: { background: LINT_ERROR_BG, fontColor: "red" },
+  warning: { background: LINT_WARNING_BG, fontColor: "orange" },
+  advisory: { background: LINT_ADVISORY_BG, fontColor: null },
+};
+
 /**
  * Standardized lint note writer. Sets a [Lint]-prefixed note on a cell and applies
  * severity-appropriate background and font colors so that cleanup and UI behavior
@@ -245,23 +262,13 @@ function clearRangeLintNoteLinesWithPrefixes(
 function setLintNote(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
 
-  switch (severity) {
-    case "error":
-      cell.setBackground(LINT_ERROR_BG);
-      cell.setFontColor("red");
-      break;
-    case "warning":
-      cell.setBackground(LINT_WARNING_BG);
-      cell.setFontColor("orange");
-      break;
-    case "advisory":
-      cell.setBackground(LINT_ADVISORY_BG);
-      break;
-  }
+  const style = LINT_SEVERITY_STYLE[severity];
+  if (style.background) cell.setBackground(style.background);
+  if (style.fontColor) cell.setFontColor(style.fontColor);
 }
 
 /**
@@ -275,7 +282,7 @@ function setLintNote(
 function appendLintNote(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
@@ -356,20 +363,13 @@ function clearSourceOverwriteLintArtifacts(
 function setLintNotePreserveBackground(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
 
-  switch (severity) {
-    case "error":
-      cell.setFontColor("red");
-      break;
-    case "warning":
-      cell.setFontColor("orange");
-      break;
-    case "advisory":
-      break;
-  }
+  // Font color only — background is intentionally left untouched.
+  const { fontColor } = LINT_SEVERITY_STYLE[severity];
+  if (fontColor) cell.setFontColor(fontColor);
 }
 
 /**
@@ -380,7 +380,7 @@ function setLintNotePreserveBackground(
 function appendLintNotePreserveBackground(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
@@ -696,9 +696,12 @@ function validateAppliesColumn(): void {
     // Applies-specific notes above. Intentionally avoid blanket-clearing the
     // sheet here because earlier lint phases may have already annotated other
     // columns, and those findings must be preserved.
-    // Place the warning at the expected Applies column position (column D)
-    // rather than A1, which is reserved for the Primary Language annotation.
-    const appliesExpectedCol = Math.max(lastCol + 1, 4);
+    // Place the warning at the conventional Applies column position (column D)
+    // rather than A1 (reserved for the Primary Language annotation) or
+    // `lastCol + 1`, which lands in an off-screen empty column on wide sheets.
+    // Column D is where Applies normally lives, so the warning stays visible
+    // even when the header was renamed or removed.
+    const appliesExpectedCol = 4;
     const headerCell = categoriesSheet.getRange(1, appliesExpectedCol);
     appendLintNote(
       headerCell,
@@ -787,10 +790,13 @@ function validateAppliesColumn(): void {
     // Mirror builder's parseTokens() which ONLY splits by comma — semicolons,
     // newlines, and other delimiters are NOT recognized in the Applies column
     // (unlike the Fields column which uses normalizeFieldTokens with broader parsing).
-    const tokens = rawValue
+    // Keep the original-cased tokens for display in lint messages while matching
+    // case-insensitively, so warnings echo exactly what the user typed.
+    const rawTokens = rawValue
       .split(",")
-      .map((t) => t.trim().toLowerCase())
+      .map((t) => t.trim())
       .filter(Boolean);
+    const tokens = rawTokens.map((t) => t.toLowerCase());
 
     // Warn if the raw value contains non-comma delimiters that the builder ignores.
     // This catches cases like "track; observation" where the semicolon causes the
@@ -812,8 +818,11 @@ function validateAppliesColumn(): void {
         return "";
       })
       .filter(Boolean);
-    const invalidTokens = tokens.filter((token) => {
-      return !token.startsWith("o") && !token.startsWith("t");
+    // Report invalid tokens using their original casing while matching on the
+    // lowercased form, so the warning shows exactly what the user entered.
+    const invalidTokens = rawTokens.filter((token) => {
+      const lower = token.toLowerCase();
+      return !lower.startsWith("o") && !lower.startsWith("t");
     });
 
     if (invalidTokens.length > 0) {
@@ -4763,7 +4772,10 @@ function checkTotalEntityCounts(metrics: {
     const cell = categoriesSheet
       ? categoriesSheet.getRange(1, 1)
       : spreadsheet.getActiveSheet().getRange(1, 1);
-    appendLintNote(
+    // A1 doubles as the primary-language cell (see validatePrimaryLanguageInA1).
+    // Use the preserve-background variant so this advisory does not overwrite any
+    // user-set A1 background; it still signals the error via red font + note.
+    appendLintNotePreserveBackground(
       cell,
       `Total entity count (${totalCount}) exceeds 10,000 limit. Categories: ${metrics.categoryCount}, Details: ${metrics.fieldCount}, Icons: ${metrics.iconCount}, Options: ${metrics.optionCount}, Translations: ${metrics.translationEntryCount}. This will fail strict validation.`,
       "error",

@@ -652,10 +652,13 @@ function testAppliesHeaderDetectionParity(): boolean {
       (lintCalls) => {
         validateAppliesColumn();
 
+        // The missing-header warning is placed on the conventional Applies
+        // column (column D / col 4) so it stays visible, rather than A1
+        // (reserved for the primary-language note) or an off-screen column.
         const missingHeaderWarnings = lintCalls.filter(
           (call) =>
             call.row === 1 &&
-            call.col === 1 &&
+            call.col === 4 &&
             call.severity === "warning" &&
             call.message.includes('No "Applies" header found'),
         );
@@ -1346,10 +1349,13 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
 
         validateAppliesColumn();
 
+        // The missing-header warning is placed on the conventional Applies
+        // column (column D / col 4) so it stays visible, rather than A1
+        // (reserved for the primary-language note) or an off-screen column.
         const missingHeaderWarnings = lintCalls.filter(
           (call) =>
             call.row === 1 &&
-            call.col === 1 &&
+            call.col === 4 &&
             call.severity === "warning" &&
             call.message.includes('No "Applies" header found'),
         );
