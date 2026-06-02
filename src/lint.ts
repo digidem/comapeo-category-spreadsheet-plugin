@@ -39,15 +39,35 @@ const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
 const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
-/** Module-level cache for Drive icon info, shared across lint checks to avoid
- *  redundant Drive API calls and keep Drive URL classification consistent. */
-const driveIconInfoCache = new Map<string, DriveIconInfo>();
+// --- Types -----------------------------------------------------------------
 
 type DriveIconInfo = {
   slug: string | null;
   isSvg: boolean;
   svgContent: string | null;
   errorMessage?: string;
+};
+
+type LintSeverity = "error" | "warning" | "advisory";
+
+// --- Constants --------------------------------------------------------------
+
+/** Module-level cache for Drive icon info, shared across lint checks to avoid
+ *  redundant Drive API calls and keep Drive URL classification consistent. */
+const driveIconInfoCache = new Map<string, DriveIconInfo>();
+
+/**
+ * Single source of truth for severity → visual style.
+ * `background`/`fontColor` of `null` mean "leave that property unchanged".
+ * Shared by all four lint-note writers so they can never drift apart.
+ */
+const LINT_SEVERITY_STYLE: Record<
+  LintSeverity,
+  { background: string | null; fontColor: string | null }
+> = {
+  error: { background: LINT_ERROR_BG, fontColor: "red" },
+  warning: { background: LINT_WARNING_BG, fontColor: "orange" },
+  advisory: { background: LINT_ADVISORY_BG, fontColor: null },
 };
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
@@ -232,22 +252,7 @@ function clearRangeLintNotesWithPrefixes(
   }
 }
 
-type LintSeverity = "error" | "warning" | "advisory";
 
-/**
- * Single source of truth for severity → visual style.
- * `background`/`fontColor` of `null` mean "leave that property unchanged".
- * Shared by setLintNote and setLintNotePreserveBackground so the two writers
- * can never drift apart.
- */
-const LINT_SEVERITY_STYLE: Record<
-  LintSeverity,
-  { background: string | null; fontColor: string | null }
-> = {
-  error: { background: LINT_ERROR_BG, fontColor: "red" },
-  warning: { background: LINT_WARNING_BG, fontColor: "orange" },
-  advisory: { background: LINT_ADVISORY_BG, fontColor: null },
-};
 
 /**
  * Standardized lint note writer. Sets a [Lint]-prefixed note on a cell and applies
@@ -267,8 +272,8 @@ function setLintNote(
   cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
 
   const style = LINT_SEVERITY_STYLE[severity];
-  if (style.background) cell.setBackground(style.background);
-  if (style.fontColor) cell.setFontColor(style.fontColor);
+  if (style.background !== null) cell.setBackground(style.background);
+  if (style.fontColor !== null) cell.setFontColor(style.fontColor);
 }
 
 /**
@@ -309,21 +314,21 @@ function appendLintNote(
       // already at a higher visual severity. LINT_CRITICAL_BG cells use white text,
       // so skip fontColor too to keep them readable.
       if (currentBg !== LINT_CRITICAL_BG) {
-        cell.setBackground(LINT_ERROR_BG);
-        cell.setFontColor("red");
+        cell.setBackground(LINT_SEVERITY_STYLE.error.background!);
+        cell.setFontColor(LINT_SEVERITY_STYLE.error.fontColor!);
       }
       break;
     case "warning":
       // Only set warning styling if not already at error level
       if (!isAlreadyError) {
-        cell.setBackground(LINT_WARNING_BG);
-        cell.setFontColor("orange");
+        cell.setBackground(LINT_SEVERITY_STYLE.warning.background!);
+        cell.setFontColor(LINT_SEVERITY_STYLE.warning.fontColor!);
       }
       break;
     case "advisory":
       // Only set advisory styling if no higher severity is present
       if (!isAlreadyError && !isAlreadyWarning) {
-        cell.setBackground(LINT_ADVISORY_BG);
+        cell.setBackground(LINT_SEVERITY_STYLE.advisory.background!);
       }
       break;
   }
@@ -369,7 +374,7 @@ function setLintNotePreserveBackground(
 
   // Font color only — background is intentionally left untouched.
   const { fontColor } = LINT_SEVERITY_STYLE[severity];
-  if (fontColor) cell.setFontColor(fontColor);
+  if (fontColor !== null) cell.setFontColor(fontColor);
 }
 
 /**
@@ -403,11 +408,11 @@ function appendLintNotePreserveBackground(
 
   switch (severity) {
     case "error":
-      cell.setFontColor("red");
+      cell.setFontColor(LINT_SEVERITY_STYLE.error.fontColor!);
       break;
     case "warning":
       if (!isAlreadyError) {
-        cell.setFontColor("orange");
+        cell.setFontColor(LINT_SEVERITY_STYLE.warning.fontColor!);
       }
       break;
     case "advisory":
@@ -693,16 +698,19 @@ function validateAppliesColumn(): void {
 
   if (appliesColZeroBased === -1) {
     // The Applies header was removed or renamed. We've already cleared
-    // Applies-specific notes above. Intentionally avoid blanket-clearing the
-    // sheet here because earlier lint phases may have already annotated other
-    // columns, and those findings must be preserved.
+    // Applies-specific notes above (within the existing lastCol range).
+    // Also clear column D specifically — when lastCol < 4 the header-row
+    // clear above doesn't reach it, so a stale warning would accumulate.
+    const appliesExpectedCol = 4;
+    const headerCell = categoriesSheet.getRange(1, appliesExpectedCol);
+    clearRangeLintNotesWithPrefixes(headerCell, [
+      `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+    ]);
     // Place the warning at the conventional Applies column position (column D)
     // rather than A1 (reserved for the Primary Language annotation) or
     // `lastCol + 1`, which lands in an off-screen empty column on wide sheets.
     // Column D is where Applies normally lives, so the warning stays visible
     // even when the header was renamed or removed.
-    const appliesExpectedCol = 4;
-    const headerCell = categoriesSheet.getRange(1, appliesExpectedCol);
     appendLintNote(
       headerCell,
       'No "Applies" header found. The builder resolves this column by header name and may auto-create it, seeding the first category with "track, observation".',
