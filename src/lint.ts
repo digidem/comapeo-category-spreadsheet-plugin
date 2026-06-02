@@ -39,15 +39,35 @@ const LINT_NOTE_PREFIX = "[Lint] ";
 const SLUG_COLLISION_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Slug collision:`;
 const SOURCE_OVERWRITE_LINT_NOTE_PREFIX = `${LINT_NOTE_PREFIX}Source value`;
 
-/** Module-level cache for Drive icon info, shared across lint checks to avoid
- *  redundant Drive API calls and keep Drive URL classification consistent. */
-const driveIconInfoCache = new Map<string, DriveIconInfo>();
+// --- Types -----------------------------------------------------------------
 
 type DriveIconInfo = {
   slug: string | null;
   isSvg: boolean;
   svgContent: string | null;
   errorMessage?: string;
+};
+
+type LintSeverity = "error" | "warning" | "advisory";
+
+// --- Constants --------------------------------------------------------------
+
+/** Module-level cache for Drive icon info, shared across lint checks to avoid
+ *  redundant Drive API calls and keep Drive URL classification consistent. */
+const driveIconInfoCache = new Map<string, DriveIconInfo>();
+
+/**
+ * Single source of truth for severity → visual style.
+ * `background`/`fontColor` of `null` mean "leave that property unchanged".
+ * Shared by all four lint-note writers so they can never drift apart.
+ */
+const LINT_SEVERITY_STYLE: Record<
+  LintSeverity,
+  { background: string | null; fontColor: string | null }
+> = {
+  error: { background: LINT_ERROR_BG, fontColor: "red" },
+  warning: { background: LINT_WARNING_BG, fontColor: "orange" },
+  advisory: { background: LINT_ADVISORY_BG, fontColor: null },
 };
 function clearRangeBackgroundIfMatches(
   range: GoogleAppsScript.Spreadsheet.Range,
@@ -132,22 +152,22 @@ function clearRangeNotesWithPrefix(
   }
 }
 
-function clearRangeLintNoteLinesWithPrefix(
+function clearRangeLintNotesWithPrefix(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefix: string,
   fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
   backgroundColorsToClear: string[] = LINT_WARNING_BACKGROUND_COLORS,
 ): void {
   if (!prefix) return; // Empty prefix would match all lines — treat as no-op.
-  clearRangeLintNoteLinesWithPrefixes(range, [prefix], fontColorsToClear, backgroundColorsToClear);
+  clearRangeLintNotesWithPrefixes(range, [prefix], fontColorsToClear, backgroundColorsToClear);
 }
 
 /**
- * Batch version of clearRangeLintNoteLinesWithPrefix.
+ * Batch version of clearRangeLintNotesWithPrefix.
  * Removes all lines starting with any of the given prefixes from notes in the range.
  * Reads notes/fontColors/backgrounds only once regardless of how many prefixes are provided.
  */
-function clearRangeLintNoteLinesWithPrefixes(
+function clearRangeLintNotesWithPrefixes(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefixes: string[],
   fontColorsToClear: string[] = LINT_WARNING_FONT_COLORS,
@@ -232,6 +252,8 @@ function clearRangeLintNoteLinesWithPrefixes(
   }
 }
 
+
+
 /**
  * Standardized lint note writer. Sets a [Lint]-prefixed note on a cell and applies
  * severity-appropriate background and font colors so that cleanup and UI behavior
@@ -245,23 +267,13 @@ function clearRangeLintNoteLinesWithPrefixes(
 function setLintNote(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
 
-  switch (severity) {
-    case "error":
-      cell.setBackground(LINT_ERROR_BG);
-      cell.setFontColor("red");
-      break;
-    case "warning":
-      cell.setBackground(LINT_WARNING_BG);
-      cell.setFontColor("orange");
-      break;
-    case "advisory":
-      cell.setBackground(LINT_ADVISORY_BG);
-      break;
-  }
+  const style = LINT_SEVERITY_STYLE[severity];
+  if (style.background !== null) cell.setBackground(style.background);
+  if (style.fontColor !== null) cell.setFontColor(style.fontColor);
 }
 
 /**
@@ -275,7 +287,7 @@ function setLintNote(
 function appendLintNote(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
@@ -302,21 +314,21 @@ function appendLintNote(
       // already at a higher visual severity. LINT_CRITICAL_BG cells use white text,
       // so skip fontColor too to keep them readable.
       if (currentBg !== LINT_CRITICAL_BG) {
-        cell.setBackground(LINT_ERROR_BG);
-        cell.setFontColor("red");
+        cell.setBackground(LINT_SEVERITY_STYLE.error.background!);
+        cell.setFontColor(LINT_SEVERITY_STYLE.error.fontColor!);
       }
       break;
     case "warning":
       // Only set warning styling if not already at error level
       if (!isAlreadyError) {
-        cell.setBackground(LINT_WARNING_BG);
-        cell.setFontColor("orange");
+        cell.setBackground(LINT_SEVERITY_STYLE.warning.background!);
+        cell.setFontColor(LINT_SEVERITY_STYLE.warning.fontColor!);
       }
       break;
     case "advisory":
       // Only set advisory styling if no higher severity is present
       if (!isAlreadyError && !isAlreadyWarning) {
-        cell.setBackground(LINT_ADVISORY_BG);
+        cell.setBackground(LINT_SEVERITY_STYLE.advisory.background!);
       }
       break;
   }
@@ -335,13 +347,13 @@ function clearLintArtifacts(
 
   clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
   clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
-  clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+  clearRangeLintNotesWithPrefix(range, LINT_NOTE_PREFIX);
 }
 
 function clearSourceOverwriteLintArtifacts(
   range: GoogleAppsScript.Spreadsheet.Range,
 ): void {
-  clearRangeLintNoteLinesWithPrefix(
+  clearRangeLintNotesWithPrefix(
     range,
     SOURCE_OVERWRITE_LINT_NOTE_PREFIX,
     LINT_WARNING_FONT_COLORS_WITHOUT_WHITE,
@@ -356,20 +368,13 @@ function clearSourceOverwriteLintArtifacts(
 function setLintNotePreserveBackground(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   cell.setNote(`${LINT_NOTE_PREFIX}${message}`);
 
-  switch (severity) {
-    case "error":
-      cell.setFontColor("red");
-      break;
-    case "warning":
-      cell.setFontColor("orange");
-      break;
-    case "advisory":
-      break;
-  }
+  // Font color only — background is intentionally left untouched.
+  const { fontColor } = LINT_SEVERITY_STYLE[severity];
+  if (fontColor !== null) cell.setFontColor(fontColor);
 }
 
 /**
@@ -380,7 +385,7 @@ function setLintNotePreserveBackground(
 function appendLintNotePreserveBackground(
   cell: GoogleAppsScript.Spreadsheet.Range,
   message: string,
-  severity: "error" | "warning" | "advisory",
+  severity: LintSeverity,
 ): void {
   const existingNote = cell.getNote() || "";
   const newMessage = `${LINT_NOTE_PREFIX}${message}`;
@@ -403,11 +408,11 @@ function appendLintNotePreserveBackground(
 
   switch (severity) {
     case "error":
-      cell.setFontColor("red");
+      cell.setFontColor(LINT_SEVERITY_STYLE.error.fontColor!);
       break;
     case "warning":
       if (!isAlreadyError) {
-        cell.setFontColor("orange");
+        cell.setFontColor(LINT_SEVERITY_STYLE.warning.fontColor!);
       }
       break;
     case "advisory":
@@ -591,7 +596,7 @@ function checkSlugCollisions(
   // checkForDuplicates() remain intact while stale slug warnings are refreshed.
   // This path preserves user-managed category colors and font choices, so it
   // only strips the note lines and leaves visual formatting untouched.
-  clearRangeLintNoteLinesWithPrefix(
+  clearRangeLintNotesWithPrefix(
     nameRange,
     SLUG_COLLISION_LINT_NOTE_PREFIX,
     [],
@@ -655,7 +660,7 @@ function validateAppliesColumn(): void {
   const lastCol = categoriesSheet.getLastColumn();
   if (lastCol > 0) {
     const headerRowRange = categoriesSheet.getRange(1, 1, 1, lastCol);
-    clearRangeLintNoteLinesWithPrefixes(
+    clearRangeLintNotesWithPrefixes(
       headerRowRange,
       [
         `${LINT_NOTE_PREFIX}No "Applies" header found.`,
@@ -666,7 +671,7 @@ function validateAppliesColumn(): void {
 
     if (lastRow > 1) {
       const bodyRange = categoriesSheet.getRange(2, 1, lastRow - 1, lastCol);
-      clearRangeLintNoteLinesWithPrefixes(
+      clearRangeLintNotesWithPrefixes(
         bodyRange,
         [
           `${LINT_NOTE_PREFIX}Unrecognized Applies token(s):`,
@@ -693,13 +698,19 @@ function validateAppliesColumn(): void {
 
   if (appliesColZeroBased === -1) {
     // The Applies header was removed or renamed. We've already cleared
-    // Applies-specific notes above. Intentionally avoid blanket-clearing the
-    // sheet here because earlier lint phases may have already annotated other
-    // columns, and those findings must be preserved.
-    // Place the warning at the expected Applies column position (column D)
-    // rather than A1, which is reserved for the Primary Language annotation.
-    const appliesExpectedCol = Math.max(lastCol + 1, 4);
+    // Applies-specific notes above (within the existing lastCol range).
+    // Also clear column D specifically — when lastCol < 4 the header-row
+    // clear above doesn't reach it, so a stale warning would accumulate.
+    const appliesExpectedCol = 4;
     const headerCell = categoriesSheet.getRange(1, appliesExpectedCol);
+    clearRangeLintNotesWithPrefixes(headerCell, [
+      `${LINT_NOTE_PREFIX}No "Applies" header found.`,
+    ]);
+    // Place the warning at the conventional Applies column position (column D)
+    // rather than A1 (reserved for the Primary Language annotation) or
+    // `lastCol + 1`, which lands in an off-screen empty column on wide sheets.
+    // Column D is where Applies normally lives, so the warning stays visible
+    // even when the header was renamed or removed.
     appendLintNote(
       headerCell,
       'No "Applies" header found. The builder resolves this column by header name and may auto-create it, seeding the first category with "track, observation".',
@@ -723,7 +734,7 @@ function validateAppliesColumn(): void {
   // Also clear header cell artifacts (Applies-specific notes only, to avoid
   // wiping higher-priority annotations on the same cell, e.g. A1 language error)
   const headerCell = categoriesSheet.getRange(1, appliesColIndex);
-  clearRangeLintNoteLinesWithPrefixes(
+  clearRangeLintNotesWithPrefixes(
     headerCell,
     [
       `${LINT_NOTE_PREFIX}No "Applies" header found.`,
@@ -787,10 +798,13 @@ function validateAppliesColumn(): void {
     // Mirror builder's parseTokens() which ONLY splits by comma — semicolons,
     // newlines, and other delimiters are NOT recognized in the Applies column
     // (unlike the Fields column which uses normalizeFieldTokens with broader parsing).
-    const tokens = rawValue
+    // Keep the original-cased tokens for display in lint messages while matching
+    // case-insensitively, so warnings echo exactly what the user typed.
+    const rawTokens = rawValue
       .split(",")
-      .map((t) => t.trim().toLowerCase())
+      .map((t) => t.trim())
       .filter(Boolean);
+    const tokens = rawTokens.map((t) => t.toLowerCase());
 
     // Warn if the raw value contains non-comma delimiters that the builder ignores.
     // This catches cases like "track; observation" where the semicolon causes the
@@ -812,8 +826,11 @@ function validateAppliesColumn(): void {
         return "";
       })
       .filter(Boolean);
-    const invalidTokens = tokens.filter((token) => {
-      return !token.startsWith("o") && !token.startsWith("t");
+    // Report invalid tokens using their original casing while matching on the
+    // lowercased form, so the warning shows exactly what the user entered.
+    const invalidTokens = rawTokens.filter((token) => {
+      const lower = token.toLowerCase();
+      return !lower.startsWith("o") && !lower.startsWith("t");
     });
 
     if (invalidTokens.length > 0) {
@@ -1161,7 +1178,7 @@ function checkForDuplicates(
     1,
   );
   if (preserveBackground) {
-    clearRangeLintNoteLinesWithPrefix(
+    clearRangeLintNotesWithPrefix(
       range,
       LINT_NOTE_PREFIX,
       LINT_WARNING_FONT_COLORS,
@@ -1169,7 +1186,7 @@ function checkForDuplicates(
     );
     clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
   } else {
-    clearRangeLintNoteLinesWithPrefix(range, LINT_NOTE_PREFIX);
+    clearRangeLintNotesWithPrefix(range, LINT_NOTE_PREFIX);
     clearRangeBackgroundIfMatches(range, LINT_WARNING_BACKGROUND_COLORS);
     clearRangeFontColorIfMatches(range, LINT_WARNING_FONT_COLORS);
   }
@@ -1239,7 +1256,7 @@ function checkUnreferencedDetails(): void {
     if (detailsLastRow <= 1) return; // No details to check
 
     const detailRange = detailsSheet.getRange(2, 1, detailsLastRow - 1, 1);
-    clearRangeLintNoteLinesWithPrefix(
+    clearRangeLintNotesWithPrefix(
       detailRange,
       `${LINT_NOTE_PREFIX}Detail `,
     );
@@ -1414,7 +1431,7 @@ function checkDuplicateTranslationSlugs(): void {
 
       // Clear only duplicate-slug lint notes from prior runs, preserving
       // option-count mismatch backgrounds/fonts set by validateSheetConsistency().
-      clearRangeLintNoteLinesWithPrefix(
+      clearRangeLintNotesWithPrefix(
         sheet.getRange(2, 4, lastRow - 1, lastCol - 3),
         `${LINT_NOTE_PREFIX}Duplicate translation slug`,
       );
@@ -1592,7 +1609,7 @@ function lintSheet(
         }
         clearRangeFontColorIfMatches(colRange, LINT_WARNING_FONT_COLORS);
         // Clear stale [Lint] notes so re-linting produces a clean result
-        clearRangeLintNoteLinesWithPrefix(colRange, LINT_NOTE_PREFIX);
+        clearRangeLintNotesWithPrefix(colRange, LINT_NOTE_PREFIX);
       }
     }
 
@@ -3091,7 +3108,7 @@ function validateSheetConsistency(
       // Clear any stale row-count mismatch note from a prior lint run to prevent
       // duplicate accumulation (the background/font clear above only covers dataRange,
       // rows 2+, so A1 is excluded and the note would persist indefinitely).
-      clearRangeLintNoteLinesWithPrefix(
+      clearRangeLintNotesWithPrefix(
         translationSheet.getRange(1, 1),
         `${LINT_NOTE_PREFIX}Row count mismatch:`,
       );
@@ -4653,6 +4670,13 @@ function collectStrictLintMetrics(): {
     Array<{ sheetName: string; column: number; header: string }>
   >;
 } {
+  // Perf note (#29/#30): getSpreadsheetData() is invoked exactly once per lint
+  // run — only here, and lintAllSheets() calls collectStrictLintMetrics() once.
+  // A per-execution cache would therefore be dead code. The remaining overlap is
+  // between this single full-workbook snapshot and the per-sheet getRange() reads
+  // each lint check performs; eliminating that would require routing every check
+  // through a shared in-memory snapshot, i.e. a lint-engine redesign that is
+  // explicitly out of scope. The single read is acceptable for a manual lint.
   const data = getSpreadsheetData();
   const categories = buildLintCategorySummaries(data);
   const fields = buildLintFieldSummaries(data);
@@ -4763,7 +4787,10 @@ function checkTotalEntityCounts(metrics: {
     const cell = categoriesSheet
       ? categoriesSheet.getRange(1, 1)
       : spreadsheet.getActiveSheet().getRange(1, 1);
-    appendLintNote(
+    // A1 doubles as the primary-language cell (see validatePrimaryLanguageInA1).
+    // Use the preserve-background variant so this advisory does not overwrite any
+    // user-set A1 background; it still signals the error via red font + note.
+    appendLintNotePreserveBackground(
       cell,
       `Total entity count (${totalCount}) exceeds 10,000 limit. Categories: ${metrics.categoryCount}, Details: ${metrics.fieldCount}, Icons: ${metrics.iconCount}, Options: ${metrics.optionCount}, Translations: ${metrics.translationEntryCount}. This will fail strict validation.`,
       "error",

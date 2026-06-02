@@ -11,8 +11,9 @@
  * ## Mock Framework
  *
  * The mock framework below simulates the GAS Spreadsheet API so lint functions can run
- * without a real spreadsheet. It replaces `SpreadsheetApp`, `setLintNote`, and
- * `appendLintNote` on `globalThis` for the duration of each test callback.
+ * without a real spreadsheet. It replaces `SpreadsheetApp`, `setLintNote`,
+ * `appendLintNote`, and `appendLintNotePreserveBackground` on `globalThis` for the
+ * duration of each test callback.
  *
  * ### Color Constant Synchronization
  *
@@ -330,8 +331,9 @@ function getMockCellState(target: any): MockCellState {
  * @param callback - Receives an array of `MockLintCall` objects that accumulate during
  *   the lint execution. Assert against these to verify lint behavior.
  *
- * During execution, `SpreadsheetApp`, `setLintNote`, and `appendLintNote` are replaced
- * on `globalThis`. Originals are restored in a `finally` block.
+ * During execution, `SpreadsheetApp`, `setLintNote`, `appendLintNote`, and
+ * `appendLintNotePreserveBackground` are replaced on `globalThis`. Originals
+ * are restored in a `finally` block.
  */
 function runWithMockedLintSpreadsheet(
   sheets: Record<string, any[][]>,
@@ -341,6 +343,7 @@ function runWithMockedLintSpreadsheet(
   const originalSpreadsheetApp = globalScope.SpreadsheetApp;
   const originalSetLintNote = globalScope.setLintNote;
   const originalAppendLintNote = globalScope.appendLintNote;
+  const originalAppendLintNotePreserveBackground = globalScope.appendLintNotePreserveBackground;
   const lintCalls: MockLintCall[] = [];
   const sheetStates = new Map<
     string,
@@ -547,6 +550,31 @@ function runWithMockedLintSpreadsheet(
     appendMockLintStyle(cellState, severity);
     lintCalls.push({ row: cell.row, col: cell.col, message, severity });
   };
+  globalScope.appendLintNotePreserveBackground = (
+    cell: any,
+    message: string,
+    severity: "error" | "warning" | "advisory",
+  ): void => {
+    const cellState = getMockCellState(cell);
+    appendMockLintNote(cellState, message);
+    // Preserve-background variant: only set font color, skip background.
+    // Mirrors production appendLintNotePreserveBackground escalation logic.
+    const currentFont = (cellState.fontColor || "").toUpperCase();
+    const isAlreadyError = currentFont === "RED";
+    switch (severity) {
+      case "error":
+        cellState.fontColor = LINT_WARNING_FONT_COLORS[0]; // "red"
+        break;
+      case "warning":
+        if (!isAlreadyError) {
+          cellState.fontColor = LINT_WARNING_FONT_COLORS[1]; // "orange"
+        }
+        break;
+      case "advisory":
+        break;
+    }
+    lintCalls.push({ row: cell.row, col: cell.col, message, severity });
+  };
 
   try {
     callback(lintCalls);
@@ -554,6 +582,7 @@ function runWithMockedLintSpreadsheet(
     globalScope.SpreadsheetApp = originalSpreadsheetApp;
     globalScope.setLintNote = originalSetLintNote;
     globalScope.appendLintNote = originalAppendLintNote;
+    globalScope.appendLintNotePreserveBackground = originalAppendLintNotePreserveBackground;
   }
 }
 
@@ -652,10 +681,13 @@ function testAppliesHeaderDetectionParity(): boolean {
       (lintCalls) => {
         validateAppliesColumn();
 
+        // The missing-header warning is placed on the conventional Applies
+        // column (column D / col 4) so it stays visible, rather than A1
+        // (reserved for the primary-language note) or an off-screen column.
         const missingHeaderWarnings = lintCalls.filter(
           (call) =>
             call.row === 1 &&
-            call.col === 1 &&
+            call.col === 4 &&
             call.severity === "warning" &&
             call.message.includes('No "Applies" header found'),
         );
@@ -744,7 +776,7 @@ function testLintAppendAndClearSemantics(): boolean {
         emptyPrefixCell.setNote("[Lint] keep me\nmanual line");
         emptyPrefixCell.setBackground(LINT_WARNING_BACKGROUND_COLORS[3]);
         emptyPrefixCell.setFontColor(LINT_WARNING_FONT_COLORS[1]);
-        clearRangeLintNoteLinesWithPrefix(emptyPrefixCell, "");
+        clearRangeLintNotesWithPrefix(emptyPrefixCell, "");
         if (emptyPrefixCell.getNote() !== "[Lint] keep me\nmanual line") {
           throw new Error(
             `Empty prefix should not clear lint note lines, got "${emptyPrefixCell.getNote()}"`,
@@ -1346,10 +1378,13 @@ function testAppliesMissingHeaderPreservesExistingBodyAnnotations(): boolean {
 
         validateAppliesColumn();
 
+        // The missing-header warning is placed on the conventional Applies
+        // column (column D / col 4) so it stays visible, rather than A1
+        // (reserved for the primary-language note) or an off-screen column.
         const missingHeaderWarnings = lintCalls.filter(
           (call) =>
             call.row === 1 &&
-            call.col === 1 &&
+            call.col === 4 &&
             call.severity === "warning" &&
             call.message.includes('No "Applies" header found'),
         );
