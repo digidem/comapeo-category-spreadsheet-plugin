@@ -186,8 +186,19 @@ sample.comapeocat
 # Auto-generated version info
 .version.json
 
+# Auto-generated tooling output
+.codesight/
+
 # Agent tooling metadata
 .serena/
 .beads/*.db
 .claude/
 .letta
+.forge/
+.junie/
+.codex
+.mcp.json
+.antigravitycli/
+plans/
+
+

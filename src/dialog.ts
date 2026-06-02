@@ -1017,7 +1017,10 @@ function showIconErrorDialog(errorSummary: IconErrorSummary): void {
 
 /**
  * Download icon error report as CSV
- * Called from the error dialog
+ * Called from the error dialog.
+ *
+ * Dialog remains open intentionally after download so the user can review
+ * the report before closing it manually (or via the auto-close timeout).
  */
 function downloadIconErrorReport(): void {
   // This function would be called from the dialog
@@ -1027,5 +1030,4 @@ function downloadIconErrorReport(): void {
   );
   // Note: Full implementation requires error summary to be stored in PropertiesService
   // and retrieved here, then converted to CSV using collector.toCSV()
-  google.script.host.close();
 }

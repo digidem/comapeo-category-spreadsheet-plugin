@@ -29,6 +29,7 @@ Tests must be run from the **Apps Script Editor** (not locally):
 | `testDetailsAndIcons()` | Details/icons processing | ~2-3 min | Test file URL |
 | `testSkipTranslation()` | Skip translation workflow | ~1-2 min | Configured spreadsheet |
 | `testDebugLogger()` | Debug logger functionality | ~10 sec | None |
+| `runLintParityTests()` | Lint/builder parser parity checks | ~10 sec | None |
 
 ## Test Helpers (`testHelpers.ts`)
 

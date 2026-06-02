@@ -282,7 +282,7 @@ function buildFields(data: SheetData): Field[] {
       }
 
       const helperText = String(row[helperCol] || "");
-      const typeRaw = String(row[typeCol] || "text")
+      const typeRaw = String(row[typeCol] || "")
         .trim()
         .toLowerCase();
       const optionsStr = String(row[optionsCol] || "");
@@ -542,7 +542,7 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
         const rawText = raw === undefined || raw === null ? "" : String(raw);
         const trimmedRaw = rawText.trim();
 
-        const parseTokens = (): string[] =>
+        const parseTokens = (): Array<"observation" | "track"> =>
           rawText
             .split(",")
             .map((t) => t.trim().toLowerCase())
@@ -552,7 +552,9 @@ function buildCategories(data: SheetData, fields: Field[]): Category[] {
               if (t.startsWith("t")) return "track";
               return undefined;
             })
-            .filter((v): v is string => Boolean(v));
+            .filter(
+              (v): v is "observation" | "track" => v === "observation" || v === "track",
+            );
 
         if (!trimmedRaw) {
           if (AUTO_CREATED_APPLIES_COLUMN && index === 0 && categoriesSheet) {

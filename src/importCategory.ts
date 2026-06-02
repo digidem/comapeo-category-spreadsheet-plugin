@@ -35,6 +35,7 @@ function extractConfigurationData(
  */
 function showImportCategoryDialog() {
   // Get dialog texts from the importCategory/dialogTexts.ts file
+  const locale = typeof activeLocale !== "undefined" ? activeLocale : "en";
   const title = importCategoryDialogTexts[locale].title;
 
   // Create HTML output using the function from importCategory/ui.ts
@@ -57,7 +58,7 @@ function showImportCategoryDialog() {
 function processImportedCategoryFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any } {
+): { success: boolean; message: string; details?: any; warnings?: string[] } {
   try {
     getScopedLogger("ImportCategory").info(`Starting import of file: ${fileName}`);
 
@@ -135,4 +136,19 @@ function extractMapeoConfigurationData(
  */
 function applyMapeoConfigurationToSpreadsheet(configData: any) {
   applyConfigurationToSpreadsheet(configData);
+}
+
+/**
+ * Applies raw JSON imports after normalizing them into the spreadsheet format.
+ *
+ * Handles imports that aren't in the standard `.comapeocat` archive format.
+ * First normalizes the raw JSON through `normalizeConfig()` to ensure the
+ * expected schema, then delegates to `applyConfigurationToSpreadsheet()` to
+ * populate the spreadsheet sheets.
+ *
+ * @param jsonData - Raw JSON configuration object (unvalidated). Expected to
+ *   contain preset, field, and translation data in any CoMapeo-compatible schema.
+ */
+function applyMapeoJsonConfigToSpreadsheet(jsonData: any) {
+  applyConfigurationToSpreadsheet(normalizeConfig(jsonData));
 }

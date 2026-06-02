@@ -26,7 +26,7 @@ const VALID_FIELD_TYPES = [
   "selectOne",
   "selectMultiple",
 ] as const;
-type FieldType = (typeof VALID_FIELD_TYPES)[number];
+type ValidFieldType = (typeof VALID_FIELD_TYPES)[number];
 
 /**
  * Valid geometry types for CoMapeo presets
@@ -117,7 +117,7 @@ function findClosestMatches(
 /**
  * Validation result interface
  */
-interface ValidationResult {
+interface SheetValidationResult {
   valid: boolean;
   error?: string;
   warnings?: string[];
@@ -137,7 +137,7 @@ interface ValidationResult {
 function validateLanguageCode(
   languageCode: string,
   supportedLanguages: LanguageMap,
-): ValidationResult {
+): SheetValidationResult {
   if (!languageCode || languageCode.trim() === "") {
     return {
       valid: false,
@@ -200,6 +200,92 @@ function clearLanguageNamesCache(): void {
 }
 
 /**
+ * Normalizes a primary-language locale token for runtime use.
+ *
+ * Accepts canonical language codes from the lookup (preserving canonical casing
+ * like "zh-CN") and generic BCP 47-style locale tags such as "pt-BR".
+ * Generic locale tags are normalized to lowercase to match existing builder
+ * behavior in buildLocales().
+ *
+ * @param primaryLanguage - Primary language value from Metadata or Categories
+ * @returns Canonical or normalized locale code, or null if not a locale token
+ */
+function normalizePrimaryLanguageLocaleCode(
+  primaryLanguage: string,
+): LanguageCode | null {
+  if (!primaryLanguage || primaryLanguage.trim() === "") {
+    return null;
+  }
+
+  const trimmed = primaryLanguage.trim();
+  const lookup = getLanguageLookup();
+  const canonicalCode = lookup.getCanonicalCode(trimmed);
+
+  if (canonicalCode) {
+    return canonicalCode;
+  }
+
+  if (trimmed.includes("_")) {
+    return null;
+  }
+
+  // Mirror the builder's validateBcp47 pattern: accepts ISO 639-1/3 primary
+  // language codes (2-3 letters) and at most one region subtag, which can be
+  // either an ISO 3166-1 alpha-2 code (2 letters) or a UN M.49 numeric code
+  // (3 digits), e.g. "pt-BR", "es-419".
+  const localePattern = /^[a-z]{2,3}(-[a-z]{2,3}|-\d{3})?$/i;
+  if (!localePattern.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed.toLowerCase();
+}
+
+/**
+ * Resolves a primary-language value from Metadata or Categories.
+ *
+ * Supports English names, native names, canonical language codes, and locale
+ * tags such as "pt-BR". Returns both the runtime locale code and the best
+ * available comparison code for spreadsheet language filtering.
+ *
+ * @param primaryLanguage - Primary language value from Metadata or Categories
+ * @returns Resolved codes, or null when the value is not recognized
+ */
+function resolvePrimaryLanguageInput(
+  primaryLanguage: string,
+): { code: LanguageCode; comparisonCode: LanguageCode } | null {
+  if (!primaryLanguage || primaryLanguage.trim() === "") {
+    return null;
+  }
+
+  const trimmed = primaryLanguage.trim();
+  const lookup = getLanguageLookup();
+  const nameCode = lookup.getCodeByName(trimmed);
+
+  if (nameCode) {
+    return {
+      code: nameCode,
+      comparisonCode: nameCode,
+    };
+  }
+
+  const localeCode = normalizePrimaryLanguageLocaleCode(trimmed);
+  if (!localeCode) {
+    return null;
+  }
+
+  // Preserve the full locale code (e.g. "pt-br", "zh-cn") so that
+  // callers can distinguish between locale variants (pt-BR vs pt-PT).
+  // Callers that need base-code matching can split on "-" themselves.
+  const comparisonCode = localeCode;
+
+  return {
+    code: localeCode,
+    comparisonCode,
+  };
+}
+
+/**
  * Validates a language name against supported languages
  *
  * Now supports BOTH English and native language names (e.g., "Portuguese" OR "Português").
@@ -217,7 +303,7 @@ function clearLanguageNamesCache(): void {
  */
 function validateLanguageName(
   languageName: string,
-): ValidationResult & { code?: string } {
+): SheetValidationResult & { code?: string } {
   if (!languageName || languageName.trim() === "") {
     return {
       valid: false,
@@ -283,15 +369,18 @@ function validateLanguageName(
 
 /**
  * Validates the primary language value (Metadata!primaryLanguage preferred,
- * Categories!A1 fallback). Supports English and native names.
+ * Categories!A1 fallback). Supports English names, native names, and locale codes.
  */
-function validatePrimaryLanguage(primaryLanguage: string): ValidationResult {
-  const result = validateLanguageName(primaryLanguage);
+function validatePrimaryLanguage(primaryLanguage: string): SheetValidationResult {
+  const resolved = resolvePrimaryLanguageInput(primaryLanguage);
 
-  if (!result.valid) {
+  if (!resolved) {
     return {
       valid: false,
-      error: `Invalid primary language (Metadata!primaryLanguage or Categories!A1): ${result.error}`,
+      error:
+        `Invalid primary language (Metadata!primaryLanguage or Categories!A1): ` +
+        `use a recognized language name or locale code (for example "English", ` +
+        `"Português", "en", or "pt-BR").`,
     };
   }
 
@@ -308,7 +397,7 @@ function validatePrimaryLanguage(primaryLanguage: string): ValidationResult {
  * validateFieldType("Text") // { valid: true }
  * validateFieldType("Invalid") // { valid: false, error: "..." }
  */
-function validateFieldType(typeString: string): ValidationResult {
+function validateFieldType(typeString: string): SheetValidationResult {
   if (!typeString || typeString.trim() === "") {
     return {
       valid: false,
@@ -345,7 +434,7 @@ function validateFieldType(typeString: string): ValidationResult {
 function validateUniqueOptionValues(
   optionsString: string,
   fieldKey?: string,
-): ValidationResult {
+): SheetValidationResult {
   const options = optionsString
     .split(",")
     .map((opt) => opt.trim())
@@ -399,7 +488,7 @@ function validateFieldOptions(
   fieldType: string,
   optionsString: string,
   fieldKey?: string,
-): ValidationResult {
+): SheetValidationResult {
   const type = getFieldType(fieldType);
 
   // Text and number fields don't need options
@@ -446,7 +535,7 @@ function validateFieldOptions(
 function validateFieldDefinition(
   fieldData: FieldRow,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   const warnings: string[] = [];
 
   // Validate field name (column A)
@@ -502,7 +591,7 @@ function validateFieldDefinition(
 function validateCategoryName(
   categoryName: string,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   if (!categoryName || String(categoryName).trim() === "") {
     return {
       valid: false,
@@ -523,7 +612,7 @@ function validateCategoryName(
 function validateCategoryDefinition(
   categoryData: CategoryRow,
   rowIndex: number,
-): ValidationResult {
+): SheetValidationResult {
   const warnings: string[] = [];
 
   // Validate category name (column A)
@@ -558,7 +647,7 @@ function validateCategoryDefinition(
  * @param data - The SheetData object containing all sheet data
  * @returns Validation result with all errors and warnings
  */
-function validateSheetData(data: SheetData): ValidationResult {
+function validateSheetData(data: SheetData): SheetValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -617,7 +706,7 @@ function validateSheetData(data: SheetData): ValidationResult {
  * @param config - The CoMapeoConfig object to validate
  * @returns Validation result indicating schema compliance
  */
-function validateConfigSchema(config: CoMapeoConfig): ValidationResult {
+function validateConfigSchema(config: CoMapeoConfig): SheetValidationResult {
   const errors: string[] = [];
 
   // Validate required top-level properties

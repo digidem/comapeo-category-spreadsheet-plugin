@@ -305,7 +305,10 @@ function compareToBaseline(): void {
     testLanguageLookupQuick();
     const currentDuration = Date.now() - currentStart;
 
-    const percentChange = ((currentDuration - baseline.testSuites[0]?.duration || 0) / (baseline.testSuites[0]?.duration || 1)) * 100;
+    const baselineDuration = baseline.testSuites[0]?.duration || 1;
+    const baselineActual = baseline.testSuites[0]?.duration || 0;
+    const percentChange =
+      ((currentDuration - baselineActual) / baselineDuration) * 100;
 
     log.info(`Current: ${currentDuration}ms (${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}%)`);
 
@@ -398,11 +401,11 @@ function generatePerformanceReport(): void {
       log.info("\n--- BASELINE METRICS ---");
       log.info(`Total Duration: ${baseline.totalDuration}ms`);
       log.info(`Test Suites: ${baseline.testSuites.length}`);
-      log.info(`Passed: ${baseline.testSuites.filter(s => s.status === "PASSED").length}`);
-      log.info(`Failed: ${baseline.testSuites.filter(s => s.status === "FAILED").length}`);
+      log.info(`Passed: ${baseline.testSuites.filter((s: { status: string }) => s.status === "PASSED").length}`);
+      log.info(`Failed: ${baseline.testSuites.filter((s: { status: string }) => s.status === "FAILED").length}`);
 
       log.info("\nIndividual Test Suite Durations:");
-      baseline.testSuites.forEach(suite => {
+      baseline.testSuites.forEach((suite: { name: string; duration: number; status: string }) => {
         log.info(`  ${suite.name}: ${suite.duration}ms (${suite.status})`);
       });
     } else {

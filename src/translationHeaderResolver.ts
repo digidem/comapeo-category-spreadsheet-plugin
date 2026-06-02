@@ -58,9 +58,16 @@ function createTranslationHeaderResolver(
     if (nameIsoMatch) {
       const isoRaw = nameIsoMatch[1].trim();
       if (isoPattern.test(isoRaw)) {
-        const iso = isoRaw.toLowerCase();
-        const canonical = codeByLower.get(iso);
-        return canonical ?? iso;
+        const isoLower = isoRaw.toLowerCase();
+        const canonical = codeByLower.get(isoLower);
+        if (canonical) return canonical;
+        // Preserve BCP 47 casing for unrecognized locale tags
+        const isoParts = isoRaw.split("-");
+        isoParts[0] = isoParts[0].toLowerCase();
+        if (isoParts.length > 1) {
+          isoParts[isoParts.length - 1] = isoParts[isoParts.length - 1].toUpperCase();
+        }
+        return isoParts.join("-");
       }
     }
 
@@ -75,7 +82,14 @@ function createTranslationHeaderResolver(
     if (nameCode) return nameCode;
 
     if (isoPattern.test(trimmed)) {
-      return normalized;
+      // Preserve BCP 47 casing: language subtag lowercase, region subtag uppercase
+      // e.g. "pt-BR" stays "pt-BR", not "pt-br"
+      const parts = trimmed.split("-");
+      parts[0] = parts[0].toLowerCase();
+      if (parts.length > 1) {
+        parts[parts.length - 1] = parts[parts.length - 1].toUpperCase();
+      }
+      return parts.join("-");
     }
 
     return null;

@@ -1,6 +1,3 @@
-// Global function declarations
-declare const locale: string;
-
 // External function declarations
 declare function createOrClearSheet(
   spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet,
@@ -9,7 +6,7 @@ declare function createOrClearSheet(
 declare function processImportedCategoryFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any };
+): { success: boolean; message: string; details?: any; warnings?: string[] };
 declare function extractConfigurationData(
   extractedFiles: GoogleAppsScript.Base.Blob[],
   tempFolder: GoogleAppsScript.Drive.Folder,
@@ -773,7 +770,7 @@ function handleFileImport(
 function importConfigurationFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any } {
+): { success: boolean; message: string; details?: any; warnings?: string[] } {
   try {
     console.log(`Starting import of file: ${fileName}`);
 

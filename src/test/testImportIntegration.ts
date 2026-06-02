@@ -39,7 +39,7 @@ function fetchTestFile(url: string): GoogleAppsScript.Base.Blob {
     muteHttpExceptions: false,
   });
 
-  const contentType = response.getHeaders()['Content-Type'] || 'application/octet-stream';
+  const contentType = (response.getHeaders() as Record<string, string>)['Content-Type'] || 'application/octet-stream';
   const fileName = url.split('/').pop() || 'test-file';
 
   return response.getBlob().setName(fileName);

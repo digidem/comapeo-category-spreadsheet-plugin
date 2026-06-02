@@ -27,6 +27,14 @@ interface LanguageLookup {
   getCodeByName(name: string | null | undefined): LanguageCode | undefined;
 
   /**
+   * Get the canonical language code for a code input, case-insensitively.
+   * Null-safe: returns undefined for null/undefined inputs.
+   * @param code - Language code or locale token (null-safe)
+   * @returns Canonical language code if known, otherwise undefined
+   */
+  getCanonicalCode(code: LanguageCode | null | undefined): LanguageCode | undefined;
+
+  /**
    * Get both English and native names for a language code
    * Null-safe: returns undefined for null/undefined inputs
    * @param code - ISO language code (null-safe)
@@ -122,6 +130,9 @@ function createLanguageLookup(languageData: LanguageMapEnhanced): LanguageLookup
   // Index 2: Normalized Name → Code (bidirectional)
   const nameToCode = new Map<string, LanguageCode>();
 
+  // Index 3: Normalized Code → Canonical Code
+  const normalizedCodeToCode = new Map<string, LanguageCode>();
+
   // Build indexes from language data with collision detection
   for (const [code, data] of Object.entries(languageData)) {
     const english = data.englishName;
@@ -129,6 +140,7 @@ function createLanguageLookup(languageData: LanguageMapEnhanced): LanguageLookup
 
     // Store names for this code
     codeToNames.set(code, { english, native });
+    normalizedCodeToCode.set(normalizeLanguageName(code), code);
 
     // Create bidirectional mappings (normalized for case-insensitive matching)
     const normalizedEnglish = normalizeLanguageName(english);
@@ -183,6 +195,21 @@ function createLanguageLookup(languageData: LanguageMapEnhanced): LanguageLookup
       }
       const normalized = normalizeLanguageName(name);
       return nameToCode.get(normalized);
+    },
+
+    /**
+     * Get canonical code from any code casing
+     * Handles null/undefined gracefully by returning undefined
+     *
+     * @param code - Language code or locale token (null-safe)
+     * @returns Canonical code or undefined if not found or code is null/undefined
+     */
+    getCanonicalCode(code: LanguageCode | null | undefined): LanguageCode | undefined {
+      if (!code) {
+        return undefined;
+      }
+      const normalized = normalizeLanguageName(code);
+      return normalizedCodeToCode.get(normalized);
     },
 
     /**

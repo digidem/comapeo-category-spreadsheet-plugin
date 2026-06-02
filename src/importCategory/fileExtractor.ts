@@ -109,58 +109,89 @@ function extractJsonArchive(
 }
 
 /**
+ * Escapes a string for safe use as an XML attribute value.
+ * Covers &, <, >, and " to prevent injection via icon names
+ * containing XML metacharacters (e.g. "fish & shell").
+ */
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
  * Creates an SVG sprite string from an array of icon definitions
  */
 function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>): string {
   const safeIcons = Array.isArray(icons) ? icons : [];
-  const root = XmlService.createElement("svg").setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const extractSymbolMarkup = (icon: { name?: string; svg?: string }): string | null => {
+    if (!icon || !icon.name || !icon.svg) {
+      return null;
+    }
 
-  const parseSvgChildren = (rawSvg: string) => {
-    const trimmed = (rawSvg || "").trim();
-    const hasSvgRoot = /^<\s*svg[\s>]/i.test(trimmed);
-    const wrapped = hasSvgRoot ? trimmed : `<svg>${trimmed}</svg>`;
+    const trimmed = icon.svg.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const hasWrappedRoot = /^<\s*(svg|symbol)\b/i.test(trimmed);
+    const wrapped = hasWrappedRoot ? trimmed : `<svg>${trimmed}</svg>`;
 
     try {
       const doc = XmlService.parse(wrapped);
       const rootEl = doc.getRootElement();
-      const sourceEl = rootEl.getName().toLowerCase() === "symbol" ? rootEl : rootEl;
-      const viewBox = sourceEl.getAttribute("viewBox")?.getValue();
-      const children = sourceEl.getChildren();
-
-      return {
-        viewBox,
-        contents: children.length > 0 ? children.map((child) => child.clone()) : [XmlService.createText(sourceEl.getText() || "")]
-      };
+      const rootName = rootEl.getName().toLowerCase();
+      const viewBox = rootEl.getAttribute("viewBox")?.getValue();
+      // Serialize the successfully-parsed document; the serializer escapes > in
+      // attribute values, making the opening-tag strip safe (no > inside quotes).
+      const serialized = XmlService.getCompactFormat().format(doc);
+      // Strip XML declaration if the compact formatter includes one
+      const xmlContent = serialized.replace(/^<\?xml[^?]*\?>\s*/i, "");
+      const body = rootName === "symbol" || rootName === "svg"
+        ? xmlContent.replace(/^<[^>]*>/, "").replace(/<\/[^>]+>$/, "").trim()
+        : trimmed;
+      // Preserve namespace attributes from the original root element (e.g.
+      // xmlns:xlink) so that inner markup referencing prefixed attributes
+      // remains valid after the root element is replaced with <symbol>.
+      const nsAttrs: string[] = [];
+      const rootAttrs = rootEl.getAttributes();
+      for (const attr of rootAttrs) {
+        const attrName = attr.getName();
+        const attrPrefix = attr.getNamespace()?.getPrefix();
+        // Keep xmlns:xxx declarations (namespace prefix declarations)
+        if (attrPrefix === "xmlns" || attrName === "xmlns" || attrName.startsWith("xmlns:")) {
+          const ns = attr.getNamespace();
+          const fullAttrName = ns?.getPrefix() ? `${ns.getPrefix()}:${attrName}` : attrName;
+          nsAttrs.push(`${fullAttrName}="${attr.getValue().replace(/"/g, "&quot;")}"`);
+        }
+      }
+      const attrs = viewBox ? ` viewBox="${viewBox.replace(/"/g, "&quot;")}"` : "";
+      const nsAttrStr = nsAttrs.length > 0 ? ` ${nsAttrs.join(" ")}` : "";
+      return `<symbol id="${escapeXmlAttr(icon.name)}"${attrs}${nsAttrStr}>${body}</symbol>`;
     } catch (error) {
       console.warn("Failed to parse icon SVG with XmlService, falling back to raw string:", error);
-      return { viewBox: undefined, contents: [XmlService.createText(trimmed)] };
+      // Keep the fallback XML-safe: escape the raw body as text content so one
+      // malformed icon cannot break XmlService.parse() on the entire sprite.
+      const body = trimmed
+        .replace(/^<\s*svg\b[\s\S]*?>/i, "")
+        .replace(/<\s*\/\s*svg\s*>$/i, "")
+        .trim();
+      const escapedBody = body
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+      return `<symbol id="${escapeXmlAttr(icon.name)}">${escapedBody}</symbol>`;
     }
   };
 
-  safeIcons.forEach((icon) => {
-    if (!icon || !icon.name || !icon.svg) {
-      return;
-    }
+  const symbols = safeIcons
+    .map(extractSymbolMarkup)
+    .filter((symbol): symbol is string => Boolean(symbol));
 
-    const symbolEl = XmlService.createElement("symbol").setAttribute("id", icon.name);
-    const { viewBox, contents } = parseSvgChildren(icon.svg);
-
-    if (viewBox) {
-      symbolEl.setAttribute("viewBox", viewBox);
-    }
-
-    contents.forEach((content) => {
-      if (content.getType() === XmlService.ContentType.TEXT && !(content as GoogleAppsScript.XML_Service.Text).getText()) {
-        return;
-      }
-      symbolEl.addContent(content);
-    });
-
-    root.addContent(symbolEl);
-  });
-
-  const doc = XmlService.createDocument(root);
-  return XmlService.getPrettyFormat().setOmitDeclaration(true).setIndent("  ").format(doc);
+  return `<svg xmlns="http://www.w3.org/2000/svg">${symbols.join("")}</svg>`;
 }
 
 /**

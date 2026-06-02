@@ -56,7 +56,7 @@ let iconHashKeysUsedThisRun: Record<string, boolean> = {};
 let cachedSharingPolicy: SharingPolicy | null = null;
 
 function saveDriveFolderToZip(
-  folderId,
+  folderId: string,
   onProgress?: (message: string, detail?: string) => void,
   preCollectedBlobs?: GoogleAppsScript.Base.Blob[],
 ): GoogleAppsScript.Base.Blob {
@@ -422,7 +422,7 @@ function getConfigFolder(): GoogleAppsScript.Drive.Folder {
   return configFolder;
 }
 
-function saveZipToDrive(zipBlob: GoogleAppsScript.Base.Blob, version): string {
+function saveZipToDrive(zipBlob: GoogleAppsScript.Base.Blob, version: string): string {
   getScopedLogger("DriveService").info("Saving ZIP file to Drive...");
   const configFolder = getConfigFolder();
   const buildsFolder = "builds";
@@ -702,6 +702,7 @@ function saveExistingIconsToFolder(
       backgroundColor,
       true,
       zipBlobs,
+      undefined,
       iconStats,
     );
 

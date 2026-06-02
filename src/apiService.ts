@@ -123,7 +123,9 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
 
       if (responseCode === 200) {
         const responseBlob = response.getBlob();
-        const contentType = response.getHeaders()['Content-Type'] || '';
+        const headers = response.getHeaders() as Record<string, string>;
+        const contentTypeKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-type');
+        const contentType = contentTypeKey ? headers[contentTypeKey] : '';
         getScopedLogger("ApiService").info('Content-Type:', contentType);
 
         // Verify we got a binary file response
@@ -325,7 +327,10 @@ function migrateSpreadsheetFormat(): void {
         let primaryLanguageExists = false;
         for (let i = 1; i < metadataData.length; i++) {
           if (metadataData[i][0] === 'primaryLanguage') {
-            primaryLanguageExists = true;
+            const existingValue = String(metadataData[i][1] || '').trim();
+            if (existingValue) {
+              primaryLanguageExists = true;
+            }
             break;
           }
         }

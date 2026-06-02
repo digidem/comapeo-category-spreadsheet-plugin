@@ -13,7 +13,7 @@
  * // metadata: { dataset_id, name, version }
  * // packageJson: { name, version, description, dependencies, scripts }
  */
-function processMetadata(data) {
+function processMetadata(data: { documentName: string }) {
   const { documentName } = data;
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   let metadataSheet = spreadsheet.getSheetByName("Metadata");
@@ -90,7 +90,7 @@ function getOrCreateMetadata(
  * @param defaultValue - The default value to set if the key is not found
  * @returns The existing value if found, or the default value if not found
  */
-function getOrSetValue(sheet, key, defaultValue) {
+function getOrSetValue(sheet: GoogleAppsScript.Spreadsheet.Sheet, key: string, defaultValue: string): string {
   // Get all data from the sheet
   const data = sheet.getDataRange().getValues();
 
@@ -147,7 +147,7 @@ function generateRandomBytes(length: number): string {
  * const pkg = createPackageJson(metadata);
  * // Returns: { name: "comapeo-wildlife", version: "25.10.12", ... }
  */
-function createPackageJson(metadata) {
+function createPackageJson(metadata: CoMapeoMetadata) {
   return {
     name: metadata.dataset_id,
     version: metadata.version,

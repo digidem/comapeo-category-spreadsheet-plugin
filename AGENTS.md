@@ -74,3 +74,47 @@ When asked to "push for testing" or "deploy for testing", the target is the **"C
 *   **`context/reference/cat-generation.md`**: Export pipeline deep dive.
 *   **`context/reference/import-cat.md`**: Import process deep dive.
 *   **`docs/reference/linting-rules.md`**: Validation rules reference.
+
+## 📦 `package/` — Standalone CLI & Library
+
+The `package/` directory contains a **standalone Node.js CLI** (`comapeocat`) that works independently of Google Apps Script. It provides offline validation, building, and linting of `.comapeocat` files.
+
+### What it contains
+*   **CLI tools** in `package/bin/`:
+    *   `comapeocat.mjs` — Main entry point
+    *   `comapeocat-build.mjs` — Build `.comapeocat` archives from JSON/CSV sources
+    *   `comapeocat-lint.mjs` — Validate category config files offline
+    *   `comapeocat-validate.mjs` — Schema validation
+    *   `comapeocat-messages.mjs` — Translation message utilities
+*   **Library** in `package/src/` — Reader/writer for `.comapeocat` archives, shared JSON schemas
+*   **Schemas** in `package/dist/schema/` — JSON Schema definitions for category, field, and messages
+
+### Relationship to the GAS plugin
+*   Shares schema definitions (`@comapeo/schema`, BCP-47 validation, ISO language data)
+*   Both operate on the same `.comapeocat` file format
+*   The GAS plugin uses Google Sheets as the UI; the CLI uses filesystem files
+
+### Running the CLI
+```bash
+cd package
+node bin/comapeocat.mjs --help
+node bin/comapeocat-build.mjs --help
+node bin/comapeocat-lint.mjs --help
+```
+
+### Why it exists alongside the GAS plugin
+*   **Offline validation** — No Google account or internet required
+*   **CI/CD integration** — Automated checks in pull requests
+*   **Regression testing** — Validates `.comapeocat` files without Google infrastructure
+*   **Library usage** — Other projects can `npm install comapeocat` to read/write archives programmatically
+
+
+<!-- caveman-directive -->
+
+Terse like caveman. Technical substance exact. Only fluff die.
+Drop: articles, filler (just/really/basically), pleasantries, hedging.
+Fragments OK. Short synonyms. Code unchanged.
+Pattern: [thing] [action] [reason]. [next step].
+ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift.
+Code/commits/PRs: normal. Off: "stop caveman" @[/] "normal mode".
+

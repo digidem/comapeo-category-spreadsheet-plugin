@@ -124,6 +124,7 @@ function closeTestRunnerDialog(): void {
 
 function runAllTests(): void {
   const log = getScopedLogger("TestRunner");
+  const totalSuites = 14;
 
   if (typeof Logger === "undefined") {
     throw new Error("Logger not available - tests must run in Apps Script environment");
@@ -137,7 +138,13 @@ function runAllTests(): void {
 
   // Initialize the progress dialog
   if (spreadsheet) {
-    updateTestRunnerProgress(0, "Starting test suite...", "Initializing test runner...", 13, 0);
+    updateTestRunnerProgress(
+      0,
+      "Starting test suite...",
+      "Initializing test runner...",
+      totalSuites,
+      0,
+    );
   }
 
   log.info("========================================");
@@ -173,7 +180,6 @@ function runAllTests(): void {
     Utilities.sleep(300);
   };
 
-  const totalSuites = 13;
   let currentSuite = 0;
 
   // Test Suite 1: Language Recognition Tests
@@ -618,6 +624,40 @@ function runAllTests(): void {
     }
   }
 
+  // Test Suite 14: Lint Parity Tests
+  currentSuite++;
+  updateProgress(currentSuite, totalSuites, "Lint Parity");
+  try {
+    log.info("\n--- Test Suite 14: Lint Parity ---");
+    const suiteStart = Date.now();
+    runLintParityTests();
+    const duration = Date.now() - suiteStart;
+    results.push({
+      suiteName: "Lint Parity",
+      passed: 1,
+      failed: 0,
+      duration,
+      status: "PASSED",
+    });
+    log.info(`✓ Lint parity tests passed (${duration}ms)`);
+    if (spreadsheet) {
+      spreadsheet.toast("✓ Lint Parity passed", "Test Results", 2);
+    }
+  } catch (error) {
+    const duration = 0;
+    results.push({
+      suiteName: "Lint Parity",
+      passed: 0,
+      failed: 1,
+      duration,
+      status: "FAILED",
+    });
+    log.error(`✗ Lint parity tests failed: ${error.message}`);
+    if (spreadsheet) {
+      spreadsheet.toast("✗ Lint Parity FAILED", "Test Results", 3);
+    }
+  }
+
   const totalDuration = Date.now() - startTime;
 
   // Generate Summary Report
@@ -813,6 +853,7 @@ function runTestSuite(suiteName: string): void {
     endtoend: testEndToEnd,
     skip: testSkipTranslation,
     logger: testDebugLogger,
+    lint: runLintParityTests,
   };
 
   const suiteNameLower = suiteName.toLowerCase();

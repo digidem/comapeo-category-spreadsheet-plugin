@@ -1237,7 +1237,7 @@ function populateCategoriesSheet(
 
     if (fieldIds && fieldIds.length > 0) {
       const fieldNames = fieldIds
-        .map(id => fieldIdToName.get(id) || id)  // Fall back to ID if name not found
+        .map((id: string) => fieldIdToName.get(id) || id)  // Fall back to ID if name not found
         .filter(Boolean);
       fieldsValue = fieldNames.join(', ');
     }
@@ -1317,9 +1317,26 @@ function populateDetailsSheet(
 }
 
 /**
+ * Field types used by the CoMapeo API (broader than spreadsheet ValidFieldType).
+ * The import service maps from these API types to single-character spreadsheet codes.
+ */
+type ApiFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "integer"
+  | "multiselect"
+  | "select"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "photo"
+  | "location";
+
+/**
  * Maps API field type to spreadsheet type character
  */
-function mapFieldTypeToChar(type: FieldType): string {
+function mapFieldTypeToChar(type: ApiFieldType | string): string {
   switch (type) {
     case 'text':
       return 't';

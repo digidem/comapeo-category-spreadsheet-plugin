@@ -3,14 +3,12 @@
  * This file contains functions related to the user interface.
  */
 
-// Reference to the global locale variable
-declare const locale: string;
-
 /**
  * Creates the HTML for the import category dialog.
  * @returns HTML string for the dialog
  */
 function createImportCategoryHtml(): string {
+  const locale = typeof activeLocale !== "undefined" ? activeLocale : "en";
   const title = importCategoryDialogTexts[locale].title;
   const messages = importCategoryDialogTexts[locale].message
     .map((msg) => "<p>" + msg + "</p>")

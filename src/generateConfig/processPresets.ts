@@ -10,11 +10,11 @@
  * @returns Array of CoMapeo preset objects
  */
 function processPresets(
-  data,
+  data: SheetData,
   categoriesSheet: GoogleAppsScript.Spreadsheet.Sheet,
   fields: CoMapeoField[],
 ) {
-  const categories = data["Categories"].slice(1);
+  const categories = data["Categories"].slice(1) as CategoryRow[];
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -26,7 +26,7 @@ function processPresets(
   }, {});
 
   // Validate all categories first
-  categories.forEach((category, index) => {
+  categories.forEach((category: CategoryRow, index: number) => {
     const validation = validateCategoryDefinition(category, index + 2); // +2 for header row and 0-index
     if (!validation.valid && validation.error) {
       errors.push(validation.error);
@@ -55,16 +55,16 @@ function processPresets(
   const backgroundColors = categoriesSheet
     .getRange(2, 1, categories.length, 1)
     .getBackgrounds();
-  return categories.map((category, index) => {
+  return categories.map((category: CategoryRow, index: number) => {
     logger.info(`Processing category index ${index}: ${category[0]}`);
     const presetSlug = createPresetSlug(category[0], index);
 
     const referencedFields = category[2]
-      ? category[2]
+      ? String(category[2])
           .split(",")
-          .map((field) => field.trim())
-          .filter((field) => field !== "")
-          .map((fieldName, fieldIndex) => {
+          .map((field: string) => field.trim())
+          .filter((field: string) => field !== "")
+          .map((fieldName: string, fieldIndex: number) => {
             const canonicalKey = fieldKeyByLabel[fieldName];
             if (!canonicalKey) {
               logger.warn(
@@ -77,7 +77,7 @@ function processPresets(
 
     const terms = [
       category[0],
-      ...referencedFields.map((fieldKey) => fieldKey.replace(/-/g, " ")),
+      ...referencedFields.map((fieldKey: string) => fieldKey.replace(/-/g, " ")),
     ];
     return {
       icon: presetSlug,
