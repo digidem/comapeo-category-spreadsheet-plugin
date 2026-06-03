@@ -150,6 +150,7 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.categories)) {
 					const targetPreset = langResult.presets.presets[presetId] || {};
 					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
+					langResult.presets.presets[presetId] = targetPreset;
 				}
 			}
 			if (nestedPresets.fields && typeof nestedPresets.fields === "object") {
@@ -168,6 +169,7 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 				}
 				const targetPreset = langResult.presets.presets[maybePresetId] || {};
 				mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
+				langResult.presets.presets[maybePresetId] = targetPreset;
 			}
 		}
 
@@ -334,10 +336,11 @@ function parseExtractedFiles(
 											value: createOptionValue(opt, fieldId, optionIndex),
 										};
 									} else if (typeof opt === "object" && opt !== null) {
-										const optionLabel = opt.label || opt.value || opt.name || String(opt);
+										const obj = opt as Record<string, unknown>;
+										const optionLabel = String(obj.label || obj.value || obj.name || opt);
 										const normalizedValue =
-											typeof opt.value === "string" && opt.value.trim() !== ""
-												? opt.value
+											typeof obj.value === "string" && obj.value.trim() !== ""
+												? obj.value
 											: createOptionValue(optionLabel, fieldId, optionIndex);
 										return {
 											label: optionLabel,
