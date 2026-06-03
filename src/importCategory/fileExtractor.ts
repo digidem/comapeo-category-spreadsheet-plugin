@@ -715,6 +715,20 @@ function extractTarArchiveInternal(
 
         const shouldExtract = isCoreFile || isIconFile;
 
+        // Check depth before extracting payload to avoid memory waste
+        if (!isDirectory && isIconFile && fileName.includes("/")) {
+          const dirPath = fileName.substring(0, fileName.lastIndexOf("/"));
+          const parts = dirPath.split("/");
+          if (parts.length > MAX_TAR_PATH_DEPTH) {
+            console.warn(`Skipping deeply nested path (${parts.length} levels, max ${MAX_TAR_PATH_DEPTH}): ${dirPath}`);
+            const dataBlocks = Math.ceil(fileSize / BLOCK_SIZE);
+            position += HEADER_SIZE + dataBlocks * BLOCK_SIZE;
+            processedFiles.add(fileName);
+            fileCount++;
+            continue;
+          }
+        }
+
         if (!isDirectory && shouldExtract) {
           // Extract file data
           const fileData = bytes.slice(
@@ -744,16 +758,6 @@ function extractTarArchiveInternal(
             // Create nested folders if they don't exist
             let currentFolder = tempFolder;
             const parts = dirPath.split("/");
-
-            if (parts.length > MAX_TAR_PATH_DEPTH) {
-              console.warn(`Skipping deeply nested path (${parts.length} levels, max ${MAX_TAR_PATH_DEPTH}): ${dirPath}`);
-              // Still advance position so parsing continues
-              const dataBlocks = Math.ceil(fileSize / BLOCK_SIZE);
-              position += HEADER_SIZE + dataBlocks * BLOCK_SIZE;
-              processedFiles.add(fileName);
-              fileCount++;
-              continue;
-            }
 
             for (const part of parts) {
               if (part) {
