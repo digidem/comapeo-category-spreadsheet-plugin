@@ -17,6 +17,14 @@ const DETAIL_OPTION_TRANSLATIONS_SHEET = "Detail Option Translations";
 const DETAILS_HELPER_TEXT_COLUMN = "B";
 const DETAILS_OPTIONS_COLUMN = "D";
 
+/** Cross-sheet translation cache. Persists across multiple sheet translations in a single run. */
+let crossSheetTranslationCache = new Map<string, string>();
+
+/** Clear the cross-sheet translation cache. Call at the start of a full translation run. */
+function clearTranslationCache(): void {
+  crossSheetTranslationCache = new Map<string, string>();
+}
+
 function normalizeLanguageSelection(
   selection: TranslationLanguage[] | LanguageSelectionPayload | null | undefined,
 ): LanguageSelectionPayload {
@@ -220,7 +228,7 @@ function translateSheetBidirectional(
   let translationErrors: string[] = [];
   let successfulTranslations = 0;
 
-  const translationCache = new Map<string, string>();
+  const translationCache = crossSheetTranslationCache;
   const allLanguages: LanguageMap = getAllLanguages();
   const resolveHeaderCode = createTranslationHeaderResolver(allLanguages);
   const headerCodeToIndex = new Map<string, number>();
@@ -264,6 +272,64 @@ function translateSheetBidirectional(
       updatedColumns.set(columnIndex, columnValues.slice());
     });
 
+    // Phase 1: Collect all unique (sourceText, targetLang) pairs needing translation
+    const pendingTranslations = new Map<string, { sourceText: string; targetLang: string }>();
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      const rawValue = sheetValues[rowIndex][0];
+      const originalText = typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "").trim();
+      if (!originalText) {
+        continue;
+      }
+
+      targetColumnIndexes.forEach((_columnIndex, targetLang) => {
+        const columnValues = updatedColumns.get(_columnIndex);
+        if (!columnValues) {
+          return;
+        }
+
+        const existingValue = columnValues[rowIndex];
+        if (existingValue && String(existingValue).trim() !== "") {
+          return;
+        }
+
+        const cacheKey = `${targetLang}::${originalText}`;
+        if (!translationCache.has(cacheKey) && !pendingTranslations.has(cacheKey)) {
+          pendingTranslations.set(cacheKey, { sourceText: originalText, targetLang });
+        }
+      });
+    }
+
+    getTranslationServiceLogger().info(
+      `[Phase 1] Collected ${pendingTranslations.size} unique translations needed for ${sheetName}`,
+    );
+
+    // Phase 2: Translate all unique texts
+    let translateIndex = 0;
+    for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
+      translateIndex++;
+      try {
+        const translatedText = LanguageApp.translate(
+          sourceText,
+          actualSourceLanguage,
+          targetLang,
+        );
+        const translation = translatedText ? translatedText.trim() : "";
+        if (translation) {
+          translationCache.set(cacheKey, translation);
+        }
+      } catch (error) {
+        const errorMessage = `Translation error for ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${error.message}`;
+        getTranslationServiceLogger().error(errorMessage);
+        translationErrors.push(errorMessage);
+      }
+    }
+
+    getTranslationServiceLogger().info(
+      `[Phase 2] Translated ${pendingTranslations.size} unique pairs, ${translationErrors.length} errors`,
+    );
+
+    // Phase 3: Fill column values from cache
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const rawValue = sheetValues[rowIndex][0];
       const originalText = typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "").trim();
@@ -283,26 +349,7 @@ function translateSheetBidirectional(
         }
 
         const cacheKey = `${targetLang}::${originalText}`;
-        let translation = translationCache.get(cacheKey);
-
-        if (!translation) {
-          try {
-            const translatedText = LanguageApp.translate(
-              originalText,
-              actualSourceLanguage,
-              targetLang,
-            );
-            translation = translatedText ? translatedText.trim() : "";
-            if (translation) {
-              translationCache.set(cacheKey, translation);
-            }
-          } catch (error) {
-            const errorMessage = `Translation error for ${targetLang} (row ${rowIndex + 2}): ${error.message}`;
-            getTranslationServiceLogger().error(errorMessage);
-            translationErrors.push(errorMessage);
-            translation = "";
-          }
-        }
+        const translation = translationCache.get(cacheKey);
 
         if (translation) {
           columnValues[rowIndex] = translation;
@@ -629,6 +676,8 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   getTranslationServiceLogger().info("[TRANSLATION] Starting bidirectional translation");
   getTranslationServiceLogger().info("[TRANSLATION] Target languages count:", targetLanguages.length);
   getTranslationServiceLogger().info("[TRANSLATION] Target languages:", targetLanguages);
+
+  clearTranslationCache();
 
   const allSheets = sheets();
   const translationSheets = sheets(true);
