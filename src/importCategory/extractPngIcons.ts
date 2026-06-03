@@ -35,7 +35,9 @@ function validatePngSignature(file: GoogleAppsScript.Drive.File): boolean {
       return false;
     }
     for (let i = 0; i < PNG_SIGNATURE.length; i++) {
-      if (bytes[i] !== PNG_SIGNATURE[i]) {
+      // GAS Blob.getBytes() returns Java signed bytes (-128 to 127).
+      // Mask with 0xff to convert to unsigned for comparison.
+      if ((bytes[i] & 0xff) !== PNG_SIGNATURE[i]) {
         return false;
       }
     }
