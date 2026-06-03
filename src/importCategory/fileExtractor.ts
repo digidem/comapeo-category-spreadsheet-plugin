@@ -200,6 +200,12 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 /**
+ * Maximum directory depth for TAR extraction paths.
+ * Prevents zip-slip / resource-exhaustion via deeply nested entries.
+ */
+const MAX_TAR_PATH_DEPTH = 10;
+
+/**
  * Validates a file path to prevent path traversal attacks
  *
  * @param path - The file path to validate
@@ -738,6 +744,16 @@ function extractTarArchiveInternal(
             // Create nested folders if they don't exist
             let currentFolder = tempFolder;
             const parts = dirPath.split("/");
+
+            if (parts.length > MAX_TAR_PATH_DEPTH) {
+              console.warn(`Skipping deeply nested path (${parts.length} levels, max ${MAX_TAR_PATH_DEPTH}): ${dirPath}`);
+              // Still advance position so parsing continues
+              const dataBlocks = Math.ceil(fileSize / BLOCK_SIZE);
+              position += HEADER_SIZE + dataBlocks * BLOCK_SIZE;
+              processedFiles.add(fileName);
+              fileCount++;
+              continue;
+            }
 
             for (const part of parts) {
               if (part) {
