@@ -19,6 +19,34 @@ function safePngDebugLog(message: string, forceFlush = false): void {
 }
 
 /**
+ * PNG file signature bytes (first 8 bytes of any valid PNG file)
+ */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Validates that a file has a valid PNG signature
+ * @param file - Drive file to validate
+ * @returns true if file starts with valid PNG signature
+ */
+function validatePngSignature(file: GoogleAppsScript.Drive.File): boolean {
+  try {
+    const bytes = file.getBlob().getBytes();
+    if (bytes.length < PNG_SIGNATURE.length) {
+      return false;
+    }
+    for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+      if (bytes[i] !== PNG_SIGNATURE[i]) {
+        return false;
+      }
+    }
+    return true;
+  } catch (error) {
+    safePngDebugLog(`Failed to validate PNG signature for ${file.getName()}: ${error}`);
+    return false;
+  }
+}
+
+/**
  * Updates an existing Drive file in place so its file ID and URL stay stable.
  * Uses the Drive upload endpoint because DriveApp does not support binary
  * content replacement for PNG files.
@@ -206,8 +234,14 @@ function extractPngIcons(
         return; // Skip this icon
       }
 
-      safePngDebugLog(`  ✓ Found PNG for "${iconName}": ${foundPattern}`);
+      // Validate PNG signature before processing
+      if (!validatePngSignature(foundFile)) {
+        console.warn(`Invalid PNG signature for icon: ${iconName} (${foundPattern})`);
+        failedIcons.push({ name: iconName, error: `File does not have a valid PNG signature: ${foundPattern}` });
+        return;
+      }
 
+      safePngDebugLog(`  ✓ Found PNG for "${iconName}": ${foundPattern}`);
       // Copy to permanent folder
       try {
         const fileName = `${iconName}.png`;
