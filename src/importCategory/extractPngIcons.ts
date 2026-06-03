@@ -89,7 +89,7 @@ function updateDriveFileBlobInPlace(
  */
 function extractPngIcons(
   tempFolder: GoogleAppsScript.Drive.Folder,
-  presets: any[],
+  presets: ImportedPreset[],
   onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
 ): { name: string; svg: string; id: string }[] {
   try {

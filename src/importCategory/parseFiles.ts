@@ -15,13 +15,13 @@
  * @param flatMessages - Messages object with flat key structure
  * @returns Messages object with nested structure
  */
-function restructureTranslations(flatMessages: any): any {
+function restructureTranslations(flatMessages: Record<string, unknown>): Record<string, TranslationLocaleData> {
 	if (!flatMessages || typeof flatMessages !== "object") {
 		getScopedLogger("ParseFiles").warn("Invalid flatMessages object, returning empty structure");
 		return {};
 	}
 
-	const toScalar = (input: any, fallback: string): string => {
+	const toScalar = (input: unknown, fallback: string): string => {
 		if (input === undefined || input === null) {
 			return fallback;
 		}
@@ -47,7 +47,7 @@ function restructureTranslations(flatMessages: any): any {
 		}
 	};
 
-	const normalizeOption = (rawValue: any, optionId: string) => {
+	const normalizeOption = (rawValue: unknown, optionId: string) => {
 		const label = toScalar(rawValue, "");
 		let value = optionId;
 		if (rawValue && typeof rawValue === "object") {
@@ -62,8 +62,8 @@ function restructureTranslations(flatMessages: any): any {
 	};
 
 	const mergeOptionMap = (
-		container: Record<string, any>,
-		source: Record<string, any>,
+		container: Record<string, unknown>,
+		source: Record<string, unknown>,
 	) => {
 		if (!source || typeof source !== "object") {
 			return;
@@ -75,22 +75,22 @@ function restructureTranslations(flatMessages: any): any {
 	};
 
 	const mergeScalarProps = (
-		target: Record<string, any>,
-		source: Record<string, any>,
+		target: Record<string, unknown>,
+		source: Record<string, unknown>,
 	) => {
 		if (!source || typeof source !== "object") {
 			return;
 		}
 		for (const [prop, value] of Object.entries(source)) {
 			if (prop === "options") {
-				mergeOptionMap(target, value as Record<string, any>);
+				mergeOptionMap(target, value as Record<string, unknown>);
 			} else if (value !== undefined) {
 				target[prop] = toScalar(value, "");
 			}
 		}
 	};
 
-	const hasTranslationValue = (input: any): boolean => {
+	const hasTranslationValue = (input: unknown): boolean => {
 		if (typeof input === "string") {
 			return input.trim() !== "";
 		}
@@ -113,7 +113,7 @@ function restructureTranslations(flatMessages: any): any {
 		return false;
 	};
 
-	const restructured: any = {};
+	const restructured: Record<string, TranslationLocaleData> = {};
 
 	for (const lang of Object.keys(flatMessages)) {
 		const langMessages = flatMessages[lang];
@@ -124,8 +124,8 @@ function restructureTranslations(flatMessages: any): any {
 
 		const langResult = {
 			presets: {
-				presets: {} as Record<string, any>,
-				fields: {} as Record<string, any>,
+				presets: {} as Record<string, TranslationPreset>,
+				fields: {} as Record<string, TranslationField>,
 			},
 		};
 
@@ -142,21 +142,20 @@ function restructureTranslations(flatMessages: any): any {
 			if (nestedPresets.presets && typeof nestedPresets.presets === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.presets)) {
 					const targetPreset = langResult.presets.presets[presetId] || {};
-					mergeScalarProps(targetPreset, presetValue as Record<string, any>);
+					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 					langResult.presets.presets[presetId] = targetPreset;
 				}
 			}
 			if (nestedPresets.categories && typeof nestedPresets.categories === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.categories)) {
 					const targetPreset = langResult.presets.presets[presetId] || {};
-					mergeScalarProps(targetPreset, presetValue as Record<string, any>);
-					langResult.presets.presets[presetId] = targetPreset;
+					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 				}
 			}
 			if (nestedPresets.fields && typeof nestedPresets.fields === "object") {
 				for (const [fieldId, fieldValue] of Object.entries(nestedPresets.fields)) {
 					const targetField = langResult.presets.fields[fieldId] || {};
-					mergeScalarProps(targetField, fieldValue as Record<string, any>);
+					mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
 					langResult.presets.fields[fieldId] = targetField;
 				}
 			}
@@ -168,15 +167,14 @@ function restructureTranslations(flatMessages: any): any {
 					continue;
 				}
 				const targetPreset = langResult.presets.presets[maybePresetId] || {};
-				mergeScalarProps(targetPreset, presetValue as Record<string, any>);
-				langResult.presets.presets[maybePresetId] = targetPreset;
+				mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 			}
 		}
 
 		if (nestedFields) {
 			for (const [fieldId, fieldValue] of Object.entries(nestedFields)) {
 				const targetField = langResult.presets.fields[fieldId] || {};
-				mergeScalarProps(targetField, fieldValue as Record<string, any>);
+				mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
 				langResult.presets.fields[fieldId] = targetField;
 			}
 		}
@@ -191,7 +189,7 @@ function restructureTranslations(flatMessages: any): any {
 			}
 			const messageValue =
 				typeof rawValue === "object" && rawValue !== null && "message" in rawValue
-					? (rawValue as any).message
+					? (rawValue as { message: unknown }).message
 					: rawValue;
 
 			if (parts[0] === "presets") {
@@ -247,7 +245,7 @@ function parseExtractedFiles(
 	files: GoogleAppsScript.Base.Blob[] | undefined,
 	tempFolder: GoogleAppsScript.Drive.Folder,
 	onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
-): any {
+): ImportedConfig {
 	// Handle undefined or empty files array
 	if (!files || !Array.isArray(files)) {
 		getScopedLogger("ParseFiles").info("No files to parse or files is not an array");
@@ -263,7 +261,7 @@ function parseExtractedFiles(
 	getScopedLogger("ParseFiles").info(`Parsing ${files.length} extracted files...`);
 
 	// Initialize configuration data
-	const configData: any = {
+	const configData: ImportedConfig = {
 		metadata: null,
 		presets: [],
 		fields: [],
@@ -329,7 +327,7 @@ function parseExtractedFiles(
 						if (field.options) {
 							if (Array.isArray(field.options)) {
 								// Handle array of strings or objects
-								options = field.options.map((opt: any, optionIndex: number) => {
+								options = field.options.map((opt: unknown, optionIndex: number) => {
 									if (typeof opt === "string") {
 										return {
 											label: opt,
