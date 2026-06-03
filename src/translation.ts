@@ -293,7 +293,7 @@ function translateSheetBidirectional(
           return;
         }
 
-        const cacheKey = `${targetLang}::${originalText}`;
+        const cacheKey = `${actualSourceLanguage}::${targetLang}::${originalText}`;
         if (!translationCache.has(cacheKey) && !pendingTranslations.has(cacheKey)) {
           pendingTranslations.set(cacheKey, { sourceText: originalText, targetLang });
         }
@@ -348,7 +348,7 @@ function translateSheetBidirectional(
           return;
         }
 
-        const cacheKey = `${targetLang}::${originalText}`;
+        const cacheKey = `${actualSourceLanguage}::${targetLang}::${originalText}`;
         const translation = translationCache.get(cacheKey);
 
         if (translation) {
