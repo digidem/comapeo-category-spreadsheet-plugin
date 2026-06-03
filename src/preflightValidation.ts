@@ -72,7 +72,7 @@ function checkApiHealth(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking API health...");
-    const apiUrl = "http://137.184.153.36:3000/";
+    const apiUrl = `${API_BASE_URL}/`;
 
     // Try to connect to the API with a short timeout
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
