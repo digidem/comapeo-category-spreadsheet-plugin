@@ -69,6 +69,14 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
     }
   }
 
+  // Check for completely empty config (all required arrays empty)
+  const presetsArr = Array.isArray(cfg.presets) ? cfg.presets : [];
+  const fieldsArr = Array.isArray(cfg.fields) ? cfg.fields : [];
+  const iconsArr = Array.isArray(cfg.icons) ? cfg.icons : [];
+  if (presetsArr.length === 0 && fieldsArr.length === 0 && iconsArr.length === 0) {
+    errors.push("Configuration appears empty — no presets, fields, or icons found");
+  }
+
   return {
     valid: errors.length === 0,
     errors,
