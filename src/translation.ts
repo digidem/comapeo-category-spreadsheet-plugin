@@ -25,6 +25,22 @@ function clearTranslationCache(): void {
   crossSheetTranslationCache.clear();
 }
 
+/** Rate limiter for API calls. Enforces minimum interval between calls. */
+const TRANSLATE_CALLS_PER_SECOND = 5;
+const TRANSLATE_MIN_INTERVAL_MS = Math.ceil(1000 / TRANSLATE_CALLS_PER_SECOND);
+let lastTranslateCallTime = 0;
+
+function rateLimitedTranslate(text: string, sourceLang: string, targetLang: string): string {
+  const now = Date.now();
+  const elapsed = now - lastTranslateCallTime;
+  if (elapsed < TRANSLATE_MIN_INTERVAL_MS) {
+    Utilities.sleep(TRANSLATE_MIN_INTERVAL_MS - elapsed);
+  }
+  lastTranslateCallTime = Date.now();
+  return LanguageApp.translate(text, sourceLang, targetLang);
+}
+}
+
 function normalizeLanguageSelection(
   selection: TranslationLanguage[] | LanguageSelectionPayload | null | undefined,
 ): LanguageSelectionPayload {
@@ -152,7 +168,7 @@ function translateSheet(
       const targetCell = sheet.getRange(i, targetColumn);
       if (!targetCell.getValue()) {
         try {
-          const translation = LanguageApp.translate(
+          const translation = rateLimitedTranslate(
             originalText,
             mainLanguage,
             targetLanguage,
@@ -309,7 +325,7 @@ function translateSheetBidirectional(
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
       translateIndex++;
       try {
-        const translatedText = LanguageApp.translate(
+        const translatedText = rateLimitedTranslate(
           sourceText,
           actualSourceLanguage,
           targetLang,
