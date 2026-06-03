@@ -1117,7 +1117,8 @@ function cleanWhitespaceOnlyCells(
 
   if (changesMade) {
     range.setValues(values);
-    console.log(`Cleaned whitespace-only cells in ${sheet.getName()}`);
+    const logger = getScopedLogger("LintWhitespace");
+    logger.info(`Cleaned whitespace-only cells in ${sheet.getName()}`);
   }
 }
 
@@ -1206,9 +1207,10 @@ function checkForDuplicates(
   });
 
   // Highlight duplicates
+  const logger = getScopedLogger("LintDuplicates");
   duplicates.forEach((rows, value) => {
     if (rows.length > 1) {
-      console.log(
+      logger.debug(
         'Found duplicate value "' + value + '" in rows: ' + rows.join(", "),
       );
       const otherRowsStr = rows.join(", ");
@@ -1308,7 +1310,8 @@ function checkUnreferencedDetails(): void {
     const categoriesLastRow = categoriesSheet.getLastRow();
     if (categoriesLastRow <= 1) {
       // No categories exist, so all details are unreferenced
-      console.log("No categories exist - all details are unreferenced");
+      const logger = getScopedLogger("LintUnreferencedDetails");
+      logger.debug("No categories exist - all details are unreferenced");
       for (const entry of detailEntries) {
         appendLintNote(
           detailsSheet.getRange(entry.row, 1),
@@ -1372,7 +1375,8 @@ function checkUnreferencedDetails(): void {
           (referencedFields.has(entry.explicitId) ||
             referencedFields.has(entry.explicitId.toLowerCase())));
       if (!isReferenced) {
-        console.log(
+        const logger = getScopedLogger("LintUnreferencedDetails");
+        logger.debug(
           `Unreferenced detail: "${entry.slug}" at row ${entry.row}`,
         );
         const cell = detailsSheet.getRange(entry.row, 1);
@@ -1384,7 +1388,8 @@ function checkUnreferencedDetails(): void {
       }
     }
   } catch (error) {
-    console.error("Error checking unreferenced details:", error);
+    const logger = getScopedLogger("LintUnreferencedDetails");
+    logger.error("Error checking unreferenced details:", error);
   }
 }
 
@@ -1401,7 +1406,8 @@ function validateUniversalFlag(
 
   const upperValue = value.toString().trim().toUpperCase();
   if (upperValue !== "TRUE" && upperValue !== "FALSE") {
-    console.log(
+    const logger = getScopedLogger("LintDetails");
+    logger.warn(
       `Invalid Universal flag value "${value}" at row ${row} - must be TRUE, FALSE, or blank`,
     );
     setInvalidCellBackground(sheet, row, col, LINT_ERROR_BG); // Light red for invalid
@@ -1462,7 +1468,8 @@ function checkDuplicateTranslationSlugs(): void {
         // Highlight cells with duplicate slugs
         for (const [slug, rows] of slugCounts.entries()) {
           if (rows.length > 1) {
-            console.log(
+            const logger = getScopedLogger("LintTranslationSlugs");
+            logger.debug(
               `Duplicate slug "${slug}" in ${sheetName} column ${col} at rows: ${rows.join(", ")}`,
             );
             const otherRowsStr = rows.join(", ");
@@ -1477,7 +1484,8 @@ function checkDuplicateTranslationSlugs(): void {
         }
       }
     } catch (error) {
-      console.error(`Error checking duplicate slugs in ${sheetName}:`, error);
+      const logger = getScopedLogger("LintTranslationSlugs");
+      logger.error(`Error checking duplicate slugs in ${sheetName}:`, error);
     }
   }
 }
@@ -1528,7 +1536,8 @@ function validateTranslationHeaders(): void {
         const parsedCode = resolveHeaderCode(header);
 
         if (!parsedCode) {
-          console.log(
+          const logger = getScopedLogger("LintTranslationHeaders");
+          logger.warn(
             `Invalid translation header "${header}" in ${sheetName} column ${i + 1} - should be a language name, ISO code, or "Name - ISO" format`,
           );
           setLintNote(
@@ -1564,7 +1573,8 @@ function validateTranslationHeaders(): void {
         }
       });
     } catch (error) {
-      console.error(`Error validating headers in ${sheetName}:`, error);
+      const logger = getScopedLogger("LintTranslationHeaders");
+      logger.error(`Error validating headers in ${sheetName}:`, error);
     }
   }
 }
@@ -1576,19 +1586,18 @@ function lintSheet(
   requiredColumns: number[] = [],
   preserveBackgroundColumns: number[] = [],
 ): void {
-  console.time(`Linting ${sheetName}`);
+  const logger = getScopedLogger("LintSheet");
+  logger.info(`Linting ${sheetName}...`);
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
-    console.log(`${sheetName} sheet not found`);
-    console.timeEnd(`Linting ${sheetName}`);
+    logger.warn(`${sheetName} sheet not found`);
     return;
   }
 
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
-    console.log(`${sheetName} sheet is empty or contains only header`);
-    console.timeEnd(`Linting ${sheetName}`);
+    logger.debug(`${sheetName} sheet is empty or contains only header`);
     return;
   }
 
@@ -1614,7 +1623,7 @@ function lintSheet(
     }
 
     // First clean any whitespace-only cells
-    console.time(`Cleaning whitespace cells for ${sheetName}`);
+    logger.debug(`Cleaning whitespace cells for ${sheetName}...`);
     cleanWhitespaceOnlyCells(
       sheet,
       2,
@@ -1622,16 +1631,14 @@ function lintSheet(
       lastRow - 1,
       columnValidations.length,
     );
-    console.timeEnd(`Cleaning whitespace cells for ${sheetName}`);
 
     // Check for duplicates in the first column (usually the name/identifier column)
     // Preserve background for columns in preserveBackgroundColumns (e.g., Categories
     // column A has user-managed category colors that the builder reads at export time).
-    console.time(`Checking for duplicates in ${sheetName}`);
+    logger.debug(`Checking for duplicates in ${sheetName}...`);
     checkForDuplicates(sheet, 1, 2, preserveBackgroundColumns.includes(0));
-    console.timeEnd(`Checking for duplicates in ${sheetName}`);
 
-    console.time(`Getting data for ${sheetName}`);
+    logger.debug(`Getting data for ${sheetName}...`);
     // Get all data from the sheet, excluding the header row
     const dataRange = sheet.getRange(
       2,
@@ -1640,9 +1647,8 @@ function lintSheet(
       columnValidations.length,
     );
     const data = dataRange.getValues();
-    console.timeEnd(`Getting data for ${sheetName}`);
 
-    console.time(`Validating cells for ${sheetName}`);
+    logger.debug(`Validating cells for ${sheetName}...`);
 
     // Highlight required fields in batches before running column validations
     if (requiredColumns.length > 0) {
@@ -1706,13 +1712,10 @@ function lintSheet(
         }
       });
     });
-    console.timeEnd(`Validating cells for ${sheetName}`);
 
-    console.log(`${sheetName} sheet linting completed`);
+    logger.info(`${sheetName} sheet linting completed`);
   } catch (error) {
-    console.error(`Error linting ${sheetName} sheet:`, error);
-  } finally {
-    console.timeEnd(`Linting ${sheetName}`);
+    logger.error(`Error linting ${sheetName} sheet:`, error);
   }
 }
 
@@ -1760,17 +1763,18 @@ function getDriveIconInfo(fileId: string): DriveIconInfo {
 }
 
 function validateCategoryIcons(): void {
+  const logger = getScopedLogger("LintCategoryIcons");
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const categoriesSheet = spreadsheet.getSheetByName("Categories");
 
   if (!categoriesSheet) {
-    console.log("Categories sheet not found during icon validation");
+    logger.debug("Categories sheet not found during icon validation");
     return;
   }
 
   const lastRow = categoriesSheet.getLastRow();
   if (lastRow <= 1) {
-    console.log("No category rows available for icon validation");
+    logger.debug("No category rows available for icon validation");
     return;
   }
 
@@ -2008,13 +2012,13 @@ function validateCategoryIcons(): void {
   rowIssues.forEach((messages, rowNumber) => {
     const cell = categoriesSheet.getRange(rowNumber, 2);
     setLintNote(cell, messages.join("\n"), "error");
-    console.warn(
+    logger.warn(
       `Icon issue in Categories row ${rowNumber}: ${messages.join(" | ")}`,
     );
   });
 
   if (rowIssues.size === 0) {
-    console.log("Category icon validation completed with no issues found.");
+    logger.debug("Category icon validation completed with no issues found.");
   }
 }
 
@@ -2093,6 +2097,7 @@ function validatePrimaryLanguageInA1(): void {
 
 // Specific sheet linting functions
 function lintCategoriesSheet(): void {
+  const logger = getScopedLogger("LintCategories");
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const categoriesSheetRef = spreadsheet.getSheetByName("Categories");
   const detailsSheetRef = spreadsheet.getSheetByName("Details");
@@ -2164,7 +2169,7 @@ function lintCategoriesSheet(): void {
         try {
           categoriesSheetRef?.getRange(row, col).setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          logger.error(
             "Error capitalizing value in Categories sheet at row " +
               row +
               ", col " +
@@ -2203,7 +2208,7 @@ function lintCategoriesSheet(): void {
           }
 
           if (invalidFields.length > 0) {
-            console.log(
+            logger.debug(
               "Invalid fields in row " + row + ": " + invalidFields.join(", "),
             );
             const cell = categoriesSheetRef?.getRange(row, col);
@@ -2217,7 +2222,7 @@ function lintCategoriesSheet(): void {
           }
         }
       } catch (error) {
-        console.error(
+        logger.error(
           "Error validating fields in Categories sheet at row " +
             row +
             ", col " +
@@ -2242,9 +2247,10 @@ function lintCategoriesSheet(): void {
 }
 
 function lintDetailsSheet(): void {
+  const logger = getScopedLogger("LintDetails");
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
   if (!sheet) {
-    console.log("Details sheet not found");
+    logger.debug("Details sheet not found");
     return;
   }
 
@@ -2294,7 +2300,7 @@ function lintDetailsSheet(): void {
             ?.getRange(row, col)
             .setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          logger.error(
             "Error capitalizing detail name at row " +
               row +
               ", col " +
@@ -2317,7 +2323,7 @@ function lintDetailsSheet(): void {
             ?.getRange(row, col)
             .setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          logger.error(
             "Error capitalizing helper text at row " +
               row +
               ", col " +
@@ -2357,7 +2363,7 @@ function lintDetailsSheet(): void {
 
       if (!validTypes.includes(firstChar)) {
         try {
-          console.log("Invalid type '" + value + "' at row " + row);
+          logger.debug("Invalid type '" + value + "' at row " + row);
           if (detailsSheet) {
             setLintNote(
               detailsSheet.getRange(row, col),
@@ -2366,7 +2372,7 @@ function lintDetailsSheet(): void {
             );
           }
         } catch (error) {
-          console.error(
+          logger.error(
             "Error highlighting invalid type at row " +
               row +
               ", col " +
@@ -2421,7 +2427,7 @@ function lintDetailsSheet(): void {
         if (isSelectField) {
           // Select fields MUST have options
           if (isEmptyOrWhitespace(value)) {
-            console.log(
+            logger.debug(
               "Select field at row " + row + " is missing required options",
             );
             setLintNote(
@@ -2436,7 +2442,7 @@ function lintDetailsSheet(): void {
           const parsed = parseCanonicalOptions(value);
 
           if (parsed.length === 0) {
-            console.log(
+            logger.debug(
               "Select field at row " +
                 row +
                 " has empty options after trimming",
@@ -2491,7 +2497,7 @@ function lintDetailsSheet(): void {
               "warning",
             );
 
-            console.log(
+            logger.debug(
               `Row ${row}: Removed ${removedDuplicates.length} duplicate option(s): ${removedDuplicates.join(", ")}`,
             );
             return;
@@ -2512,7 +2518,7 @@ function lintDetailsSheet(): void {
           }
         }
       } catch (error) {
-        console.error(
+        logger.error(
           "Error validating options at row " + row + ", col " + col + ":",
           error,
         );
@@ -2869,6 +2875,7 @@ function checkCrossSheetIconCollisions(): void {
  * during config generation.
  */
 function checkTranslationSourceOverwrites(): void {
+  const logger = getScopedLogger("LintTranslationSourceOverwrites");
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const translationSheets = sheets(true);
 
@@ -2920,7 +2927,7 @@ function checkTranslationSourceOverwrites(): void {
         }
       });
     } catch (error) {
-      console.error(
+      logger.error(
         `Error checking source overwrites in ${sheetName}:`,
         error,
       );
@@ -2929,8 +2936,9 @@ function checkTranslationSourceOverwrites(): void {
 }
 
 function lintTranslationSheets(): void {
+  const logger = getScopedLogger("LintTranslations");
   // First validate translation headers
-  console.log("Validating translation headers...");
+  logger.info("Validating translation headers...");
   validateTranslationHeaders();
 
   const translationSheets = sheets(true);
@@ -2938,12 +2946,12 @@ function lintTranslationSheets(): void {
     const sheet =
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) {
-      console.error(`Sheet "${sheetName}" not found`);
+      logger.error(`Sheet "${sheetName}" not found`);
       return;
     }
 
     try {
-      console.log("Linting translation sheet: " + sheetName);
+      logger.info("Linting translation sheet: " + sheetName);
 
       // First clean any whitespace-only cells
       cleanWhitespaceOnlyCells(
@@ -2967,9 +2975,9 @@ function lintTranslationSheets(): void {
 
       // Update the sheet with the capitalized data
       sheet.getDataRange().setValues(updatedData);
-      console.log("Finished linting translation sheet: " + sheetName);
+      logger.info("Finished linting translation sheet: " + sheetName);
     } catch (error) {
-      console.error(
+      logger.error(
         "Error linting translation sheet " + sheetName + ":",
         error,
       );
@@ -2990,7 +2998,8 @@ function lintTranslationSheets(): void {
  * Validates that translation sheets have consistent headers and row counts with their source sheets.
  */
 function validateTranslationSheetConsistency(): void {
-  console.log("Validating translation sheet consistency...");
+  const logger = getScopedLogger("LintTranslationConsistency");
+  logger.info("Validating translation sheet consistency...");
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -3052,9 +3061,9 @@ function validateTranslationSheetConsistency(): void {
       }
     }
 
-    console.log("Translation sheet consistency validation complete");
+    logger.info("Translation sheet consistency validation complete");
   } catch (error) {
-    console.error("Error validating translation sheet consistency:", error);
+    logger.error("Error validating translation sheet consistency:", error);
   }
 }
 
@@ -3072,7 +3081,8 @@ function validateSheetConsistency(
   translationSheetName: string,
   validateOptionCounts: boolean,
 ): void {
-  console.log(
+  const logger = getScopedLogger("LintTranslationConsistency");
+  logger.debug(
     `Validating consistency for ${translationSheetName} against ${sourceSheet.getName()}`,
   );
 
@@ -3100,7 +3110,7 @@ function validateSheetConsistency(
 
     // Check row count consistency (excluding header)
     if (sourceRowCount !== translationRowCount) {
-      console.warn(
+      logger.warn(
         `Row count mismatch in ${translationSheetName}: ` +
           `Source has ${sourceRowCount} rows, translation has ${translationRowCount} rows`,
       );
@@ -3168,7 +3178,7 @@ function validateSheetConsistency(
             translationValue,
           });
 
-          console.warn(
+          logger.warn(
             `Primary column mismatch in ${translationSheetName} row ${i + 2}: ` +
               `Source="${sourceValue}", Translation="${translationValue}"`,
           );
@@ -3233,7 +3243,7 @@ function validateSheetConsistency(
             .filter((opt) => opt !== "").length;
 
           if (sourceOptionCount !== translatedOptionCount) {
-            console.warn(
+            logger.warn(
               `Option count mismatch in ${translationSheetName} at row ${i + 2}, column ${col + 1}: ` +
                 `Expected ${sourceOptionCount} options, found ${translatedOptionCount}`,
             );
@@ -3254,7 +3264,7 @@ function validateSheetConsistency(
       }
     }
   } catch (error) {
-    console.error(
+    logger.error(
       `Error validating ${translationSheetName} consistency:`,
       error,
     );
@@ -3391,11 +3401,12 @@ function validateHtmlContent(html: string): {
  * @throws Error if HTML is malformed
  */
 function validateDialogHtml(html: string, context: string = "Dialog"): void {
+  const logger = getScopedLogger("LintDialogHtml");
   const validation = validateHtmlContent(html);
 
   if (!validation.isValid) {
     const errorMessage = `HTML validation failed for ${context}:\n${validation.errors.join("\n")}`;
-    console.error(errorMessage);
+    logger.error(errorMessage);
     throw new Error(
       `Malformed HTML detected in ${context}. Please check the console for details.`,
     );
@@ -3403,7 +3414,7 @@ function validateDialogHtml(html: string, context: string = "Dialog"): void {
 
   // Additional checks specific to Google Apps Script dialogs
   if (html.length > 500000) {
-    console.warn(
+    logger.warn(
       `HTML content for ${context} is very large (${html.length} characters). This may cause performance issues.`,
     );
   }
@@ -3790,6 +3801,7 @@ function fixTranslationMismatches(
     }>;
   } | null,
 ): void {
+  const logger = getScopedLogger("LintFixTranslationSheets");
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
   // Re-sync Category Translations formulas
@@ -3805,7 +3817,7 @@ function fixTranslationMismatches(
       categoryTranslationsSheet
         .getRange(2, 1, lastRow - 1, 1)
         .setFormula(formula);
-      console.log(
+      logger.info(
         `Re-synced Category Translations formulas (rows 2-${lastRow})`,
       );
     }
@@ -3824,7 +3836,7 @@ function fixTranslationMismatches(
       if (detailLabelSheet) {
         const formula = `=Details!A2:A${lastRow}`;
         detailLabelSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        logger.info(
           `Re-synced Detail Label Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -3836,7 +3848,7 @@ function fixTranslationMismatches(
       if (detailHelperSheet) {
         const formula = `=Details!B2:B${lastRow}`;
         detailHelperSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        logger.info(
           `Re-synced Detail Helper Text Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -3848,7 +3860,7 @@ function fixTranslationMismatches(
       if (detailOptionSheet) {
         const formula = `=Details!D2:D${lastRow}`;
         detailOptionSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        logger.info(
           `Re-synced Detail Option Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -3857,7 +3869,7 @@ function fixTranslationMismatches(
 
   // Re-translate if requested
   if (reTranslate) {
-    console.log("Re-running translation for configured languages...");
+    logger.info("Re-running translation for configured languages...");
 
     // Get configured target languages from Category Translations headers
     if (categoryTranslationsSheet) {
@@ -3895,7 +3907,7 @@ function fixTranslationMismatches(
         }
 
         if (targetLanguages.length > 0) {
-          console.log(
+          logger.info(
             `Re-translating to languages: ${targetLanguages.join(", ")}`,
           );
 
@@ -3904,7 +3916,7 @@ function fixTranslationMismatches(
           const mismatchResult = mismatchData || detectTranslationMismatches();
 
           if (mismatchResult && mismatchResult.hasMismatches) {
-            console.log(
+            logger.info(
               `Found ${mismatchResult.details.length} translation sheet(s) with mismatches`,
             );
 
@@ -3921,18 +3933,18 @@ function fixTranslationMismatches(
                 sheet.getRange(row, 2, 1, colCount).clearContent();
               });
 
-              console.log(
+              logger.debug(
                 `Cleared translations for ${mismatchedRows.length} mismatched row(s) in ${detail.sheetName}: ` +
                   `rows ${mismatchedRows.join(", ")}`,
               );
             });
           } else {
-            console.log("No mismatches detected, skipping clearing step");
+            logger.debug("No mismatches detected, skipping clearing step");
           }
 
           autoTranslateSheetsBidirectional(targetLanguages);
         } else {
-          console.log(
+          logger.debug(
             "No target languages found in headers, skipping re-translation",
           );
         }
@@ -3958,7 +3970,7 @@ function fixTranslationMismatches(
     }
   });
 
-  console.log("Translation sheet fix complete");
+  logger.info("Translation sheet fix complete");
 }
 
 /**
@@ -4807,19 +4819,20 @@ function checkTotalEntityCounts(metrics: {
  * @param showAlerts - Whether to show UI alerts (default: true). Set to false when called from other functions.
  */
 function lintAllSheets(showAlerts: boolean = true): void {
+  const logger = getScopedLogger("LintAllSheets");
   try {
     // Clear cross-run caches so Drive file changes are picked up
     driveIconInfoCache.clear();
 
-    console.log("Starting linting process...");
+    logger.info("Starting linting process...");
 
-    console.log("Linting Categories sheet...");
+    logger.info("Linting Categories sheet...");
     lintCategoriesSheet();
 
-    console.log("Linting Details sheet...");
+    logger.info("Linting Details sheet...");
     lintDetailsSheet();
 
-    console.log("Linting Icons sheet...");
+    logger.info("Linting Icons sheet...");
     lintIconsSheet();
 
     // Phase 5: Cross-sheet icon checks
@@ -4828,7 +4841,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
     // Phase 6 Task 1: Inline SVG size warnings/errors
     checkInlineSvgSizes();
 
-    console.log("Linting Translation sheets...");
+    logger.info("Linting Translation sheets...");
     lintTranslationSheets();
 
     const strictLintMetrics = collectStrictLintMetrics();
@@ -4836,13 +4849,13 @@ function lintAllSheets(showAlerts: boolean = true): void {
     // Phase 6 Task 2: Per-locale translation payload size checks
     checkTranslationPayloadSizes(strictLintMetrics);
 
-    console.log("Linting Metadata sheet...");
+    logger.info("Linting Metadata sheet...");
     lintMetadataSheet();
 
     // Phase 6 Task 3: Total entity count check
     checkTotalEntityCounts(strictLintMetrics);
 
-    console.log("Finished linting all sheets.");
+    logger.info("Finished linting all sheets.");
 
     // Add a summary of issues found, but only if showAlerts is true
     if (showAlerts) {
@@ -4861,7 +4874,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
       );
     }
   } catch (error) {
-    console.error("Error during linting process:", error);
+    logger.error("Error during linting process:", error);
 
     // Only show error alert if showAlerts is true
     if (showAlerts) {
