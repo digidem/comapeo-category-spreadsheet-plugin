@@ -1,4 +1,4 @@
-/// <reference path="./lint.ts" />
+/// <reference path="./lint/htmlValidation.ts" />
 
 /**
  * CoMapeo logo as embedded SVG data URI
