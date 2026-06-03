@@ -316,7 +316,9 @@ function parseExtractedFiles(
 						!Array.isArray(content.fields)
 					) {
 						for (const fieldId in content.fields) {
-							const field = content.fields[fieldId];
+							const rawField = content.fields[fieldId];
+							if (!rawField || typeof rawField !== "object") continue;
+							const field = rawField as Record<string, unknown>;
 
 							// Convert field type
 							let fieldType = "text";
@@ -366,10 +368,10 @@ function parseExtractedFiles(
 					configData.fields.push({
 						id: fieldId,
 						tagKey: fieldId,
-						label: field.label || fieldId,
+						label: String(field.label || fieldId),
 						type: fieldType,
-						helperText: field.helperText || field.placeholder || "",
-						placeholder: field.placeholder || field.helperText || "",
+						helperText: String(field.helperText || field.placeholder || ""),
+						placeholder: String(field.placeholder || field.helperText || ""),
 						options: options,
 					});
 						}
