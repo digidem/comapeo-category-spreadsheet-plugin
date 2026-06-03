@@ -99,8 +99,7 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
       "La lógica de trabajo para crear y organizar categorías de CoMapeo es la siguiente:",
     ],
     instructions: [
-      // TODO: sheets shouls also be translated
-      "Edita las hojas llamadas 'Categories' y 'Details' para definir sus categorías propias y sus detalles asociados. Note que el color de fondo que seleccione para las categorías e íconos se verá reflejado en la app de CoMapeo",
+      "Edita las hojas llamadas 'Categories' (categorías) y 'Details' (detalles) para definir sus categorías propias y sus detalles asociados. Note que el color de fondo que seleccione para las categorías e íconos se verá reflejado en la app de CoMapeo",
       "Usa la opción 'Gestionar idiomas y traducir' para agregar idiomas personalizados y generar traducciones automáticamente para las celdas vacías",
       "Revise y refine las traducciones auto-generadas cuánto sea necesario",
       "Use la opción 'Generar Íconos para Categorías' para crear íconos para sus categorías. El color de fondo de los íconos coincidirá con el color que eliga en la planilla.",
