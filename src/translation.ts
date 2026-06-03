@@ -579,7 +579,6 @@ function ensureLanguageColumnsExist(sheet: GoogleAppsScript.Spreadsheet.Sheet, t
  * // Translates all sheets to all available languages
  */
 function autoTranslateSheets(): void {
-  lastTranslateCallTime = 0;
   const allSheets = sheets();
   const translationSheets = sheets(true);
   const categoriesAndDetailsSheets = allSheets.filter(
@@ -682,7 +681,6 @@ function autoTranslateSheets(): void {
  * // Skips translation entirely (useful for single-language configs)
  */
 function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]): void {
-  lastTranslateCallTime = 0;
   // Validation - return early if no languages specified (skip translation)
   if (!targetLanguages || targetLanguages.length === 0) {
     getTranslationServiceLogger().info("[TRANSLATION] ✓ SKIPPING TRANSLATION - No target languages specified");
