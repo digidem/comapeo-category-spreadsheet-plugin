@@ -584,5 +584,16 @@ function parseExtractedFiles(
 	delete configData.iconsPngFile;
 	delete configData.iconsJsonFile;
 
+	// Validate the parsed configuration before returning
+	const validation = validateImportedConfig(configData);
+	if (!validation.valid) {
+		getScopedLogger("ParseFiles").warn(
+			`Imported config validation warnings: ${validation.errors.join("; ")}`,
+		);
+		// Don't fail the import — just warn. Some fields may be optional.
+	} else {
+		getScopedLogger("ParseFiles").info("Imported config passed validation");
+	}
+
 	return configData;
 }

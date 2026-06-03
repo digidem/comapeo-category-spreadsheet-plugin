@@ -823,6 +823,14 @@ function importConfigurationFile(
         `- Fields: ${configData.fields ? configData.fields.length : 0}`,
       );
       console.log(`- Icons: ${configData.icons ? configData.icons.length : 0}`);
+
+      // Validate the imported config structure
+      const validation = validateImportedConfig(configData);
+      if (!validation.valid) {
+        console.warn(`Config validation warnings: ${validation.errors.join("; ")}`);
+      } else {
+        console.log("Config validation passed");
+      }
     } catch (error) {
       console.error("Error extracting configuration data:", error);
       return {
