@@ -824,13 +824,8 @@ function importConfigurationFile(
       );
       console.log(`- Icons: ${configData.icons ? configData.icons.length : 0}`);
 
-      // Validate the imported config structure
-      const validation = validateImportedConfig(configData);
-      if (!validation.valid) {
-        console.warn(`Config validation warnings: ${validation.errors.join("; ")}`);
-      } else {
-        console.log("Config validation passed");
-      }
+      // Validation already performed inside parseExtractedFiles()
+      // which logs warnings for structural issues
     } catch (error) {
       console.error("Error extracting configuration data:", error);
       return {
