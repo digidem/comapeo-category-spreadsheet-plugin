@@ -22,7 +22,7 @@ let crossSheetTranslationCache = new Map<string, string>();
 
 /** Clear the cross-sheet translation cache. Call at the start of a full translation run. */
 function clearTranslationCache(): void {
-  crossSheetTranslationCache = new Map<string, string>();
+  crossSheetTranslationCache.clear();
 }
 
 function normalizeLanguageSelection(
@@ -319,7 +319,7 @@ function translateSheetBidirectional(
           translationCache.set(cacheKey, translation);
         }
       } catch (error) {
-        const errorMessage = `Translation error for ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${error.message}`;
+        const errorMessage = `Translation error for ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}, source row context): ${error.message}`;
         getTranslationServiceLogger().error(errorMessage);
         translationErrors.push(errorMessage);
       }
