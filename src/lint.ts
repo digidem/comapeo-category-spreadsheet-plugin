@@ -1252,6 +1252,7 @@ function checkUnreferencedDetails(): void {
     return;
   }
 
+  const logger = getScopedLogger("LintUnreferencedDetails");
   try {
     // Get all detail names and explicit IDs from Details sheet
     const detailsLastRow = detailsSheet.getLastRow();
@@ -1309,8 +1310,6 @@ function checkUnreferencedDetails(): void {
     // dynamically by header name to match builder behavior.
     const categoriesLastRow = categoriesSheet.getLastRow();
     if (categoriesLastRow <= 1) {
-      // No categories exist, so all details are unreferenced
-      const logger = getScopedLogger("LintUnreferencedDetails");
       logger.debug("No categories exist - all details are unreferenced");
       for (const entry of detailEntries) {
         appendLintNote(
@@ -1375,7 +1374,6 @@ function checkUnreferencedDetails(): void {
           (referencedFields.has(entry.explicitId) ||
             referencedFields.has(entry.explicitId.toLowerCase())));
       if (!isReferenced) {
-        const logger = getScopedLogger("LintUnreferencedDetails");
         logger.debug(
           `Unreferenced detail: "${entry.slug}" at row ${entry.row}`,
         );
@@ -1388,7 +1386,6 @@ function checkUnreferencedDetails(): void {
       }
     }
   } catch (error) {
-    const logger = getScopedLogger("LintUnreferencedDetails");
     logger.error("Error checking unreferenced details:", error);
   }
 }
@@ -1466,9 +1463,9 @@ function checkDuplicateTranslationSlugs(): void {
         }
 
         // Highlight cells with duplicate slugs
+        const logger = getScopedLogger("LintTranslationSlugs");
         for (const [slug, rows] of slugCounts.entries()) {
           if (rows.length > 1) {
-            const logger = getScopedLogger("LintTranslationSlugs");
             logger.debug(
               `Duplicate slug "${slug}" in ${sheetName} column ${col} at rows: ${rows.join(", ")}`,
             );
@@ -1484,7 +1481,6 @@ function checkDuplicateTranslationSlugs(): void {
         }
       }
     } catch (error) {
-      const logger = getScopedLogger("LintTranslationSlugs");
       logger.error(`Error checking duplicate slugs in ${sheetName}:`, error);
     }
   }
