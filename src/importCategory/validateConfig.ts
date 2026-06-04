@@ -82,9 +82,9 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
     errors.push("Configuration appears empty — no presets, fields, icons, or messages found");
   }
 
-  // Add summary if errors were capped
+  // Add summary if errors were capped (replace last error to stay within cap)
   if (errors.length >= MAX_VALIDATION_ERRORS) {
-    errors.push(`... and more issues may exist (showing first ${MAX_VALIDATION_ERRORS})`);
+    errors[MAX_VALIDATION_ERRORS - 1] = `... and more issues may exist (showing first ${MAX_VALIDATION_ERRORS - 1})`;
   }
 
   return {
