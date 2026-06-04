@@ -319,14 +319,14 @@ function translateSheetBidirectional(
           translationCache.set(cacheKey, translation);
         }
       } catch (error) {
-        const errorMessage = `Translation error for ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}, source row context): ${error.message}`;
+        const errorMessage = `Translation error for "${sourceText}" → ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${(error as Error).message}`;
         getTranslationServiceLogger().error(errorMessage);
         translationErrors.push(errorMessage);
       }
     }
 
     getTranslationServiceLogger().info(
-      `[Phase 2] Translated ${pendingTranslations.size} unique pairs, ${translationErrors.length} errors`,
+      `[Phase 2] Attempted ${pendingTranslations.size} unique pairs, ${pendingTranslations.size - translationErrors.length} succeeded, ${translationErrors.length} errors`,
     );
 
     // Phase 3: Fill column values from cache
