@@ -386,11 +386,12 @@ function showConfigurationGeneratedDialog(folderUrl: string) {
 }
 
 function showHelpDialog() {
-  const title = helpDialogTexts[locale].title;
-  const msgHeader = validateAndSanitizeMessage(helpDialogTexts[locale].message);
+  const helpLocale = helpDialogTexts[locale] ? locale : "en";
+  const title = helpDialogTexts[helpLocale].title;
+  const msgHeader = validateAndSanitizeMessage(helpDialogTexts[helpLocale].message);
 
   // Instructions already contain HTML tags (like <br /> and <a>), validate them
-  const instructions = helpDialogTexts[locale].instructions
+  const instructions = helpDialogTexts[helpLocale].instructions
     .map((instruction) => {
       // Validate each instruction's HTML if it contains tags
       if (/<\w+/.test(instruction)) {
@@ -407,7 +408,7 @@ function showHelpDialog() {
     })
     .join("\n");
 
-  const footer = `<p>${escapeHtml(helpDialogTexts[locale].footer)}</p>`;
+  const footer = `<p>${escapeHtml(helpDialogTexts[helpLocale].footer)}</p>`;
 
   const message = `
   ${msgHeader}
@@ -416,7 +417,7 @@ function showHelpDialog() {
   </ol>
   ${footer}
 `;
-  const buttonText = helpDialogTexts[locale].buttonText;
+  const buttonText = helpDialogTexts[helpLocale].buttonText;
   const buttonUrl =
     "https://github.com/digidem/comapeo-config-spreadsheet-plugin";
   const html = generateDialog(title, message, buttonText, buttonUrl);

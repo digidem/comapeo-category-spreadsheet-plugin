@@ -112,6 +112,26 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
     footer: "Para más información, visite nuestro repositorio de Github",
     buttonText: "Visite repositorio de Github",
   },
+  pt: {
+    title: "Ferramentas CoMapeo - Ajuda",
+    message: [
+      "Bem-vindo às ferramentas do CoMapeo! Este complemento ajudará você a organizar e criar categorias do CoMapeo. É usado assim:",
+      "A lógica de trabalho para criar e organizar categorias do CoMapeo é a seguinte:",
+    ],
+    instructions: [
+      "Edite as planilhas chamadas 'Categories' (categorias) e 'Details' (detalhes) para definir suas próprias categorias e seus detalhes associados. Observe que a cor de fundo selecionada para categorias e ícones será refletida no aplicativo CoMapeo.",
+      "Use a opção 'Gerenciar Idiomas e Traduzir' para adicionar colunas de idiomas manuais e traduzir automaticamente as células vazias.",
+      "Revise e refine as traduções geradas automaticamente conforme necessário.",
+      "Use a opção 'Gerar Ícones' para criar ícones para suas categorias. A cor de fundo dos ícones corresponderá à cor definida na planilha.",
+      "Verifique os ícones gerados na pasta de ícones e modifique-os usando o <br /><a href='https://icons.earthdefenderstoolkit.com' target='_blank'>Gerador de Ícones</a> se necessário.",
+      "Copie o link compartilhado de cada ícone e cole na célula correspondente da planilha.",
+      "Use a opção 'Validar Planilhas' para garantir a formatação e capitalização adequadas dos seus dados.",
+      "Repita as etapas anteriores conforme necessário, atualizando traduções e ícones até ficar satisfeito com os resultados.",
+      "Quando estiver pronto, use a opção 'Gerar Categoria CoMapeo' para criar seu arquivo final. Este processo pode levar alguns minutos e gerará um arquivo '.comapeocat' salvo no Google Drive, pronto para uso com o aplicativo CoMapeo.",
+    ],
+    footer: "Para mais informações, visite nosso repositório no Github",
+    buttonText: "Visite repositório no Github",
+  },
   en: {
     title: "CoMapeo Tools Help",
     message: [
