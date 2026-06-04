@@ -715,7 +715,9 @@ function extractTarArchiveInternal(
 
         const shouldExtract = isCoreFile || isIconFile;
 
-        // Check depth before extracting payload to avoid memory waste
+        // Check depth before extracting payload to avoid memory waste.
+        // Only icon files are checked because core config files (metadata.json,
+        // presets.json, etc.) are always flat names in .comapeocat archives.
         if (!isDirectory && isIconFile && fileName.includes("/")) {
           const dirPath = fileName.substring(0, fileName.lastIndexOf("/"));
           const parts = dirPath.split("/");
