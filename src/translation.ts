@@ -320,6 +320,7 @@ function translateSheetBidirectional(
     );
 
     // Phase 2: Translate all unique texts
+    const prePhase2ErrorCount = translationErrors.length;
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
       translateIndex++;
@@ -340,8 +341,9 @@ function translateSheetBidirectional(
       }
     }
 
+    const phase2Errors = translationErrors.length - prePhase2ErrorCount;
     getTranslationServiceLogger().info(
-      `[Phase 2] Attempted ${pendingTranslations.size} unique pairs, ${pendingTranslations.size - translationErrors.length} succeeded, ${translationErrors.length} errors`,
+      `[Phase 2] Attempted ${pendingTranslations.size} unique pairs, ${pendingTranslations.size - phase2Errors} succeeded, ${phase2Errors} errors`,
     );
 
     // Phase 3: Fill column values from cache
