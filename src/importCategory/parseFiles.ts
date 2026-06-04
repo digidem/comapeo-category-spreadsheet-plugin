@@ -68,9 +68,12 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 		if (!source || typeof source !== "object") {
 			return;
 		}
-		container.options = container.options || {};
+		const existingOptions = container.options && typeof container.options === "object"
+			? container.options as Record<string, unknown>
+			: {};
+		container.options = existingOptions;
 		for (const [optionId, optionValue] of Object.entries(source)) {
-			container.options[optionId] = normalizeOption(optionValue, optionId);
+			existingOptions[optionId] = normalizeOption(optionValue, optionId);
 		}
 	};
 
@@ -121,6 +124,7 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 			getScopedLogger("ParseFiles").warn(`Invalid messages for language: ${lang}`);
 			continue;
 		}
+		const langObj = langMessages as Record<string, unknown>;
 
 		const langResult = {
 			presets: {
@@ -129,13 +133,15 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 			},
 		};
 
+		const rawPresets = langObj.presets;
+		const rawFields = langObj.fields;
 		const nestedPresets =
-			langMessages?.presets && typeof langMessages.presets === "object"
-				? langMessages.presets
+			rawPresets && typeof rawPresets === "object"
+				? rawPresets as Record<string, unknown>
 				: undefined;
 		const nestedFields =
-			langMessages?.fields && typeof langMessages.fields === "object"
-				? langMessages.fields
+			rawFields && typeof rawFields === "object"
+				? rawFields as Record<string, unknown>
 				: undefined;
 
 		if (nestedPresets) {
@@ -181,7 +187,7 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 			}
 		}
 
-		for (const [rawKey, rawValue] of Object.entries(langMessages)) {
+		for (const [rawKey, rawValue] of Object.entries(langObj)) {
 			if (typeof rawKey !== "string" || !rawKey.includes(".")) {
 				continue;
 			}
