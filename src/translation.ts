@@ -39,7 +39,6 @@ function rateLimitedTranslate(text: string, sourceLang: string, targetLang: stri
   lastTranslateCallTime = Date.now();
   return LanguageApp.translate(text, sourceLang, targetLang);
 }
-}
 
 function normalizeLanguageSelection(
   selection: TranslationLanguage[] | LanguageSelectionPayload | null | undefined,
