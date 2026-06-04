@@ -72,6 +72,8 @@ function checkApiHealth(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking API health...");
+    // Normalize: strip any trailing slash from config, then append exactly one.
+    // Ensures consistent URL regardless of whether API_BASE_URL ends with '/'.
     const apiUrl = `${API_BASE_URL.replace(/\/$/, "")}/`;
 
     // Try to connect to the API with a short timeout
