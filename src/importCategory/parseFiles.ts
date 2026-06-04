@@ -147,23 +147,23 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 		if (nestedPresets) {
 			if (nestedPresets.presets && typeof nestedPresets.presets === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.presets)) {
-					const targetPreset = langResult.presets.presets[presetId] || {};
+					const targetPreset = langResult.presets.presets[presetId] || ({} as Record<string, unknown>);
 					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
-					langResult.presets.presets[presetId] = targetPreset;
+					langResult.presets.presets[presetId] = targetPreset as TranslationPreset;
 				}
 			}
 			if (nestedPresets.categories && typeof nestedPresets.categories === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.categories)) {
-					const targetPreset = langResult.presets.presets[presetId] || {};
+					const targetPreset = langResult.presets.presets[presetId] || ({} as Record<string, unknown>);
 					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
-					langResult.presets.presets[presetId] = targetPreset;
+					langResult.presets.presets[presetId] = targetPreset as TranslationPreset;
 				}
 			}
 			if (nestedPresets.fields && typeof nestedPresets.fields === "object") {
 				for (const [fieldId, fieldValue] of Object.entries(nestedPresets.fields)) {
-					const targetField = langResult.presets.fields[fieldId] || {};
+					const targetField = langResult.presets.fields[fieldId] || ({} as Record<string, unknown>);
 					mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
-					langResult.presets.fields[fieldId] = targetField;
+					langResult.presets.fields[fieldId] = targetField as TranslationField;
 				}
 			}
 			for (const [maybePresetId, presetValue] of Object.entries(nestedPresets)) {
@@ -173,17 +173,17 @@ function restructureTranslations(flatMessages: Record<string, unknown>): Record<
 				if (!presetValue || typeof presetValue !== "object") {
 					continue;
 				}
-				const targetPreset = langResult.presets.presets[maybePresetId] || {};
+				const targetPreset = langResult.presets.presets[maybePresetId] || ({} as Record<string, unknown>);
 				mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
-				langResult.presets.presets[maybePresetId] = targetPreset;
+				langResult.presets.presets[maybePresetId] = targetPreset as TranslationPreset;
 			}
 		}
 
 		if (nestedFields) {
 			for (const [fieldId, fieldValue] of Object.entries(nestedFields)) {
-				const targetField = langResult.presets.fields[fieldId] || {};
+				const targetField = langResult.presets.fields[fieldId] || ({} as Record<string, unknown>);
 				mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
-				langResult.presets.fields[fieldId] = targetField;
+				langResult.presets.fields[fieldId] = targetField as TranslationField;
 			}
 		}
 
