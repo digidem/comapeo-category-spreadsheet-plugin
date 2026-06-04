@@ -7,6 +7,14 @@
 const COMAPEO_LOGO_SVG = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22grad1%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%3Cstop%20offset%3D%220%25%22%20style%3D%22stop-color%3A%236d44d9%3Bstop-opacity%3A1%22%20%2F%3E%3Cstop%20offset%3D%22100%25%22%20style%3D%22stop-color%3A%23330B9E%3Bstop-opacity%3A1%22%20%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2248%22%20fill%3D%22url(%23grad1)%22%20%2F%3E%3Cpath%20fill%3D%22white%22%20d%3D%22M50%2025c-8.28%200-15%206.72-15%2015%200%2011.25%2015%2030%2015%2030s15-18.75%2015-30c0-8.28-6.72-15-15-15zm0%2020.5c-3.04%200-5.5-2.46-5.5-5.5s2.46-5.5%205.5-5.5%205.5%202.46%205.5%205.5-2.46%205.5-5.5%205.5z%22%2F%3E%3C%2Fsvg%3E";
 
 /**
+ * Resolve locale for dialog text maps. Falls back to "en" if the
+ * current locale has no translations, preventing undefined crashes.
+ */
+function resolveLocale<T>(textMap: Record<string, T>): string {
+  return textMap[locale] ? locale : "en";
+}
+
+/**
  * CRITICAL: Safe dialog wrapper that validates HTML before showing
  * This prevents "Malformed HTML content" errors
  */
@@ -322,9 +330,10 @@ function generateDialog(
 }
 
 function showIconsGeneratedDialog(folderUrl: string) {
-  const title = iconDialogTexts[locale].title;
-  const message = validateAndSanitizeMessage(iconDialogTexts[locale].message);
-  const buttonText = iconDialogTexts[locale].buttonText;
+  const dl = resolveLocale(iconDialogTexts);
+  const title = iconDialogTexts[dl].title;
+  const message = validateAndSanitizeMessage(iconDialogTexts[dl].message);
+  const buttonText = iconDialogTexts[dl].buttonText;
   const html = generateDialog(title, message, buttonText, folderUrl);
   showModalDialogSafe(html, title, 800, 600, "Icons Generated");
 }
@@ -363,7 +372,7 @@ function closeProcessingModalDialog(): void {
  * This function will close and reopen the dialog with updated content.
  */
 function updateProcessingDialogProgress(mainMessage: string, detailMessage?: string) {
-  const title = processingDialogTitle[locale];
+  const title = processingDialogTitle[resolveLocale(processingDialogTitle)];
   const messageLines = detailMessage
     ? [mainMessage, detailMessage]
     : [mainMessage];
@@ -378,15 +387,16 @@ function updateProcessingDialogProgress(mainMessage: string, detailMessage?: str
 }
 
 function showConfigurationGeneratedDialog(folderUrl: string) {
-  const title = generatedConfigDialogTexts[locale].title;
-  const message = validateAndSanitizeMessage(generatedConfigDialogTexts[locale].message);
-  const buttonText = generatedConfigDialogTexts[locale].buttonText;
+  const dl = resolveLocale(generatedConfigDialogTexts);
+  const title = generatedConfigDialogTexts[dl].title;
+  const message = validateAndSanitizeMessage(generatedConfigDialogTexts[dl].message);
+  const buttonText = generatedConfigDialogTexts[dl].buttonText;
   const html = generateDialog(title, message, buttonText, folderUrl);
   showModalDialogSafe(html, title, 800, 980, "Configuration Generated");
 }
 
 function showHelpDialog() {
-  const helpLocale = helpDialogTexts[locale] ? locale : "en";
+  const helpLocale = resolveLocale(helpDialogTexts);
   const title = helpDialogTexts[helpLocale].title;
   const msgHeader = validateAndSanitizeMessage(helpDialogTexts[helpLocale].message);
 
@@ -427,7 +437,8 @@ function showHelpDialog() {
 function showSelectTranslationLanguagesDialog() {
   const primaryLanguage = getPrimaryLanguage();
   const availableTargetLanguages = getAvailableTargetLanguages();
-  const dialogText = selectTranslationLanguagesDialogText[locale];
+  const dl = resolveLocale(selectTranslationLanguagesDialogText);
+  const dialogText = selectTranslationLanguagesDialogText[dl];
 
   const title = dialogText.title;
   const messageTemplate = dialogText.message;
@@ -909,7 +920,8 @@ function getErrorTypeLabel(errorType: string): string {
  * @param errorSummary - Summary of icon errors from processing
  */
 function showIconErrorDialog(errorSummary: IconErrorSummary): void {
-  const title = iconErrorDialogTexts[locale].title;
+  const dl = resolveLocale(iconErrorDialogTexts);
+  const title = iconErrorDialogTexts[dl].title;
 
   // Build summary message
   const summaryLines: string[] = [];
@@ -1004,12 +1016,12 @@ function showIconErrorDialog(errorSummary: IconErrorSummary): void {
   const html = generateDialog(
     title,
     message,
-    iconErrorDialogTexts[locale].downloadButtonText,
+    iconErrorDialogTexts[dl].downloadButtonText,
     undefined,
     "downloadIconErrorReport",
     errorSummary.errorCount > 0
-      ? iconErrorDialogTexts[locale].continueButtonText
-      : iconErrorDialogTexts[locale].okButtonText,
+      ? iconErrorDialogTexts[dl].continueButtonText
+      : iconErrorDialogTexts[dl].okButtonText,
     "google.script.host.close",
   );
 
