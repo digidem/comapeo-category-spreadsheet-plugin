@@ -68,7 +68,9 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
   // Validate metadata (optional but should be object if present)
   if (cfg.metadata !== undefined && cfg.metadata !== null) {
     if (typeof cfg.metadata !== "object" || Array.isArray(cfg.metadata)) {
-      errors.push("'metadata' should be an object if present");
+      if (errors.length < MAX_VALIDATION_ERRORS) {
+        errors.push("'metadata' should be an object if present");
+      }
     }
   }
 
@@ -79,7 +81,9 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
     : {};
   const hasMessages = Object.keys(messagesObj).length > 0;
   if (allArraysValid && cfg.presets.length === 0 && cfg.fields.length === 0 && cfg.icons.length === 0 && !hasMessages) {
-    errors.push("Configuration appears empty — no presets, fields, icons, or messages found");
+    if (errors.length < MAX_VALIDATION_ERRORS) {
+      errors.push("Configuration appears empty — no presets, fields, icons, or messages found");
+    }
   }
 
   // Add summary if errors were capped (replace last error to stay within cap)
