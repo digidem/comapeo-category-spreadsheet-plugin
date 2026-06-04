@@ -399,6 +399,8 @@ interface ImportedConfig {
   iconsSvgFile?: GoogleAppsScript.Base.Blob;
   iconsPngFile?: GoogleAppsScript.Base.Blob;
   iconsJsonFile?: GoogleAppsScript.Base.Blob;
+  /** Validation warnings attached by parseExtractedFiles. Not part of the archive format. */
+  _validationWarnings?: string[];
 }
 
 /** Result of file extraction */

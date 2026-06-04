@@ -863,7 +863,7 @@ function importConfigurationFile(
     // Collect all warnings: extraction + config validation
     const allWarnings = [
       ...(extractionResult.validationWarnings || []),
-      ...((configData as Record<string, unknown>)._validationWarnings || []),
+      ...(configData._validationWarnings || []),
     ];
 
     return {

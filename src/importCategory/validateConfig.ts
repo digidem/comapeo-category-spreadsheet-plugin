@@ -84,9 +84,12 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
 
   // Add summary if errors were capped
   if (errors.length >= MAX_VALIDATION_ERRORS) {
-    const totalIssues = /* approximate total */ (Array.isArray(cfg.presets) ? cfg.presets.length : 0)
+    const totalItems = (Array.isArray(cfg.presets) ? cfg.presets.length : 0)
       + (Array.isArray(cfg.fields) ? cfg.fields.length : 0);
-    errors.push(`... and ${totalIssues - MAX_VALIDATION_ERRORS} more issues (showing first ${MAX_VALIDATION_ERRORS})`);
+    const remainingItems = totalItems - MAX_VALIDATION_ERRORS;
+    if (remainingItems > 0) {
+      errors.push(`... and up to ${remainingItems} more issues (showing first ${MAX_VALIDATION_ERRORS})`);
+    }
   }
 
   return {
