@@ -12,7 +12,7 @@ declare function extractConfigurationData(
   tempFolder: GoogleAppsScript.Drive.Folder,
 ): ImportedConfig;
 declare function normalizeConfig(jsonData: unknown): NormalizedConfig;
-declare function applyConfigurationToSpreadsheet(config: ImportedConfig): void;
+declare function applyConfigurationToSpreadsheet(config: NormalizedConfig, onProgress?: (update: { percent: number; stage: string; detail?: string }) => void): void;
 
 /**
  * Interface for dropzone configuration options
