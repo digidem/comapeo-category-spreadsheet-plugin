@@ -2,7 +2,7 @@
 // Apps Script will compile all .ts files together, making them globally available
 
 let activeUserLocale = Session.getActiveUserLocale().split("_")[0];
-const supportedLocales = ["en", "es"];
+const supportedLocales = ["en", "es", "pt"];
 const defaultLocale = "en";
 let activeLocale = supportedLocales.includes(activeUserLocale)
   ? activeUserLocale
