@@ -132,7 +132,7 @@ function checkUnreferencedDetails(): void {
     const categoriesLastRow = categoriesSheet.getLastRow();
     if (categoriesLastRow <= 1) {
       // No categories exist, so all details are unreferenced
-      console.log("No categories exist - all details are unreferenced");
+      getScopedLogger("LintUnreferencedDetails").info("No categories exist - all details are unreferenced");
       for (const entry of detailEntries) {
         appendLintNote(
           detailsSheet.getRange(entry.row, 1),
@@ -196,7 +196,7 @@ function checkUnreferencedDetails(): void {
           (referencedFields.has(entry.explicitId) ||
             referencedFields.has(entry.explicitId.toLowerCase())));
       if (!isReferenced) {
-        console.log(
+        getScopedLogger("LintUnreferencedDetails").info(
           `Unreferenced detail: "${entry.slug}" at row ${entry.row}`,
         );
         const cell = detailsSheet.getRange(entry.row, 1);
@@ -208,7 +208,7 @@ function checkUnreferencedDetails(): void {
       }
     }
   } catch (error) {
-    console.error("Error checking unreferenced details:", error);
+    getScopedLogger("LintUnreferencedDetails").error("Error checking unreferenced details:", error);
   }
 }
 
@@ -225,7 +225,7 @@ function validateUniversalFlag(
 
   const upperValue = value.toString().trim().toUpperCase();
   if (upperValue !== "TRUE" && upperValue !== "FALSE") {
-    console.log(
+    getScopedLogger("LintDetails").info(
       `Invalid Universal flag value "${value}" at row ${row} - must be TRUE, FALSE, or blank`,
     );
     setInvalidCellBackground(sheet, row, col, LINT_ERROR_BG); // Light red for invalid
@@ -235,7 +235,7 @@ function validateUniversalFlag(
 function lintDetailsSheet(): void {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
   if (!sheet) {
-    console.log("Details sheet not found");
+    getScopedLogger("LintDetails").info("Details sheet not found");
     return;
   }
 
@@ -285,7 +285,7 @@ function lintDetailsSheet(): void {
             ?.getRange(row, col)
             .setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          getScopedLogger("LintDetails").error(
             "Error capitalizing detail name at row " +
               row +
               ", col " +
@@ -308,7 +308,7 @@ function lintDetailsSheet(): void {
             ?.getRange(row, col)
             .setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          getScopedLogger("LintDetails").error(
             "Error capitalizing helper text at row " +
               row +
               ", col " +
@@ -348,7 +348,7 @@ function lintDetailsSheet(): void {
 
       if (!validTypes.includes(firstChar)) {
         try {
-          console.log("Invalid type '" + value + "' at row " + row);
+          getScopedLogger("LintDetails").info("Invalid type '" + value + "' at row " + row);
           if (detailsSheet) {
             setLintNote(
               detailsSheet.getRange(row, col),
@@ -357,7 +357,7 @@ function lintDetailsSheet(): void {
             );
           }
         } catch (error) {
-          console.error(
+          getScopedLogger("LintDetails").error(
             "Error highlighting invalid type at row " +
               row +
               ", col " +
@@ -412,7 +412,7 @@ function lintDetailsSheet(): void {
         if (isSelectField) {
           // Select fields MUST have options
           if (isEmptyOrWhitespace(value)) {
-            console.log(
+            getScopedLogger("LintDetails").info(
               "Select field at row " + row + " is missing required options",
             );
             setLintNote(
@@ -427,7 +427,7 @@ function lintDetailsSheet(): void {
           const parsed = parseCanonicalOptions(value);
 
           if (parsed.length === 0) {
-            console.log(
+            getScopedLogger("LintDetails").info(
               "Select field at row " +
                 row +
                 " has empty options after trimming",
@@ -482,7 +482,7 @@ function lintDetailsSheet(): void {
               "warning",
             );
 
-            console.log(
+            getScopedLogger("LintDetails").info(
               `Row ${row}: Removed ${removedDuplicates.length} duplicate option(s): ${removedDuplicates.join(", ")}`,
             );
             return;
@@ -503,7 +503,7 @@ function lintDetailsSheet(): void {
           }
         }
       } catch (error) {
-        console.error(
+        getScopedLogger("LintDetails").error(
           "Error validating options at row " + row + ", col " + col + ":",
           error,
         );

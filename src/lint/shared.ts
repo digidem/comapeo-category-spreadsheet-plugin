@@ -451,7 +451,7 @@ function cleanWhitespaceOnlyCells(
 
   if (changesMade) {
     range.setValues(values);
-    console.log(`Cleaned whitespace-only cells in ${sheet.getName()}`);
+    getScopedLogger("LintWhitespace").info(`Cleaned whitespace-only cells in ${sheet.getName()}`);
   }
 }
 
@@ -540,7 +540,7 @@ function checkForDuplicates(
   // Highlight duplicates
   duplicates.forEach((rows, value) => {
     if (rows.length > 1) {
-      console.log(
+      getScopedLogger("LintDuplicates").info(
         'Found duplicate value "' + value + '" in rows: ' + rows.join(", "),
       );
       const otherRowsStr = rows.join(", ");

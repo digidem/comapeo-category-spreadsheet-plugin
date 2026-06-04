@@ -54,7 +54,7 @@ function checkDuplicateTranslationSlugs(): void {
         // Highlight cells with duplicate slugs
         for (const [slug, rows] of slugCounts.entries()) {
           if (rows.length > 1) {
-            console.log(
+            getScopedLogger("LintTranslationSlugs").info(
               `Duplicate slug "${slug}" in ${sheetName} column ${col} at rows: ${rows.join(", ")}`,
             );
             const otherRowsStr = rows.join(", ");
@@ -69,7 +69,7 @@ function checkDuplicateTranslationSlugs(): void {
         }
       }
     } catch (error) {
-      console.error(`Error checking duplicate slugs in ${sheetName}:`, error);
+      getScopedLogger("LintTranslationSlugs").error(`Error checking duplicate slugs in ${sheetName}:`, error);
     }
   }
 }
@@ -120,7 +120,7 @@ function validateTranslationHeaders(): void {
         const parsedCode = resolveHeaderCode(header);
 
         if (!parsedCode) {
-          console.log(
+          getScopedLogger("LintTranslationHeaders").info(
             `Invalid translation header "${header}" in ${sheetName} column ${i + 1} - should be a language name, ISO code, or "Name - ISO" format`,
           );
           setLintNote(
@@ -156,7 +156,7 @@ function validateTranslationHeaders(): void {
         }
       });
     } catch (error) {
-      console.error(`Error validating headers in ${sheetName}:`, error);
+      getScopedLogger("LintTranslationHeaders").error(`Error validating headers in ${sheetName}:`, error);
     }
   }
 }
@@ -165,7 +165,7 @@ function validateTranslationHeaders(): void {
  * Validates that translation sheets have consistent headers and row counts with their source sheets.
  */
 function validateTranslationSheetConsistency(): void {
-  console.log("Validating translation sheet consistency...");
+  getScopedLogger("LintTranslationConsistency").info("Validating translation sheet consistency...");
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -227,9 +227,9 @@ function validateTranslationSheetConsistency(): void {
       }
     }
 
-    console.log("Translation sheet consistency validation complete");
+    getScopedLogger("LintTranslationConsistency").info("Translation sheet consistency validation complete");
   } catch (error) {
-    console.error("Error validating translation sheet consistency:", error);
+    getScopedLogger("LintTranslationConsistency").error("Error validating translation sheet consistency:", error);
   }
 }
 
@@ -247,7 +247,7 @@ function validateSheetConsistency(
   translationSheetName: string,
   validateOptionCounts: boolean,
 ): void {
-  console.log(
+  getScopedLogger("LintTranslationConsistency").debug(
     `Validating consistency for ${translationSheetName} against ${sourceSheet.getName()}`,
   );
 
@@ -275,7 +275,7 @@ function validateSheetConsistency(
 
     // Check row count consistency (excluding header)
     if (sourceRowCount !== translationRowCount) {
-      console.warn(
+      getScopedLogger("LintTranslationConsistency").warn(
         `Row count mismatch in ${translationSheetName}: ` +
           `Source has ${sourceRowCount} rows, translation has ${translationRowCount} rows`,
       );
@@ -343,7 +343,7 @@ function validateSheetConsistency(
             translationValue,
           });
 
-          console.warn(
+          getScopedLogger("LintTranslationConsistency").warn(
             `Primary column mismatch in ${translationSheetName} row ${i + 2}: ` +
               `Source="${sourceValue}", Translation="${translationValue}"`,
           );
@@ -408,7 +408,7 @@ function validateSheetConsistency(
             .filter((opt) => opt !== "").length;
 
           if (sourceOptionCount !== translatedOptionCount) {
-            console.warn(
+            getScopedLogger("LintTranslationConsistency").warn(
               `Option count mismatch in ${translationSheetName} at row ${i + 2}, column ${col + 1}: ` +
                 `Expected ${sourceOptionCount} options, found ${translatedOptionCount}`,
             );
@@ -429,7 +429,7 @@ function validateSheetConsistency(
       }
     }
   } catch (error) {
-    console.error(
+    getScopedLogger("LintTranslationConsistency").error(
       `Error validating ${translationSheetName} consistency:`,
       error,
     );
@@ -493,7 +493,7 @@ function checkTranslationSourceOverwrites(): void {
         }
       });
     } catch (error) {
-      console.error(
+      getScopedLogger("LintTranslationSourceOverwrites").error(
         `Error checking source overwrites in ${sheetName}:`,
         error,
       );
@@ -503,7 +503,7 @@ function checkTranslationSourceOverwrites(): void {
 
 function lintTranslationSheets(): void {
   // First validate translation headers
-  console.log("Validating translation headers...");
+  getScopedLogger("LintTranslations").info("Validating translation headers...");
   validateTranslationHeaders();
 
   const translationSheets = sheets(true);
@@ -511,12 +511,12 @@ function lintTranslationSheets(): void {
     const sheet =
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) {
-      console.error(`Sheet "${sheetName}" not found`);
+      getScopedLogger("LintTranslations").error(`Sheet "${sheetName}" not found`);
       return;
     }
 
     try {
-      console.log("Linting translation sheet: " + sheetName);
+      getScopedLogger("LintTranslations").info("Linting translation sheet: " + sheetName);
 
       // First clean any whitespace-only cells
       cleanWhitespaceOnlyCells(
@@ -540,9 +540,9 @@ function lintTranslationSheets(): void {
 
       // Update the sheet with the capitalized data
       sheet.getDataRange().setValues(updatedData);
-      console.log("Finished linting translation sheet: " + sheetName);
+      getScopedLogger("LintTranslations").info("Finished linting translation sheet: " + sheetName);
     } catch (error) {
-      console.error(
+      getScopedLogger("LintTranslations").error(
         "Error linting translation sheet " + sheetName + ":",
         error,
       );
@@ -772,7 +772,7 @@ function fixTranslationMismatches(
       categoryTranslationsSheet
         .getRange(2, 1, lastRow - 1, 1)
         .setFormula(formula);
-      console.log(
+      getScopedLogger("LintFixTranslationSheets").info(
         `Re-synced Category Translations formulas (rows 2-${lastRow})`,
       );
     }
@@ -791,7 +791,7 @@ function fixTranslationMismatches(
       if (detailLabelSheet) {
         const formula = `=Details!A2:A${lastRow}`;
         detailLabelSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        getScopedLogger("LintFixTranslationSheets").info(
           `Re-synced Detail Label Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -803,7 +803,7 @@ function fixTranslationMismatches(
       if (detailHelperSheet) {
         const formula = `=Details!B2:B${lastRow}`;
         detailHelperSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        getScopedLogger("LintFixTranslationSheets").info(
           `Re-synced Detail Helper Text Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -815,7 +815,7 @@ function fixTranslationMismatches(
       if (detailOptionSheet) {
         const formula = `=Details!D2:D${lastRow}`;
         detailOptionSheet.getRange(2, 1, lastRow - 1, 1).setFormula(formula);
-        console.log(
+        getScopedLogger("LintFixTranslationSheets").info(
           `Re-synced Detail Option Translations formulas (rows 2-${lastRow})`,
         );
       }
@@ -824,7 +824,7 @@ function fixTranslationMismatches(
 
   // Re-translate if requested
   if (reTranslate) {
-    console.log("Re-running translation for configured languages...");
+    getScopedLogger("LintFixTranslationSheets").info("Re-running translation for configured languages...");
 
     // Get configured target languages from Category Translations headers
     if (categoryTranslationsSheet) {
@@ -862,7 +862,7 @@ function fixTranslationMismatches(
         }
 
         if (targetLanguages.length > 0) {
-          console.log(
+          getScopedLogger("LintFixTranslationSheets").info(
             `Re-translating to languages: ${targetLanguages.join(", ")}`,
           );
 
@@ -871,7 +871,7 @@ function fixTranslationMismatches(
           const mismatchResult = mismatchData || detectTranslationMismatches();
 
           if (mismatchResult && mismatchResult.hasMismatches) {
-            console.log(
+            getScopedLogger("LintFixTranslationSheets").info(
               `Found ${mismatchResult.details.length} translation sheet(s) with mismatches`,
             );
 
@@ -888,18 +888,18 @@ function fixTranslationMismatches(
                 sheet.getRange(row, 2, 1, colCount).clearContent();
               });
 
-              console.log(
+              getScopedLogger("LintFixTranslationSheets").info(
                 `Cleared translations for ${mismatchedRows.length} mismatched row(s) in ${detail.sheetName}: ` +
                   `rows ${mismatchedRows.join(", ")}`,
               );
             });
           } else {
-            console.log("No mismatches detected, skipping clearing step");
+            getScopedLogger("LintFixTranslationSheets").info("No mismatches detected, skipping clearing step");
           }
 
           autoTranslateSheetsBidirectional(targetLanguages);
         } else {
-          console.log(
+          getScopedLogger("LintFixTranslationSheets").info(
             "No target languages found in headers, skipping re-translation",
           );
         }
@@ -925,5 +925,5 @@ function fixTranslationMismatches(
     }
   });
 
-  console.log("Translation sheet fix complete");
+  getScopedLogger("LintFixTranslationSheets").info("Translation sheet fix complete");
 }

@@ -134,7 +134,7 @@ function validateDialogHtml(html: string, context: string = "Dialog"): void {
 
   if (!validation.isValid) {
     const errorMessage = `HTML validation failed for ${context}:\n${validation.errors.join("\n")}`;
-    console.error(errorMessage);
+    getScopedLogger("LintHtmlValidation").error(errorMessage);
     throw new Error(
       `Malformed HTML detected in ${context}. Please check the console for details.`,
     );
@@ -142,7 +142,7 @@ function validateDialogHtml(html: string, context: string = "Dialog"): void {
 
   // Additional checks specific to Google Apps Script dialogs
   if (html.length > 500000) {
-    console.warn(
+    getScopedLogger("LintHtmlValidation").warn(
       `HTML content for ${context} is very large (${html.length} characters). This may cause performance issues.`,
     );
   }

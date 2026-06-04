@@ -326,13 +326,13 @@ function validateCategoryIcons(): void {
   const categoriesSheet = spreadsheet.getSheetByName("Categories");
 
   if (!categoriesSheet) {
-    console.log("Categories sheet not found during icon validation");
+    getScopedLogger("LintCategoryIcons").info("Categories sheet not found during icon validation");
     return;
   }
 
   const lastRow = categoriesSheet.getLastRow();
   if (lastRow <= 1) {
-    console.log("No category rows available for icon validation");
+    getScopedLogger("LintCategoryIcons").info("No category rows available for icon validation");
     return;
   }
 
@@ -570,13 +570,13 @@ function validateCategoryIcons(): void {
   rowIssues.forEach((messages, rowNumber) => {
     const cell = categoriesSheet.getRange(rowNumber, 2);
     setLintNote(cell, messages.join("\n"), "error");
-    console.warn(
+    getScopedLogger("LintCategoryIcons").warn(
       `Icon issue in Categories row ${rowNumber}: ${messages.join(" | ")}`,
     );
   });
 
   if (rowIssues.size === 0) {
-    console.log("Category icon validation completed with no issues found.");
+    getScopedLogger("LintCategoryIcons").info("Category icon validation completed with no issues found.");
   }
 }
 
@@ -726,7 +726,7 @@ function lintCategoriesSheet(): void {
         try {
           categoriesSheetRef?.getRange(row, col).setValue(capitalizedValue);
         } catch (error) {
-          console.error(
+          getScopedLogger("LintCategories").error(
             "Error capitalizing value in Categories sheet at row " +
               row +
               ", col " +
@@ -765,7 +765,7 @@ function lintCategoriesSheet(): void {
           }
 
           if (invalidFields.length > 0) {
-            console.log(
+            getScopedLogger("LintCategories").info(
               "Invalid fields in row " + row + ": " + invalidFields.join(", "),
             );
             const cell = categoriesSheetRef?.getRange(row, col);
@@ -779,7 +779,7 @@ function lintCategoriesSheet(): void {
           }
         }
       } catch (error) {
-        console.error(
+        getScopedLogger("LintCategories").error(
           "Error validating fields in Categories sheet at row " +
             row +
             ", col " +

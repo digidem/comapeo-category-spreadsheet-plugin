@@ -7,19 +7,17 @@ function lintSheet(
   requiredColumns: number[] = [],
   preserveBackgroundColumns: number[] = [],
 ): void {
-  console.time(`Linting ${sheetName}`);
+  getScopedLogger("LintSheet").debug(`Linting ${sheetName}`);
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
-    console.log(`${sheetName} sheet not found`);
-    console.timeEnd(`Linting ${sheetName}`);
+    getScopedLogger("LintSheet").info(`${sheetName} sheet not found`);
     return;
   }
 
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
-    console.log(`${sheetName} sheet is empty or contains only header`);
-    console.timeEnd(`Linting ${sheetName}`);
+    getScopedLogger("LintSheet").info(`${sheetName} sheet is empty or contains only header`);
     return;
   }
 
@@ -45,7 +43,7 @@ function lintSheet(
     }
 
     // First clean any whitespace-only cells
-    console.time(`Cleaning whitespace cells for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Cleaning whitespace cells for ${sheetName}`);
     cleanWhitespaceOnlyCells(
       sheet,
       2,
@@ -53,16 +51,16 @@ function lintSheet(
       lastRow - 1,
       columnValidations.length,
     );
-    console.timeEnd(`Cleaning whitespace cells for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Cleaning whitespace cells for ${sheetName} complete`);
 
     // Check for duplicates in the first column (usually the name/identifier column)
     // Preserve background for columns in preserveBackgroundColumns (e.g., Categories
     // column A has user-managed category colors that the builder reads at export time).
-    console.time(`Checking for duplicates in ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Checking for duplicates in ${sheetName}`);
     checkForDuplicates(sheet, 1, 2, preserveBackgroundColumns.includes(0));
-    console.timeEnd(`Checking for duplicates in ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Checking for duplicates in ${sheetName} complete`);
 
-    console.time(`Getting data for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Getting data for ${sheetName}`);
     // Get all data from the sheet, excluding the header row
     const dataRange = sheet.getRange(
       2,
@@ -71,9 +69,9 @@ function lintSheet(
       columnValidations.length,
     );
     const data = dataRange.getValues();
-    console.timeEnd(`Getting data for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Getting data for ${sheetName} complete`);
 
-    console.time(`Validating cells for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Validating cells for ${sheetName}`);
 
     // Highlight required fields in batches before running column validations
     if (requiredColumns.length > 0) {
@@ -137,13 +135,11 @@ function lintSheet(
         }
       });
     });
-    console.timeEnd(`Validating cells for ${sheetName}`);
+    getScopedLogger("LintSheet").debug(`Validating cells for ${sheetName} complete`);
 
-    console.log(`${sheetName} sheet linting completed`);
+    getScopedLogger("LintSheet").info(`${sheetName} sheet linting completed`);
   } catch (error) {
-    console.error(`Error linting ${sheetName} sheet:`, error);
-  } finally {
-    console.timeEnd(`Linting ${sheetName}`);
+    getScopedLogger("LintSheet").error(`Error linting ${sheetName} sheet:`, error);
   }
 }
 
@@ -157,15 +153,15 @@ function lintAllSheets(showAlerts: boolean = true): void {
     // Clear cross-run caches so Drive file changes are picked up
     driveIconInfoCache.clear();
 
-    console.log("Starting linting process...");
+    getScopedLogger("LintAllSheets").info("Starting linting process...");
 
-    console.log("Linting Categories sheet...");
+    getScopedLogger("LintAllSheets").info("Linting Categories sheet...");
     lintCategoriesSheet();
 
-    console.log("Linting Details sheet...");
+    getScopedLogger("LintAllSheets").info("Linting Details sheet...");
     lintDetailsSheet();
 
-    console.log("Linting Icons sheet...");
+    getScopedLogger("LintAllSheets").info("Linting Icons sheet...");
     lintIconsSheet();
 
     // Phase 5: Cross-sheet icon checks
@@ -174,7 +170,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
     // Phase 6 Task 1: Inline SVG size warnings/errors
     checkInlineSvgSizes();
 
-    console.log("Linting Translation sheets...");
+    getScopedLogger("LintAllSheets").info("Linting Translation sheets...");
     lintTranslationSheets();
 
     const strictLintMetrics = collectStrictLintMetrics();
@@ -182,13 +178,13 @@ function lintAllSheets(showAlerts: boolean = true): void {
     // Phase 6 Task 2: Per-locale translation payload size checks
     checkTranslationPayloadSizes(strictLintMetrics);
 
-    console.log("Linting Metadata sheet...");
+    getScopedLogger("LintAllSheets").info("Linting Metadata sheet...");
     lintMetadataSheet();
 
     // Phase 6 Task 3: Total entity count check
     checkTotalEntityCounts(strictLintMetrics);
 
-    console.log("Finished linting all sheets.");
+    getScopedLogger("LintAllSheets").info("Finished linting all sheets.");
 
     // Add a summary of issues found, but only if showAlerts is true
     if (showAlerts) {
@@ -207,7 +203,7 @@ function lintAllSheets(showAlerts: boolean = true): void {
       );
     }
   } catch (error) {
-    console.error("Error during linting process:", error);
+    getScopedLogger("LintAllSheets").error("Error during linting process:", error);
 
     // Only show error alert if showAlerts is true
     if (showAlerts) {
