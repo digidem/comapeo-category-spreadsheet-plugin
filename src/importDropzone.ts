@@ -859,6 +859,13 @@ function importConfigurationFile(
     // Return success
     console.log("Import completed successfully");
     const fileType = fileName.endsWith(".comapeocat") ? "CoMapeo" : "Mapeo";
+
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...((configData as Record<string, unknown>)._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: `${fileType} category file imported successfully`,
@@ -868,7 +875,7 @@ function importConfigurationFile(
         icons: configData.icons ? configData.icons.length : 0,
         languages: Object.keys(configData.messages).length,
       },
-      warnings: extractionResult.validationWarnings || [],
+      warnings: allWarnings,
     };
   } catch (error) {
     console.error("Error importing configuration file:", error);

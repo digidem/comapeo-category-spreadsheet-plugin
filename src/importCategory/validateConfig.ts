@@ -1,3 +1,6 @@
+/** Maximum number of validation errors to report. Prevents memory issues on corrupt archives. */
+const MAX_VALIDATION_ERRORS = 20;
+
 /**
  * Validates the structure of imported configuration data before applying to spreadsheet.
  * Catches malformed .comapeocat files early with clear error messages.
@@ -34,7 +37,7 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
 
   // Validate presets structure (if present)
   if (Array.isArray(cfg.presets)) {
-    for (let i = 0; i < cfg.presets.length; i++) {
+    for (let i = 0; i < cfg.presets.length && errors.length < MAX_VALIDATION_ERRORS; i++) {
       const preset = cfg.presets[i];
       if (!preset || typeof preset !== "object") {
         errors.push(`Preset at index ${i} is not a valid object`);
@@ -49,7 +52,7 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
 
   // Validate fields structure (if present)
   if (Array.isArray(cfg.fields)) {
-    for (let i = 0; i < cfg.fields.length; i++) {
+    for (let i = 0; i < cfg.fields.length && errors.length < MAX_VALIDATION_ERRORS; i++) {
       const field = cfg.fields[i];
       if (!field || typeof field !== "object") {
         errors.push(`Field at index ${i} is not a valid object`);
@@ -77,6 +80,13 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
   const hasMessages = Object.keys(messagesObj).length > 0;
   if (allArraysValid && cfg.presets.length === 0 && cfg.fields.length === 0 && cfg.icons.length === 0 && !hasMessages) {
     errors.push("Configuration appears empty — no presets, fields, icons, or messages found");
+  }
+
+  // Add summary if errors were capped
+  if (errors.length >= MAX_VALIDATION_ERRORS) {
+    const totalIssues = /* approximate total */ (Array.isArray(cfg.presets) ? cfg.presets.length : 0)
+      + (Array.isArray(cfg.fields) ? cfg.fields.length : 0);
+    errors.push(`... and ${totalIssues - MAX_VALIDATION_ERRORS} more issues (showing first ${MAX_VALIDATION_ERRORS})`);
   }
 
   return {

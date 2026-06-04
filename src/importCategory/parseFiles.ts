@@ -590,7 +590,8 @@ function parseExtractedFiles(
 		getScopedLogger("ParseFiles").warn(
 			`Imported config validation warnings: ${validation.errors.join("; ")}`,
 		);
-		// Don't fail the import — just warn. Some fields may be optional.
+		// Attach warnings so callers can surface them to the user
+		(configData as Record<string, unknown>)._validationWarnings = validation.errors;
 	} else {
 		getScopedLogger("ParseFiles").info("Imported config passed validation");
 	}
