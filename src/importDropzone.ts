@@ -11,7 +11,7 @@ declare function extractConfigurationData(
   extractedFiles: GoogleAppsScript.Base.Blob[],
   tempFolder: GoogleAppsScript.Drive.Folder,
 ): ImportedConfig;
-declare function normalizeConfig(jsonData: unknown): ImportedConfig;
+declare function normalizeConfig(jsonData: unknown): NormalizedConfig;
 declare function applyConfigurationToSpreadsheet(config: ImportedConfig): void;
 
 /**

@@ -317,7 +317,10 @@ function parseExtractedFiles(
 					) {
 						for (const fieldId in content.fields) {
 							const rawField = content.fields[fieldId];
-							if (!rawField || typeof rawField !== "object") continue;
+							if (!rawField || typeof rawField !== "object") {
+								getScopedLogger("ParseFiles").warn(`Skipping invalid field entry '${fieldId}' (not an object)`);
+								continue;
+							}
 							const field = rawField as Record<string, unknown>;
 
 							// Convert field type
