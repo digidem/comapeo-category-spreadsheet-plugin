@@ -97,6 +97,12 @@ function processImportedCategoryFile(
       }
     }
 
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...(configData._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: "Category file imported successfully",
@@ -106,7 +112,7 @@ function processImportedCategoryFile(
         icons: configData.icons.length,
         languages: Object.keys(configData.messages).length,
       },
-      warnings: extractionResult.validationWarnings || [],
+      warnings: allWarnings,
     };
   } catch (error) {
     getScopedLogger("ImportCategory").error("Error processing imported file:", error);
