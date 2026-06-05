@@ -17,6 +17,29 @@ const DETAIL_OPTION_TRANSLATIONS_SHEET = "Detail Option Translations";
 const DETAILS_HELPER_TEXT_COLUMN = "B";
 const DETAILS_OPTIONS_COLUMN = "D";
 
+/** Cross-sheet translation cache. Persists across multiple sheet translations in a single run. */
+let crossSheetTranslationCache = new Map<string, string>();
+
+/** Clear the cross-sheet translation cache. Call at the start of a full translation run. */
+function clearTranslationCache(): void {
+  crossSheetTranslationCache.clear();
+}
+
+/** Rate limiter for API calls. Enforces minimum interval between calls. */
+const TRANSLATE_CALLS_PER_SECOND = 5;
+const TRANSLATE_MIN_INTERVAL_MS = Math.ceil(1000 / TRANSLATE_CALLS_PER_SECOND);
+let lastTranslateCallTime = 0;
+
+function rateLimitedTranslate(text: string, sourceLang: string, targetLang: string): string {
+  const now = Date.now();
+  const elapsed = now - lastTranslateCallTime;
+  if (elapsed < TRANSLATE_MIN_INTERVAL_MS) {
+    Utilities.sleep(TRANSLATE_MIN_INTERVAL_MS - elapsed);
+  }
+  lastTranslateCallTime = Date.now();
+  return LanguageApp.translate(text, sourceLang, targetLang);
+}
+
 function normalizeLanguageSelection(
   selection: TranslationLanguage[] | LanguageSelectionPayload | null | undefined,
 ): LanguageSelectionPayload {
@@ -144,7 +167,7 @@ function translateSheet(
       const targetCell = sheet.getRange(i, targetColumn);
       if (!targetCell.getValue()) {
         try {
-          const translation = LanguageApp.translate(
+          const translation = rateLimitedTranslate(
             originalText,
             mainLanguage,
             targetLanguage,
@@ -220,7 +243,7 @@ function translateSheetBidirectional(
   let translationErrors: string[] = [];
   let successfulTranslations = 0;
 
-  const translationCache = new Map<string, string>();
+  const translationCache = crossSheetTranslationCache;
   const allLanguages: LanguageMap = getAllLanguages();
   const resolveHeaderCode = createTranslationHeaderResolver(allLanguages);
   const headerCodeToIndex = new Map<string, number>();
@@ -264,6 +287,66 @@ function translateSheetBidirectional(
       updatedColumns.set(columnIndex, columnValues.slice());
     });
 
+    // Phase 1: Collect all unique (sourceText, targetLang) pairs needing translation
+    const pendingTranslations = new Map<string, { sourceText: string; targetLang: string }>();
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      const rawValue = sheetValues[rowIndex][0];
+      const originalText = typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "").trim();
+      if (!originalText) {
+        continue;
+      }
+
+      targetColumnIndexes.forEach((_columnIndex, targetLang) => {
+        const columnValues = updatedColumns.get(_columnIndex);
+        if (!columnValues) {
+          return;
+        }
+
+        const existingValue = columnValues[rowIndex];
+        if (existingValue && String(existingValue).trim() !== "") {
+          return;
+        }
+
+        const cacheKey = `${actualSourceLanguage}::${targetLang}::${originalText}`;
+        if (!translationCache.has(cacheKey) && !pendingTranslations.has(cacheKey)) {
+          pendingTranslations.set(cacheKey, { sourceText: originalText, targetLang });
+        }
+      });
+    }
+
+    getTranslationServiceLogger().info(
+      `[Phase 1] Collected ${pendingTranslations.size} unique translations needed for ${sheetName}`,
+    );
+
+    // Phase 2: Translate all unique texts
+    const prePhase2ErrorCount = translationErrors.length;
+    let translateIndex = 0;
+    for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
+      translateIndex++;
+      try {
+        const translatedText = rateLimitedTranslate(
+          sourceText,
+          actualSourceLanguage,
+          targetLang,
+        );
+        const translation = translatedText ? translatedText.trim() : "";
+        if (translation) {
+          translationCache.set(cacheKey, translation);
+        }
+      } catch (error) {
+        const errorMessage = `Translation error for "${sourceText}" → ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${(error as Error).message}`;
+        getTranslationServiceLogger().error(errorMessage);
+        translationErrors.push(errorMessage);
+      }
+    }
+
+    const phase2Errors = translationErrors.length - prePhase2ErrorCount;
+    getTranslationServiceLogger().info(
+      `[Phase 2] Attempted ${pendingTranslations.size} unique pairs, ${pendingTranslations.size - phase2Errors} succeeded, ${phase2Errors} errors`,
+    );
+
+    // Phase 3: Fill column values from cache
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const rawValue = sheetValues[rowIndex][0];
       const originalText = typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "").trim();
@@ -282,27 +365,8 @@ function translateSheetBidirectional(
           return;
         }
 
-        const cacheKey = `${targetLang}::${originalText}`;
-        let translation = translationCache.get(cacheKey);
-
-        if (!translation) {
-          try {
-            const translatedText = LanguageApp.translate(
-              originalText,
-              actualSourceLanguage,
-              targetLang,
-            );
-            translation = translatedText ? translatedText.trim() : "";
-            if (translation) {
-              translationCache.set(cacheKey, translation);
-            }
-          } catch (error) {
-            const errorMessage = `Translation error for ${targetLang} (row ${rowIndex + 2}): ${error.message}`;
-            getTranslationServiceLogger().error(errorMessage);
-            translationErrors.push(errorMessage);
-            translation = "";
-          }
-        }
+        const cacheKey = `${actualSourceLanguage}::${targetLang}::${originalText}`;
+        const translation = translationCache.get(cacheKey);
 
         if (translation) {
           columnValues[rowIndex] = translation;
@@ -629,6 +693,8 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   getTranslationServiceLogger().info("[TRANSLATION] Starting bidirectional translation");
   getTranslationServiceLogger().info("[TRANSLATION] Target languages count:", targetLanguages.length);
   getTranslationServiceLogger().info("[TRANSLATION] Target languages:", targetLanguages);
+
+  clearTranslationCache();
 
   const allSheets = sheets();
   const translationSheets = sheets(true);
