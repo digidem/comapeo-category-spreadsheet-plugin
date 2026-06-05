@@ -49,6 +49,31 @@ let selectTranslationLanguagesDialogText: Record<string, SelectTranslationDialog
       invalidCustomIso: "Custom ISO codes should contain letters and optional hyphens (e.g. qu, quz, pt-br).",
     },
   },
+  pt: {
+    title: "Selecionar idiomas de destino",
+    buttonText: "Traduzir",
+    skipButtonText: "Cancelar",
+    message: [
+      "Selecione os idiomas para os quais deseja traduzir automaticamente de {{sourceLanguage}}:",
+      "Apenas os idiomas selecionados abaixo receberão traduções automáticas.",
+      "Adicione idiomas manuais na seção abaixo.",
+    ],
+    manualSectionTitle: "Idiomas personalizados (colunas manuais)",
+    manualSectionDescription: [
+      "Adicione colunas de idiomas adicionais em todas as planilhas de tradução.",
+      "Estes idiomas não são traduzidos automaticamente — você pode preenchê-los depois.",
+    ],
+    manualDropdownPlaceholder: "Selecione um idioma comum",
+    manualAddButton: "Adicionar outro idioma",
+    manualNamePlaceholder: "Nome do idioma (ex. Quíchua)",
+    manualIsoPlaceholder: "Código ISO (ex. qu)",
+    validationMessages: {
+      noAutoSelection: "Selecione pelo menos um idioma para traduzir ou clique em 'Cancelar'.",
+      missingCustomFields: "Preencha o nome e o código ISO para cada idioma personalizado.",
+      duplicateCustomIso: "Códigos ISO personalizados duplicados. Verifique e tente novamente.",
+      invalidCustomIso: "Os códigos ISO devem conter letras e hifens opcionais (ex. qu, quz, pt-br).",
+    },
+  },
 };
 
 let iconDialogTexts: Record<string, DialogText> = {
@@ -70,6 +95,15 @@ let iconDialogTexts: Record<string, DialogText> = {
     ],
     buttonText: "View Generated Icons",
   },
+  pt: {
+    title: "Ícones CoMapeo Gerados",
+    message: [
+      "Seus ícones CoMapeo foram gerados com sucesso e salvos em uma pasta no Google Drive.",
+      "Para visualizar e gerenciar seus ícones, clique no botão abaixo. Você pode baixar, modificar ou substituir os ícones conforme necessário.",
+      "Lembre-se de atualizar as URLs dos ícones na planilha se fizer alguma alteração.",
+    ],
+    buttonText: "Ver Ícones Gerados",
+  },
 };
 
 let generatedConfigDialogTexts: Record<string, DialogText> = {
@@ -89,6 +123,14 @@ let generatedConfigDialogTexts: Record<string, DialogText> = {
     ],
     buttonText: "Download CoMapeo Category",
   },
+  pt: {
+    title: "Categoria CoMapeo Gerada",
+    message: [
+      "Seu arquivo de Categoria CoMapeo foi gerado com sucesso e salvo no Google Drive.",
+      "Para baixar ou compartilhar, clique no botão abaixo. O arquivo .comapeocat está pronto para importação no aplicativo CoMapeo.",
+    ],
+    buttonText: "Baixar Categoria CoMapeo",
+  },
 };
 
 let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
@@ -99,8 +141,7 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
       "La lógica de trabajo para crear y organizar categorías de CoMapeo es la siguiente:",
     ],
     instructions: [
-      // TODO: sheets shouls also be translated
-      "Edita las hojas llamadas 'Categories' y 'Details' para definir sus categorías propias y sus detalles asociados. Note que el color de fondo que seleccione para las categorías e íconos se verá reflejado en la app de CoMapeo",
+      "Edita las hojas llamadas 'Categories' (categorías) y 'Details' (detalles) para definir sus categorías propias y sus detalles asociados. Note que el color de fondo que seleccione para las categorías e íconos se verá reflejado en la app de CoMapeo",
       "Usa la opción 'Gestionar idiomas y traducir' para agregar idiomas personalizados y generar traducciones automáticamente para las celdas vacías",
       "Revise y refine las traducciones auto-generadas cuánto sea necesario",
       "Use la opción 'Generar Íconos para Categorías' para crear íconos para sus categorías. El color de fondo de los íconos coincidirá con el color que eliga en la planilla.",
@@ -112,6 +153,26 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
     ],
     footer: "Para más información, visite nuestro repositorio de Github",
     buttonText: "Visite repositorio de Github",
+  },
+  pt: {
+    title: "Ferramentas CoMapeo - Ajuda",
+    message: [
+      "Bem-vindo às ferramentas do CoMapeo! Este complemento ajudará você a organizar e criar categorias do CoMapeo. É usado assim:",
+      "A lógica de trabalho para criar e organizar categorias do CoMapeo é a seguinte:",
+    ],
+    instructions: [
+      "Edite as planilhas chamadas 'Categories' (categorias) e 'Details' (detalhes) para definir suas próprias categorias e seus detalhes associados. Observe que a cor de fundo selecionada para categorias e ícones será refletida no aplicativo CoMapeo.",
+      "Use a opção 'Gerenciar Idiomas e Traduzir' para adicionar colunas de idiomas manuais e traduzir automaticamente as células vazias.",
+      "Revise e refine as traduções geradas automaticamente conforme necessário.",
+      "Use a opção 'Gerar Ícones' para criar ícones para suas categorias. A cor de fundo dos ícones corresponderá à cor definida na planilha.",
+      "Verifique os ícones gerados na pasta de ícones e modifique-os usando o <br /><a href='https://icons.earthdefenderstoolkit.com' target='_blank'>Gerador de Ícones</a> se necessário.",
+      "Copie o link compartilhado de cada ícone e cole na célula correspondente da planilha.",
+      "Use a opção 'Validar Planilhas' para garantir a formatação e capitalização adequadas dos seus dados.",
+      "Repita as etapas anteriores conforme necessário, atualizando traduções e ícones até ficar satisfeito com os resultados.",
+      "Quando estiver pronto, use a opção 'Gerar Categoria CoMapeo' para criar seu arquivo final. Este processo pode levar alguns minutos e gerará um arquivo '.comapeocat' salvo no Google Drive, pronto para uso com o aplicativo CoMapeo.",
+    ],
+    footer: "Para mais informações, visite nosso repositório no Github",
+    buttonText: "Visite repositório no Github",
   },
   en: {
     title: "CoMapeo Tools Help",
@@ -138,6 +199,7 @@ let helpDialogTexts: Record<string, DialogText & DialogInstructions> = {
 let processingDialogTitle: Record<string, string> = {
   en: "Generating CoMapeo Category",
   es: "Generando Categoría CoMapeo",
+  pt: "Gerando Categoria CoMapeo",
 };
 
 let iconErrorDialogTexts: Record<string, IconErrorDialogText> = {
@@ -153,6 +215,12 @@ let iconErrorDialogTexts: Record<string, IconErrorDialogText> = {
     continueButtonText: "Continuar de Todos Modos",
     okButtonText: "OK",
   },
+  pt: {
+    title: "Relatório de Processamento de Ícones",
+    downloadButtonText: "Baixar Relatório de Erros",
+    continueButtonText: "Continuar Mesmo Assim",
+    okButtonText: "OK",
+  },
 };
 
 let processingDialogTexts: Record<string, DialogText>[] = [
@@ -166,6 +234,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
       title: processingDialogTitle["es"],
       message: ["Inicializando... (1/8)", "Validando y leyendo datos de la planilla"],
     },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Inicializando... (1/8)", "Validando e lendo dados da planilha"],
+    },
   },
   // Step 2: Translating (conditional - only shown if languages selected)
   {
@@ -176,6 +248,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
     es: {
       title: processingDialogTitle["es"],
       message: ["Traduciendo... (2/8)", "Generando traducciones automáticas"],
+    },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Traduzindo... (2/8)", "Gerando traduções automáticas"],
     },
   },
   // Step 3: Processing data
@@ -188,6 +264,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
       title: processingDialogTitle["es"],
       message: ["Preparando solicitud... (3/8)", "Recopilando datos de la planilla"],
     },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Preparando solicitação... (3/8)", "Coletando dados da planilha"],
+    },
   },
   // Step 4: Building payload
   {
@@ -198,6 +278,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
     es: {
       title: processingDialogTitle["es"],
       message: ["Creando payload... (4/8)", "Generando JSON para la API"],
+    },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Criando payload... (4/8)", "Gerando JSON para a API"],
     },
   },
   // Step 5: Sending request
@@ -210,6 +294,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
       title: processingDialogTitle["es"],
       message: ["Enviando solicitud... (5/8)", "Enviando generación a la API"],
     },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Enviando solicitação... (5/8)", "Enviando geração para a API"],
+    },
   },
   // Step 6: Waiting for response
   {
@@ -220,6 +308,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
     es: {
       title: processingDialogTitle["es"],
       message: ["Esperando respuesta... (6/8)", "Esto puede tardar algunos minutos"],
+    },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Aguardando resposta... (6/8)", "Isso pode levar alguns minutos"],
     },
   },
   // Step 7: Saving to Drive
@@ -232,6 +324,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
       title: processingDialogTitle["es"],
       message: ["Guardando en Drive... (7/8)", "Guardando el archivo .comapeocat"],
     },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Salvando no Drive... (7/8)", "Salvando o arquivo .comapeocat"],
+    },
   },
   // Step 8: Complete
   {
@@ -242,6 +338,10 @@ let processingDialogTexts: Record<string, DialogText>[] = [
     es: {
       title: processingDialogTitle["es"],
       message: ["¡Completo! (8/8)", "Categoría CoMapeo lista para descargar"],
+    },
+    pt: {
+      title: processingDialogTitle["pt"],
+      message: ["Concluído! (8/8)", "Categoria CoMapeo pronta para baixar"],
     },
   },
 ];
