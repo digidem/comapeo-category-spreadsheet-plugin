@@ -11,6 +11,8 @@ declare function extractConfigurationData(
   extractedFiles: GoogleAppsScript.Base.Blob[],
   tempFolder: GoogleAppsScript.Drive.Folder,
 ): ImportedConfig;
+// NormalizedConfig is declared in formatDetection.ts (GAS global scope)
+declare type NormalizedConfig = import("./formatDetection").NormalizedConfig;
 declare function normalizeConfig(jsonData: unknown): NormalizedConfig;
 declare function applyConfigurationToSpreadsheet(config: ImportedConfig): void;
 

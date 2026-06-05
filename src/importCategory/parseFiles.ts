@@ -337,13 +337,13 @@ function parseExtractedFiles(
 							const field = rawField as Record<string, unknown>;
 
 							// Convert field type
-							let fieldType = "text";
+							let fieldType: FieldType = "text";
 							if (field.type === "select_one") fieldType = "selectOne";
 							else if (field.type === "select_multiple")
 								fieldType = "selectMultiple";
 
 						// Convert options
-						let options = [];
+						let options: { label: string; value: string }[] = [];
 						if (field.options) {
 							if (Array.isArray(field.options)) {
 								// Handle array of strings or objects

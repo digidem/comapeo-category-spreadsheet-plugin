@@ -4,8 +4,8 @@ const MAX_VALIDATION_ERRORS = 20;
 /** Valid document types per CoMapeo spec */
 const VALID_DOCUMENT_TYPES = ["observation", "track"];
 
-/** Valid field types per CoMapeo spec */
-const VALID_FIELD_TYPES = ["text", "number", "selectOne", "selectMultiple"];
+// Reuse VALID_FIELD_TYPES from validation.ts (GAS global scope)
+const VALID_IMPORT_FIELD_TYPES: readonly string[] = VALID_FIELD_TYPES;
 
 /**
  * Validates the structure of imported configuration data before applying to spreadsheet.
@@ -103,9 +103,9 @@ function validateImportedConfig(config: unknown): { isValid: boolean; errors: st
       }
 
       // type should be a valid enum value
-      if (f.type !== undefined && !VALID_FIELD_TYPES.includes(f.type as typeof VALID_FIELD_TYPES[number])) {
+      if (f.type !== undefined && !VALID_IMPORT_FIELD_TYPES.includes(f.type as typeof VALID_IMPORT_FIELD_TYPES[number])) {
         if (errors.length < MAX_VALIDATION_ERRORS) {
-          errors.push(`Field '${f.id || `index ${i}`}' has unrecognized type '${f.type}' (expected one of: ${VALID_FIELD_TYPES.join(", ")})`);
+          errors.push(`Field '${f.id || `index ${i}`}' has unrecognized type '${f.type}' (expected one of: ${VALID_IMPORT_FIELD_TYPES.join(", ")})`);
         }
       }
     }
