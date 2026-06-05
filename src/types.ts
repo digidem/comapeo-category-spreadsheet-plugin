@@ -320,9 +320,6 @@ type TagValue = boolean | number | string | null;
 /** Valid document types for appliesTo per CoMapeo spec */
 type DocumentType = "observation" | "track";
 
-/** Valid field types per CoMapeo spec */
-type FieldType = "text" | "number" | "selectOne" | "selectMultiple";
-
 /** Imported preset from a .comapeocat archive */
 interface ImportedPreset {
   id: string;

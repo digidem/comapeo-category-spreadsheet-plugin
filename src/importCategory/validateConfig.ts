@@ -15,9 +15,9 @@ const VALID_FIELD_TYPES = ["text", "number", "selectOne", "selectMultiple"];
  * `package/src/schema/category.js` and `package/src/schema/field.js`.
  *
  * @param config - The parsed configuration object to validate
- * @returns Object with valid flag and array of error messages
+ * @returns Object with isValid flag and array of error messages
  */
-function validateImportedConfig(config: unknown): { valid: boolean; errors: string[] } {
+function validateImportedConfig(config: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   // Must be an object
@@ -138,7 +138,7 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
   }
 
   return {
-    valid: errors.length === 0,
+    isValid: errors.length === 0,
     errors,
   };
 }

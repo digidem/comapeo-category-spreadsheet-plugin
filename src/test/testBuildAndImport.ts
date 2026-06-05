@@ -2245,7 +2245,7 @@ function testValidateImportedConfigValid(): boolean {
   try {
     const config = createValidImportedConfig();
     const result = validateImportedConfig(config);
-    if (!result.valid) {
+    if (!result.isValid) {
       console.error("FAIL: Valid config should pass, got errors:", result.errors.join("; "));
       return false;
     }
@@ -2270,7 +2270,7 @@ function testValidateImportedConfigMissingAppliesTo(): boolean {
     delete preset.appliesTo;
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config missing appliesTo should fail validation");
       return false;
     }
@@ -2295,7 +2295,7 @@ function testValidateImportedConfigMissingTags(): boolean {
     delete preset.tags;
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config missing tags should fail validation");
       return false;
     }
@@ -2319,7 +2319,7 @@ function testValidateImportedConfigEmptyTags(): boolean {
     config.presets[0].tags = {};
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config with empty tags should fail");
       return false;
     }
@@ -2343,7 +2343,7 @@ function testValidateImportedConfigInvalidAppliesToValue(): boolean {
     config.presets[0].appliesTo = ["invalid-type" as any];
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config with invalid appliesTo should fail");
       return false;
     }
@@ -2368,7 +2368,7 @@ function testValidateImportedConfigMissingFieldTagKey(): boolean {
     delete field.tagKey;
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config missing field tagKey should fail");
       return false;
     }
@@ -2392,7 +2392,7 @@ function testValidateImportedConfigInvalidFieldType(): boolean {
     config.fields[0].type = "select2" as any;
 
     const result = validateImportedConfig(config);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Config with invalid field type should fail");
       return false;
     }
@@ -2418,7 +2418,7 @@ function testValidateImportedConfigEmptyConfig(): boolean {
       icons: [],
       messages: {},
     });
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: Empty config should fail");
       return false;
     }
@@ -2439,7 +2439,7 @@ function testValidateImportedConfigNotObject(): boolean {
   console.log("=== Test: Validate Imported Config - Non-object input ===");
   try {
     const result = validateImportedConfig(null);
-    if (result.valid) {
+    if (result.isValid) {
       console.error("FAIL: null should fail");
       return false;
     }
@@ -2450,7 +2450,7 @@ function testValidateImportedConfigNotObject(): boolean {
     console.log("PASS: null correctly rejected");
 
     const result2 = validateImportedConfig("string");
-    if (result2.valid) {
+    if (result2.isValid) {
       console.error("FAIL: string should fail");
       return false;
     }
@@ -2470,7 +2470,7 @@ function testValidateImportedConfigAllFieldTypes(): boolean {
       const config = createValidImportedConfig();
       config.fields[0].type = type as FieldType;
       const result = validateImportedConfig(config);
-      if (!result.valid) {
+      if (!result.isValid) {
         console.error(`FAIL: Field type '${type}' should be valid, got:`, result.errors.join("; "));
         return false;
       }
@@ -2497,7 +2497,7 @@ function testValidateImportedConfigTagValueTypes(): boolean {
       const config = createValidImportedConfig();
       config.presets[0].tags = { "test-key": value };
       const result = validateImportedConfig(config);
-      if (!result.valid) {
+      if (!result.isValid) {
         console.error(`FAIL: Tag value type '${desc}' should be valid, got:`, result.errors.join("; "));
         return false;
       }

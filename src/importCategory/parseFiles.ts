@@ -593,14 +593,15 @@ function parseExtractedFiles(
 
 	// Validate the parsed configuration before returning
 	const validation = validateImportedConfig(configData);
-	if (!validation.valid) {
-		getScopedLogger("ParseFiles").warn(
+	const logger = getScopedLogger("ParseFiles");
+	if (!validation.isValid) {
+		logger.warn(
 			`Imported config validation warnings: ${validation.errors.join("; ")}`,
 		);
 		// Attach warnings so callers can surface them to the user
 		configData._validationWarnings = validation.errors;
 	} else {
-		getScopedLogger("ParseFiles").info("Imported config passed validation");
+		logger.info("Imported config passed validation");
 	}
 
 	return configData;
