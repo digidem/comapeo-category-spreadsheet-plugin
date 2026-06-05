@@ -15,13 +15,13 @@
  * @param flatMessages - Messages object with flat key structure
  * @returns Messages object with nested structure
  */
-function restructureTranslations(flatMessages: any): any {
+function restructureTranslations(flatMessages: Record<string, unknown>): Record<string, TranslationLocaleData> {
 	if (!flatMessages || typeof flatMessages !== "object") {
 		getScopedLogger("ParseFiles").warn("Invalid flatMessages object, returning empty structure");
 		return {};
 	}
 
-	const toScalar = (input: any, fallback: string): string => {
+	const toScalar = (input: unknown, fallback: string): string => {
 		if (input === undefined || input === null) {
 			return fallback;
 		}
@@ -47,7 +47,7 @@ function restructureTranslations(flatMessages: any): any {
 		}
 	};
 
-	const normalizeOption = (rawValue: any, optionId: string) => {
+	const normalizeOption = (rawValue: unknown, optionId: string) => {
 		const label = toScalar(rawValue, "");
 		let value = optionId;
 		if (rawValue && typeof rawValue === "object") {
@@ -62,35 +62,38 @@ function restructureTranslations(flatMessages: any): any {
 	};
 
 	const mergeOptionMap = (
-		container: Record<string, any>,
-		source: Record<string, any>,
+		container: Record<string, unknown>,
+		source: Record<string, unknown>,
 	) => {
 		if (!source || typeof source !== "object") {
 			return;
 		}
-		container.options = container.options || {};
+		const existingOptions = container.options && typeof container.options === "object"
+			? container.options as Record<string, unknown>
+			: {};
+		container.options = existingOptions;
 		for (const [optionId, optionValue] of Object.entries(source)) {
-			container.options[optionId] = normalizeOption(optionValue, optionId);
+			existingOptions[optionId] = normalizeOption(optionValue, optionId);
 		}
 	};
 
 	const mergeScalarProps = (
-		target: Record<string, any>,
-		source: Record<string, any>,
+		target: Record<string, unknown>,
+		source: Record<string, unknown>,
 	) => {
 		if (!source || typeof source !== "object") {
 			return;
 		}
 		for (const [prop, value] of Object.entries(source)) {
 			if (prop === "options") {
-				mergeOptionMap(target, value as Record<string, any>);
+				mergeOptionMap(target, value as Record<string, unknown>);
 			} else if (value !== undefined) {
 				target[prop] = toScalar(value, "");
 			}
 		}
 	};
 
-	const hasTranslationValue = (input: any): boolean => {
+	const hasTranslationValue = (input: unknown): boolean => {
 		if (typeof input === "string") {
 			return input.trim() !== "";
 		}
@@ -113,7 +116,7 @@ function restructureTranslations(flatMessages: any): any {
 		return false;
 	};
 
-	const restructured: any = {};
+	const restructured: Record<string, TranslationLocaleData> = {};
 
 	for (const lang of Object.keys(flatMessages)) {
 		const langMessages = flatMessages[lang];
@@ -121,42 +124,45 @@ function restructureTranslations(flatMessages: any): any {
 			getScopedLogger("ParseFiles").warn(`Invalid messages for language: ${lang}`);
 			continue;
 		}
+		const langObj = langMessages as Record<string, unknown>;
 
 		const langResult = {
 			presets: {
-				presets: {} as Record<string, any>,
-				fields: {} as Record<string, any>,
+				presets: {} as Record<string, TranslationPreset>,
+				fields: {} as Record<string, TranslationField>,
 			},
 		};
 
+		const rawPresets = langObj.presets;
+		const rawFields = langObj.fields;
 		const nestedPresets =
-			langMessages?.presets && typeof langMessages.presets === "object"
-				? langMessages.presets
+			rawPresets && typeof rawPresets === "object"
+				? rawPresets as Record<string, unknown>
 				: undefined;
 		const nestedFields =
-			langMessages?.fields && typeof langMessages.fields === "object"
-				? langMessages.fields
+			rawFields && typeof rawFields === "object"
+				? rawFields as Record<string, unknown>
 				: undefined;
 
 		if (nestedPresets) {
 			if (nestedPresets.presets && typeof nestedPresets.presets === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.presets)) {
 					const targetPreset = langResult.presets.presets[presetId] || {};
-					mergeScalarProps(targetPreset, presetValue as Record<string, any>);
+					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 					langResult.presets.presets[presetId] = targetPreset;
 				}
 			}
 			if (nestedPresets.categories && typeof nestedPresets.categories === "object") {
 				for (const [presetId, presetValue] of Object.entries(nestedPresets.categories)) {
 					const targetPreset = langResult.presets.presets[presetId] || {};
-					mergeScalarProps(targetPreset, presetValue as Record<string, any>);
+					mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 					langResult.presets.presets[presetId] = targetPreset;
 				}
 			}
 			if (nestedPresets.fields && typeof nestedPresets.fields === "object") {
 				for (const [fieldId, fieldValue] of Object.entries(nestedPresets.fields)) {
 					const targetField = langResult.presets.fields[fieldId] || {};
-					mergeScalarProps(targetField, fieldValue as Record<string, any>);
+					mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
 					langResult.presets.fields[fieldId] = targetField;
 				}
 			}
@@ -168,7 +174,7 @@ function restructureTranslations(flatMessages: any): any {
 					continue;
 				}
 				const targetPreset = langResult.presets.presets[maybePresetId] || {};
-				mergeScalarProps(targetPreset, presetValue as Record<string, any>);
+				mergeScalarProps(targetPreset, presetValue as Record<string, unknown>);
 				langResult.presets.presets[maybePresetId] = targetPreset;
 			}
 		}
@@ -176,12 +182,12 @@ function restructureTranslations(flatMessages: any): any {
 		if (nestedFields) {
 			for (const [fieldId, fieldValue] of Object.entries(nestedFields)) {
 				const targetField = langResult.presets.fields[fieldId] || {};
-				mergeScalarProps(targetField, fieldValue as Record<string, any>);
+				mergeScalarProps(targetField, fieldValue as Record<string, unknown>);
 				langResult.presets.fields[fieldId] = targetField;
 			}
 		}
 
-		for (const [rawKey, rawValue] of Object.entries(langMessages)) {
+		for (const [rawKey, rawValue] of Object.entries(langObj)) {
 			if (typeof rawKey !== "string" || !rawKey.includes(".")) {
 				continue;
 			}
@@ -191,7 +197,7 @@ function restructureTranslations(flatMessages: any): any {
 			}
 			const messageValue =
 				typeof rawValue === "object" && rawValue !== null && "message" in rawValue
-					? (rawValue as any).message
+					? (rawValue as { message: unknown }).message
 					: rawValue;
 
 			if (parts[0] === "presets") {
@@ -247,7 +253,7 @@ function parseExtractedFiles(
 	files: GoogleAppsScript.Base.Blob[] | undefined,
 	tempFolder: GoogleAppsScript.Drive.Folder,
 	onProgress?: (update: { percent: number; stage: string; detail?: string }) => void,
-): any {
+): ImportedConfig {
 	// Handle undefined or empty files array
 	if (!files || !Array.isArray(files)) {
 		getScopedLogger("ParseFiles").info("No files to parse or files is not an array");
@@ -263,7 +269,7 @@ function parseExtractedFiles(
 	getScopedLogger("ParseFiles").info(`Parsing ${files.length} extracted files...`);
 
 	// Initialize configuration data
-	const configData: any = {
+	const configData: ImportedConfig = {
 		metadata: null,
 		presets: [],
 		fields: [],
@@ -303,6 +309,13 @@ function parseExtractedFiles(
 								icon: preset.icon || presetId,
 								color: preset.color || "#0000FF",
 								fields: preset.fields || [],
+								appliesTo: preset.appliesTo || ["observation"],
+								tags: preset.tags || { type: presetId },
+								addTags: preset.addTags,
+								removeTags: preset.removeTags,
+								terms: preset.terms || [],
+								geometry: preset.geometry,
+								sort: preset.sort,
 							});
 						}
 					}
@@ -316,30 +329,36 @@ function parseExtractedFiles(
 						!Array.isArray(content.fields)
 					) {
 						for (const fieldId in content.fields) {
-							const field = content.fields[fieldId];
+							const rawField = content.fields[fieldId];
+							if (!rawField || typeof rawField !== "object") {
+								getScopedLogger("ParseFiles").warn(`Skipping invalid field entry '${fieldId}' (not an object)`);
+								continue;
+							}
+							const field = rawField as Record<string, unknown>;
 
 							// Convert field type
-							let fieldType = "text";
+							let fieldType: FieldType = "text";
 							if (field.type === "select_one") fieldType = "selectOne";
 							else if (field.type === "select_multiple")
 								fieldType = "selectMultiple";
 
 						// Convert options
-						let options = [];
+						let options: { label: string; value: string }[] = [];
 						if (field.options) {
 							if (Array.isArray(field.options)) {
 								// Handle array of strings or objects
-								options = field.options.map((opt: any, optionIndex: number) => {
+								options = field.options.map((opt: unknown, optionIndex: number) => {
 									if (typeof opt === "string") {
 										return {
 											label: opt,
 											value: createOptionValue(opt, fieldId, optionIndex),
 										};
 									} else if (typeof opt === "object" && opt !== null) {
-										const optionLabel = opt.label || opt.value || opt.name || String(opt);
+										const obj = opt as Record<string, unknown>;
+										const optionLabel = String(obj.label || obj.value || obj.name || opt);
 										const normalizedValue =
-											typeof opt.value === "string" && opt.value.trim() !== ""
-												? opt.value
+											typeof obj.value === "string" && obj.value.trim() !== ""
+												? obj.value
 											: createOptionValue(optionLabel, fieldId, optionIndex);
 										return {
 											label: optionLabel,
@@ -365,10 +384,10 @@ function parseExtractedFiles(
 					configData.fields.push({
 						id: fieldId,
 						tagKey: fieldId,
-						label: field.label || fieldId,
+						label: String(field.label || fieldId),
 						type: fieldType,
-						helperText: field.helperText || field.placeholder || "",
-						placeholder: field.placeholder || field.helperText || "",
+						helperText: String(field.helperText || field.placeholder || ""),
+						placeholder: String(field.placeholder || field.helperText || ""),
 						options: options,
 					});
 						}
@@ -571,6 +590,19 @@ function parseExtractedFiles(
 	delete configData.iconsSvgFile;
 	delete configData.iconsPngFile;
 	delete configData.iconsJsonFile;
+
+	// Validate the parsed configuration before returning
+	const validation = validateImportedConfig(configData);
+	const logger = getScopedLogger("ParseFiles");
+	if (!validation.isValid) {
+		logger.warn(
+			`Imported config validation warnings: ${validation.errors.join("; ")}`,
+		);
+		// Attach warnings so callers can surface them to the user
+		configData._validationWarnings = validation.errors;
+	} else {
+		logger.info("Imported config passed validation");
+	}
 
 	return configData;
 }

@@ -192,6 +192,12 @@ function processImportedCategoryFileWithProgress(
       console.warn("Failed to finalize debug logging:", error);
     }
 
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...(configData._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: "Configuration file imported successfully",
@@ -202,7 +208,7 @@ function processImportedCategoryFileWithProgress(
         languages: Object.keys(configData.messages),
         processingTime: processingTime,
       },
-      warnings: extractionResult.validationWarnings || [],
+      warnings: allWarnings,
     };
   } catch (error) {
     console.error("Error in processImportedCategoryFileWithProgress:", error);

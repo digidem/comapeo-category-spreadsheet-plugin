@@ -6,13 +6,15 @@ declare function createOrClearSheet(
 declare function processImportedCategoryFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any; warnings?: string[] };
+): ImportResult;
 declare function extractConfigurationData(
   extractedFiles: GoogleAppsScript.Base.Blob[],
   tempFolder: GoogleAppsScript.Drive.Folder,
-): any;
-declare function normalizeConfig(jsonData: any): any;
-declare function applyConfigurationToSpreadsheet(config: any): void;
+): ImportedConfig;
+// NormalizedConfig is declared in formatDetection.ts (GAS global scope)
+declare type NormalizedConfig = import("./formatDetection").NormalizedConfig;
+declare function normalizeConfig(jsonData: unknown): NormalizedConfig;
+declare function applyConfigurationToSpreadsheet(config: ImportedConfig): void;
 
 /**
  * Interface for dropzone configuration options
@@ -600,7 +602,7 @@ function createDropzoneHtml(): string {
 function processMapeoSettingsFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any } {
+): ImportResult {
   try {
     console.log(`Starting import of Mapeo settings file: ${fileName}`);
 
@@ -622,14 +624,7 @@ function processMapeoSettingsFile(
 
     // Extract the file - using the direct approach from testImportCategory.ts
     console.log("Extracting file...");
-    let extractionResult: {
-      success: boolean;
-      message: string;
-      files?: GoogleAppsScript.Base.Blob[];
-      tempFolder?: GoogleAppsScript.Drive.Folder;
-      validationErrors?: string[];
-      validationWarnings?: string[];
-    };
+    let extractionResult: ExtractionResult;
 
     try {
       // Use the simple call without progress handler
@@ -656,13 +651,7 @@ function processMapeoSettingsFile(
 
     // Extract configuration data
     console.log("Extracting configuration data...");
-    let configData: {
-      metadata: any;
-      presets: any[];
-      fields: any[];
-      icons: any[];
-      messages: Record<string, any>;
-    };
+    let configData: ImportedConfig;
 
     try {
       // Use the simple call without progress handler
@@ -711,6 +700,13 @@ function processMapeoSettingsFile(
 
     // Return success
     console.log("Import completed successfully");
+
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...(configData._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: "Mapeo settings file imported successfully",
@@ -719,6 +715,7 @@ function processMapeoSettingsFile(
         fields: configData.fields ? configData.fields.length : 0,
         icons: configData.icons ? configData.icons.length : 0,
       },
+      warnings: allWarnings,
     };
   } catch (error) {
     console.error("Error processing Mapeo settings file:", error);
@@ -738,7 +735,7 @@ function processMapeoSettingsFile(
 function handleFileImport(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any } {
+): ImportResult {
   try {
     // Validate file extension
     const fileExtension = fileName.toString().split(".").pop()?.toLowerCase();
@@ -770,7 +767,7 @@ function handleFileImport(
 function importConfigurationFile(
   fileName: string,
   base64Data: string,
-): { success: boolean; message: string; details?: any; warnings?: string[] } {
+): ImportResult {
   try {
     console.log(`Starting import of file: ${fileName}`);
 
@@ -792,14 +789,7 @@ function importConfigurationFile(
 
     // Extract the file - using the direct approach from testImportCategory.ts
     console.log("Extracting file...");
-    let extractionResult: {
-      success: boolean;
-      message: string;
-      files?: GoogleAppsScript.Base.Blob[];
-      tempFolder?: GoogleAppsScript.Drive.Folder;
-      validationErrors?: string[];
-      validationWarnings?: string[];
-    };
+    let extractionResult: ExtractionResult;
 
     try {
       // Use the simple call without progress handler
@@ -826,13 +816,7 @@ function importConfigurationFile(
 
     // Extract configuration data
     console.log("Extracting configuration data...");
-    let configData: {
-      metadata: any;
-      presets: any[];
-      fields: any[];
-      icons: any[];
-      messages: Record<string, any>;
-    };
+    let configData: ImportedConfig;
 
     try {
       // Use the simple call without progress handler
@@ -849,6 +833,9 @@ function importConfigurationFile(
         `- Fields: ${configData.fields ? configData.fields.length : 0}`,
       );
       console.log(`- Icons: ${configData.icons ? configData.icons.length : 0}`);
+
+      // Validation already performed inside parseExtractedFiles()
+      // which logs warnings for structural issues
     } catch (error) {
       console.error("Error extracting configuration data:", error);
       return {
@@ -882,6 +869,13 @@ function importConfigurationFile(
     // Return success
     console.log("Import completed successfully");
     const fileType = fileName.endsWith(".comapeocat") ? "CoMapeo" : "Mapeo";
+
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...(configData._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: `${fileType} category file imported successfully`,
@@ -891,7 +885,7 @@ function importConfigurationFile(
         icons: configData.icons ? configData.icons.length : 0,
         languages: Object.keys(configData.messages).length,
       },
-      warnings: extractionResult.validationWarnings || [],
+      warnings: allWarnings,
     };
   } catch (error) {
     console.error("Error importing configuration file:", error);

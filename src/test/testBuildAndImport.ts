@@ -2175,6 +2175,342 @@ function testOptionTranslationsWithLocalizedSeparators(): boolean {
 }
 
 // =============================================================================
+// Import Config Validation Tests
+// =============================================================================
+
+/**
+ * Creates a minimal valid ImportedConfig for testing.
+ * Matches the canonical CoMapeo category schema from package/src/schema/.
+ */
+function createValidImportedConfig(): ImportedConfig {
+  return {
+    metadata: { name: "Test Config", version: "1.0.0" },
+    presets: [
+      {
+        id: "animal",
+        name: "Animal",
+        appliesTo: ["observation"],
+        tags: { type: "animal" },
+        icon: "animal",
+        color: "#9E2C54",
+        fields: ["animal-type"],
+        terms: [],
+      },
+      {
+        id: "threat",
+        name: "Threat",
+        appliesTo: ["observation", "track"],
+        tags: { type: "impact", impact: "threat" },
+        icon: "threat",
+        color: "#D63E03",
+        fields: [],
+        terms: ["danger", "illegal"],
+      },
+    ],
+    fields: [
+      {
+        id: "animal-type",
+        tagKey: "animal-type",
+        label: "Animal type",
+        type: "text",
+        helperText: "What kind of animal?",
+      },
+      {
+        id: "building-type",
+        tagKey: "building-type",
+        label: "Building type",
+        type: "selectOne",
+        options: [
+          { label: "School", value: "School" },
+          { label: "Hospital", value: "Hospital" },
+        ],
+      },
+    ],
+    icons: [
+      { name: "animal", svg: "https://example.com/animal.svg", id: "animal" },
+    ],
+    messages: {
+      en: {
+        presets: {
+          presets: { animal: { name: "Animal" } },
+          fields: { "animal-type": { label: "Animal type" } },
+        },
+      },
+    },
+  };
+}
+
+function testValidateImportedConfigValid(): boolean {
+  console.log("=== Test: Validate Imported Config - Valid ===");
+  try {
+    const config = createValidImportedConfig();
+    const result = validateImportedConfig(config);
+    if (!result.isValid) {
+      console.error("FAIL: Valid config should pass, got errors:", result.errors.join("; "));
+      return false;
+    }
+    if (result.errors.length !== 0) {
+      console.error("FAIL: Valid config should have 0 errors, got:", result.errors.length);
+      return false;
+    }
+    console.log("PASS: Valid config passes validation");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigMissingAppliesTo(): boolean {
+  console.log("=== Test: Validate Imported Config - Missing appliesTo ===");
+  try {
+    const config = createValidImportedConfig();
+    // Remove appliesTo from first preset
+    const preset = config.presets[0] as Record<string, unknown>;
+    delete preset.appliesTo;
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config missing appliesTo should fail validation");
+      return false;
+    }
+    const hasAppliesToError = result.errors.some((e) => e.includes("appliesTo"));
+    if (!hasAppliesToError) {
+      console.error("FAIL: Expected appliesTo error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Missing appliesTo correctly detected:", result.errors[0]);
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigMissingTags(): boolean {
+  console.log("=== Test: Validate Imported Config - Missing tags ===");
+  try {
+    const config = createValidImportedConfig();
+    const preset = config.presets[0] as Record<string, unknown>;
+    delete preset.tags;
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config missing tags should fail validation");
+      return false;
+    }
+    const hasTagsError = result.errors.some((e) => e.includes("tags"));
+    if (!hasTagsError) {
+      console.error("FAIL: Expected tags error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Missing tags correctly detected:", result.errors[0]);
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigEmptyTags(): boolean {
+  console.log("=== Test: Validate Imported Config - Empty tags object ===");
+  try {
+    const config = createValidImportedConfig();
+    config.presets[0].tags = {};
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config with empty tags should fail");
+      return false;
+    }
+    const hasTagsError = result.errors.some((e) => e.includes("tags"));
+    if (!hasTagsError) {
+      console.error("FAIL: Expected tags error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Empty tags correctly detected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigInvalidAppliesToValue(): boolean {
+  console.log("=== Test: Validate Imported Config - Invalid appliesTo value ===");
+  try {
+    const config = createValidImportedConfig();
+    config.presets[0].appliesTo = ["invalid-type" as any];
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config with invalid appliesTo should fail");
+      return false;
+    }
+    const hasError = result.errors.some((e) => e.includes("unrecognized appliesTo"));
+    if (!hasError) {
+      console.error("FAIL: Expected unrecognized appliesTo error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Invalid appliesTo value correctly detected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigMissingFieldTagKey(): boolean {
+  console.log("=== Test: Validate Imported Config - Missing field tagKey ===");
+  try {
+    const config = createValidImportedConfig();
+    const field = config.fields[0] as Record<string, unknown>;
+    delete field.tagKey;
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config missing field tagKey should fail");
+      return false;
+    }
+    const hasError = result.errors.some((e) => e.includes("tagKey"));
+    if (!hasError) {
+      console.error("FAIL: Expected tagKey error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Missing field tagKey correctly detected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigInvalidFieldType(): boolean {
+  console.log("=== Test: Validate Imported Config - Invalid field type ===");
+  try {
+    const config = createValidImportedConfig();
+    config.fields[0].type = "select2" as any;
+
+    const result = validateImportedConfig(config);
+    if (result.isValid) {
+      console.error("FAIL: Config with invalid field type should fail");
+      return false;
+    }
+    const hasError = result.errors.some((e) => e.includes("unrecognized type"));
+    if (!hasError) {
+      console.error("FAIL: Expected unrecognized type error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Invalid field type correctly detected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigEmptyConfig(): boolean {
+  console.log("=== Test: Validate Imported Config - Empty config ===");
+  try {
+    const result = validateImportedConfig({
+      presets: [],
+      fields: [],
+      icons: [],
+      messages: {},
+    });
+    if (result.isValid) {
+      console.error("FAIL: Empty config should fail");
+      return false;
+    }
+    const hasError = result.errors.some((e) => e.includes("empty"));
+    if (!hasError) {
+      console.error("FAIL: Expected empty config error, got:", result.errors.join("; "));
+      return false;
+    }
+    console.log("PASS: Empty config correctly detected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigNotObject(): boolean {
+  console.log("=== Test: Validate Imported Config - Non-object input ===");
+  try {
+    const result = validateImportedConfig(null);
+    if (result.isValid) {
+      console.error("FAIL: null should fail");
+      return false;
+    }
+    if (result.errors.length !== 1) {
+      console.error("FAIL: Expected 1 error, got:", result.errors.length);
+      return false;
+    }
+    console.log("PASS: null correctly rejected");
+
+    const result2 = validateImportedConfig("string");
+    if (result2.isValid) {
+      console.error("FAIL: string should fail");
+      return false;
+    }
+    console.log("PASS: Non-object inputs correctly rejected");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigAllFieldTypes(): boolean {
+  console.log("=== Test: Validate Imported Config - All valid field types ===");
+  try {
+    const validTypes = ["text", "number", "selectOne", "selectMultiple"];
+    for (const type of validTypes) {
+      const config = createValidImportedConfig();
+      config.fields[0].type = type as FieldType;
+      const result = validateImportedConfig(config);
+      if (!result.isValid) {
+        console.error(`FAIL: Field type '${type}' should be valid, got:`, result.errors.join("; "));
+        return false;
+      }
+    }
+    console.log("PASS: All valid field types accepted:", validTypes.join(", "));
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function testValidateImportedConfigTagValueTypes(): boolean {
+  console.log("=== Test: Validate Imported Config - Tag value types ===");
+  try {
+    // Tags should accept boolean, number, string, null per spec
+    const tagValues: Array<{ value: TagValue; desc: string }> = [
+      { value: "string", desc: "string" },
+      { value: true, desc: "boolean" },
+      { value: 42, desc: "number" },
+      { value: null, desc: "null" },
+    ];
+    for (const { value, desc } of tagValues) {
+      const config = createValidImportedConfig();
+      config.presets[0].tags = { "test-key": value };
+      const result = validateImportedConfig(config);
+      if (!result.isValid) {
+        console.error(`FAIL: Tag value type '${desc}' should be valid, got:`, result.errors.join("; "));
+        return false;
+      }
+    }
+    console.log("PASS: All tag value types accepted (string, boolean, number, null)");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown -", error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+// =============================================================================
 // Test Runner
 // =============================================================================
 
@@ -2232,7 +2568,20 @@ function runBuildAndImportTests(): void {
 
     // Category and API tests
     { name: "Category Selection", fn: testCategorySelection },
-    { name: "API Error Parsing", fn: testApiErrorParsing }
+    { name: "API Error Parsing", fn: testApiErrorParsing },
+
+    // Import config validation tests (spec conformance)
+    { name: "Validate Config - Valid", fn: testValidateImportedConfigValid },
+    { name: "Validate Config - Missing appliesTo", fn: testValidateImportedConfigMissingAppliesTo },
+    { name: "Validate Config - Missing tags", fn: testValidateImportedConfigMissingTags },
+    { name: "Validate Config - Empty tags", fn: testValidateImportedConfigEmptyTags },
+    { name: "Validate Config - Invalid appliesTo value", fn: testValidateImportedConfigInvalidAppliesToValue },
+    { name: "Validate Config - Missing field tagKey", fn: testValidateImportedConfigMissingFieldTagKey },
+    { name: "Validate Config - Invalid field type", fn: testValidateImportedConfigInvalidFieldType },
+    { name: "Validate Config - Empty config", fn: testValidateImportedConfigEmptyConfig },
+    { name: "Validate Config - Non-object input", fn: testValidateImportedConfigNotObject },
+    { name: "Validate Config - All valid field types", fn: testValidateImportedConfigAllFieldTypes },
+    { name: "Validate Config - Tag value types", fn: testValidateImportedConfigTagValueTypes }
   ];
 
   let passed = 0;

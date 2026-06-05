@@ -309,3 +309,140 @@ interface CategoryRow extends Array<string | number | boolean> {
   3?: string; // Color (optional)
   4?: string; // Geometry (optional)
 }
+
+// ============================================
+// Import Pipeline Types
+// ============================================
+
+/** Tag value type per CoMapeo spec — allows boolean, number, string, or null */
+type TagValue = boolean | number | string | null;
+
+/** Valid document types for appliesTo per CoMapeo spec */
+type DocumentType = "observation" | "track";
+
+/** Imported preset from a .comapeocat archive */
+interface ImportedPreset {
+  id: string;
+  /** Required: display name for the category */
+  name: string;
+  /** Required: which document types this category applies to */
+  appliesTo: DocumentType[];
+  /** Required: tags used to match this category to map entities */
+  tags: Record<string, TagValue>;
+  /** Optional: icon identifier */
+  icon?: string;
+  /** Optional: color in hex format */
+  color?: string;
+  /** Optional: field IDs to show for this category */
+  fields: string[];
+  /** Optional: tags added when changing to this category */
+  addTags?: Record<string, TagValue>;
+  /** Optional: tags removed when changing away from this category */
+  removeTags?: Record<string, TagValue>;
+  /** Optional: synonyms for search */
+  terms?: string[];
+  /** @deprecated Use categorySelection.json instead */
+  sort?: number;
+  /** @deprecated Use appliesTo instead */
+  geometry?: string[];
+}
+
+/** Imported field from a .comapeocat archive */
+interface ImportedField {
+  id: string;
+  tagKey: string;
+  label: string;
+  type: FieldType;
+  helperText?: string;
+  placeholder?: string;
+  options?: Array<{ label: string; value: string | boolean | number | null }>;
+  universal?: boolean;
+}
+
+/** Imported icon extracted from archive */
+interface ImportedIcon {
+  name: string;
+  svg: string;
+  id: string;
+}
+
+/** Imported metadata from metadata.json */
+interface ImportedMetadata {
+  name: string;
+  version?: string;
+  description?: string;
+  dataset_id?: string;
+  [key: string]: unknown;
+}
+
+/** Translation option with label/value */
+interface TranslationOption {
+  label: string;
+  value: string;
+}
+
+/** Translation field data */
+interface TranslationField {
+  name?: string;
+  label?: string;
+  description?: string;
+  helperText?: string;
+  placeholder?: string;
+  options?: Record<string, TranslationOption>;
+  [key: string]: unknown;
+}
+
+/** Translation preset/category data */
+interface TranslationPreset {
+  name?: string;
+  label?: string;
+  description?: string;
+  options?: Record<string, TranslationOption>;
+  [key: string]: unknown;
+}
+
+/** Translation data for a single locale */
+interface TranslationLocaleData {
+  presets: {
+    presets: Record<string, TranslationPreset>;
+    fields: Record<string, TranslationField>;
+  };
+}
+
+/** Full configuration data extracted from an archive */
+interface ImportedConfig {
+  metadata: ImportedMetadata | null;
+  presets: ImportedPreset[];
+  fields: ImportedField[];
+  icons: ImportedIcon[];
+  messages: Record<string, TranslationLocaleData>;
+  iconsSvgFile?: GoogleAppsScript.Base.Blob;
+  iconsPngFile?: GoogleAppsScript.Base.Blob;
+  iconsJsonFile?: GoogleAppsScript.Base.Blob;
+  /** Validation warnings attached by parseExtractedFiles. Not part of the archive format. */
+  _validationWarnings?: string[];
+}
+
+/** Result of file extraction */
+interface ExtractionResult {
+  success: boolean;
+  message: string;
+  files?: GoogleAppsScript.Base.Blob[];
+  tempFolder?: GoogleAppsScript.Drive.Folder;
+  validationErrors?: string[];
+  validationWarnings?: string[];
+}
+
+/** Result of import operation */
+interface ImportResult {
+  success: boolean;
+  message: string;
+  details?: {
+    presets?: number;
+    fields?: number;
+    icons?: number;
+    languages?: number | string[] | Record<string, unknown>;
+    processingTime?: number;
+  };
+  warnings?: string[];
+}
