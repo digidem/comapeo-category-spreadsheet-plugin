@@ -22,7 +22,7 @@ function validateImportedConfig(config: unknown): { isValid: boolean; errors: st
 
   // Must be an object
   if (!config || typeof config !== "object") {
-    return { valid: false, errors: ["Configuration data is not a valid object"] };
+    return { isValid: false, errors: ["Configuration data is not a valid object"] };
   }
 
   const cfg = config as Record<string, unknown>;
@@ -103,7 +103,7 @@ function validateImportedConfig(config: unknown): { isValid: boolean; errors: st
       }
 
       // type should be a valid enum value
-      if (f.type !== undefined && !VALID_FIELD_TYPES.includes(f.type as string)) {
+      if (f.type !== undefined && !VALID_FIELD_TYPES.includes(f.type as typeof VALID_FIELD_TYPES[number])) {
         if (errors.length < MAX_VALIDATION_ERRORS) {
           errors.push(`Field '${f.id || `index ${i}`}' has unrecognized type '${f.type}' (expected one of: ${VALID_FIELD_TYPES.join(", ")})`);
         }
@@ -126,7 +126,7 @@ function validateImportedConfig(config: unknown): { isValid: boolean; errors: st
     ? (cfg.messages as Record<string, unknown>)
     : {};
   const hasMessages = Object.keys(messagesObj).length > 0;
-  if (allArraysValid && cfg.presets.length === 0 && cfg.fields.length === 0 && cfg.icons.length === 0 && !hasMessages) {
+  if (allArraysValid && (cfg.presets as unknown[]).length === 0 && (cfg.fields as unknown[]).length === 0 && (cfg.icons as unknown[]).length === 0 && !hasMessages) {
     if (errors.length < MAX_VALIDATION_ERRORS) {
       errors.push("Configuration appears empty — no presets, fields, icons, or messages found");
     }
