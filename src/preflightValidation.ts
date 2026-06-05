@@ -72,7 +72,11 @@ function checkApiHealth(): PreflightValidationResult {
   const log = getScopedLogger("PreflightValidation");
   try {
     log.info("[PREFLIGHT] Checking API health...");
-    const apiUrl = "http://137.184.153.36:3000/";
+    // Normalize: strip any trailing slash from config, then append exactly one.
+    // Ensures consistent URL regardless of whether API_BASE_URL ends with '/'.
+    // Guard against undefined in case config.ts hasn't loaded yet.
+    const baseUrl = typeof API_BASE_URL !== "undefined" ? API_BASE_URL : "";
+    const apiUrl = `${baseUrl.replace(/\/$/, "")}/`;
 
     // Try to connect to the API with a short timeout
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
