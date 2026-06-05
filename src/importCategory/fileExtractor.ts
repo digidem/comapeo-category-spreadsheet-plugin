@@ -200,6 +200,12 @@ function createIconSpriteFromArray(icons: Array<{ name?: string; svg?: string }>
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 /**
+ * Maximum directory depth for TAR extraction paths.
+ * Prevents zip-slip / resource-exhaustion via deeply nested entries.
+ */
+const MAX_TAR_PATH_DEPTH = 10;
+
+/**
  * Validates a file path to prevent path traversal attacks
  *
  * @param path - The file path to validate
@@ -708,6 +714,22 @@ function extractTarArchiveInternal(
           fileName.includes("/icons/") || fileName.startsWith("icons/");
 
         const shouldExtract = isCoreFile || isIconFile;
+
+        // Check depth before extracting payload to avoid memory waste.
+        // Only icon files are checked because core config files (metadata.json,
+        // presets.json, etc.) are always flat names in .comapeocat archives.
+        if (!isDirectory && isIconFile && fileName.includes("/")) {
+          const dirPath = fileName.substring(0, fileName.lastIndexOf("/"));
+          const parts = dirPath.split("/");
+          if (parts.length > MAX_TAR_PATH_DEPTH) {
+            console.warn(`Skipping deeply nested path (${parts.length} levels, max ${MAX_TAR_PATH_DEPTH}): ${dirPath}`);
+            const dataBlocks = Math.ceil(fileSize / BLOCK_SIZE);
+            position += HEADER_SIZE + dataBlocks * BLOCK_SIZE;
+            processedFiles.add(fileName);
+            fileCount++;
+            continue;
+          }
+        }
 
         if (!isDirectory && shouldExtract) {
           // Extract file data

@@ -19,6 +19,38 @@ function safePngDebugLog(message: string, forceFlush = false): void {
 }
 
 /**
+ * PNG file signature bytes (first 8 bytes of any valid PNG file)
+ */
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Validates that a file has a valid PNG signature and returns its blob.
+ * Returns null if the file is not a valid PNG.
+ * @param file - Drive file to validate
+ * @returns The file's blob if valid PNG, null otherwise
+ */
+function validatePngAndGetBlob(file: GoogleAppsScript.Drive.File): GoogleAppsScript.Base.Blob | null {
+  try {
+    const blob = file.getBlob();
+    const bytes = blob.getBytes();
+    if (bytes.length < PNG_SIGNATURE.length) {
+      return null;
+    }
+    for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+      // GAS Blob.getBytes() returns Java signed bytes (-128 to 127).
+      // Mask with 0xff to convert to unsigned for comparison.
+      if ((bytes[i] & 0xff) !== PNG_SIGNATURE[i]) {
+        return null;
+      }
+    }
+    return blob;
+  } catch (error) {
+    safePngDebugLog(`Failed to validate PNG signature for ${file.getName()}: ${error}`);
+    return null;
+  }
+}
+
+/**
  * Updates an existing Drive file in place so its file ID and URL stay stable.
  * Uses the Drive upload endpoint because DriveApp does not support binary
  * content replacement for PNG files.
@@ -206,9 +238,16 @@ function extractPngIcons(
         return; // Skip this icon
       }
 
-      safePngDebugLog(`  ✓ Found PNG for "${iconName}": ${foundPattern}`);
+      // Validate PNG signature and get blob in single fetch
+      const validatedBlob = validatePngAndGetBlob(foundFile);
+      if (!validatedBlob) {
+        console.warn(`Invalid PNG signature for icon: ${iconName} (${foundPattern})`);
+        failedIcons.push({ name: iconName, error: `File does not have a valid PNG signature: ${foundPattern}` });
+        return;
+      }
 
-      // Copy to permanent folder
+      safePngDebugLog(`  ✓ Found valid PNG for "${iconName}": ${foundPattern}`);
+      // Copy to permanent folder using pre-validated blob
       try {
         const fileName = `${iconName}.png`;
         const existingFiles = permanentIconsFolder.getFilesByName(fileName);
@@ -217,12 +256,12 @@ function extractPngIcons(
         if (existingFiles.hasNext()) {
           const existingFile = existingFiles.next();
           const oldSize = existingFile.getSize();
-          const blob = foundFile.getBlob().setName(fileName);
+          const blob = validatedBlob.setName(fileName);
           permanentFile = updateDriveFileBlobInPlace(existingFile, blob);
           const newSize = permanentFile.getSize();
           safePngDebugLog(`  ↻ Updated existing "${fileName}" in place: ${oldSize} → ${newSize} bytes`);
         } else {
-          const blob = foundFile.getBlob().setName(fileName);
+          const blob = validatedBlob.setName(fileName);
           permanentFile = permanentIconsFolder.createFile(blob);
           const fileSize = permanentFile.getSize();
           safePngDebugLog(`  ✓ Created "${fileName}": ${fileSize} bytes`);
