@@ -1,9 +1,18 @@
 /** Maximum number of validation errors to report. Prevents memory issues on corrupt archives. */
 const MAX_VALIDATION_ERRORS = 20;
 
+/** Valid document types per CoMapeo spec */
+const VALID_DOCUMENT_TYPES = ["observation", "track"];
+
+/** Valid field types per CoMapeo spec */
+const VALID_FIELD_TYPES = ["text", "number", "selectOne", "selectMultiple"];
+
 /**
  * Validates the structure of imported configuration data before applying to spreadsheet.
  * Catches malformed .comapeocat files early with clear error messages.
+ *
+ * Checks conform to the canonical CoMapeo category schema defined in
+ * `package/src/schema/category.js` and `package/src/schema/field.js`.
  *
  * @param config - The parsed configuration object to validate
  * @returns Object with valid flag and array of error messages
@@ -44,8 +53,29 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
         continue;
       }
       const p = preset as Record<string, unknown>;
+
+      // name is required
       if (typeof p.name !== "string" || !p.name.trim()) {
-        errors.push(`Preset at index ${i} missing 'name' property`);
+        errors.push(`Preset '${p.id || `index ${i}`}' missing required 'name' property`);
+      }
+
+      // appliesTo is required per spec
+      if (!Array.isArray(p.appliesTo) || p.appliesTo.length === 0) {
+        errors.push(`Preset '${p.name || `index ${i}`}' missing required 'appliesTo' array (expected ['observation'] and/or ['track'])`);
+      } else {
+        const invalidTypes = (p.appliesTo as string[]).filter(
+          (t) => !VALID_DOCUMENT_TYPES.includes(t),
+        );
+        if (invalidTypes.length > 0 && errors.length < MAX_VALIDATION_ERRORS) {
+          errors.push(`Preset '${p.name || `index ${i}`}' has unrecognized appliesTo values: ${invalidTypes.join(", ")}`);
+        }
+      }
+
+      // tags is required per spec (must be non-empty object)
+      if (!p.tags || typeof p.tags !== "object" || Array.isArray(p.tags) || Object.keys(p.tags as Record<string, unknown>).length === 0) {
+        if (errors.length < MAX_VALIDATION_ERRORS) {
+          errors.push(`Preset '${p.name || `index ${i}`}' missing required 'tags' object (must have at least one entry)`);
+        }
       }
     }
   }
@@ -59,8 +89,24 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
         continue;
       }
       const f = field as Record<string, unknown>;
+
+      // label is required
       if (typeof f.label !== "string" || !f.label.trim()) {
-        errors.push(`Field at index ${i} missing 'label' property`);
+        errors.push(`Field '${f.id || `index ${i}`}' missing required 'label' property`);
+      }
+
+      // tagKey is required per spec
+      if (typeof f.tagKey !== "string" || !f.tagKey.trim()) {
+        if (errors.length < MAX_VALIDATION_ERRORS) {
+          errors.push(`Field '${f.id || `index ${i}`}' missing required 'tagKey' property`);
+        }
+      }
+
+      // type should be a valid enum value
+      if (f.type !== undefined && !VALID_FIELD_TYPES.includes(f.type as string)) {
+        if (errors.length < MAX_VALIDATION_ERRORS) {
+          errors.push(`Field '${f.id || `index ${i}`}' has unrecognized type '${f.type}' (expected one of: ${VALID_FIELD_TYPES.join(", ")})`);
+        }
       }
     }
   }
@@ -86,9 +132,9 @@ function validateImportedConfig(config: unknown): { valid: boolean; errors: stri
     }
   }
 
-  // Add summary if errors were capped (replace last error to stay within cap)
+  // Add summary if errors were capped — push the summary so no real error is silently dropped
   if (errors.length >= MAX_VALIDATION_ERRORS) {
-    errors[MAX_VALIDATION_ERRORS - 1] = `... and more issues may exist (showing first ${MAX_VALIDATION_ERRORS - 1})`;
+    errors.push(`... and more issues may exist (showing first ${MAX_VALIDATION_ERRORS})`);
   }
 
   return {

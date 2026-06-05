@@ -309,6 +309,13 @@ function parseExtractedFiles(
 								icon: preset.icon || presetId,
 								color: preset.color || "#0000FF",
 								fields: preset.fields || [],
+								appliesTo: preset.appliesTo || ["observation"],
+								tags: preset.tags || { type: presetId },
+								addTags: preset.addTags,
+								removeTags: preset.removeTags,
+								terms: preset.terms || [],
+								geometry: preset.geometry,
+								sort: preset.sort,
 							});
 						}
 					}

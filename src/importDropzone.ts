@@ -698,6 +698,13 @@ function processMapeoSettingsFile(
 
     // Return success
     console.log("Import completed successfully");
+
+    // Collect all warnings: extraction + config validation
+    const allWarnings = [
+      ...(extractionResult.validationWarnings || []),
+      ...(configData._validationWarnings || []),
+    ];
+
     return {
       success: true,
       message: "Mapeo settings file imported successfully",
@@ -706,6 +713,7 @@ function processMapeoSettingsFile(
         fields: configData.fields ? configData.fields.length : 0,
         icons: configData.icons ? configData.icons.length : 0,
       },
+      warnings: allWarnings,
     };
   } catch (error) {
     console.error("Error processing Mapeo settings file:", error);

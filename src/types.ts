@@ -314,17 +314,40 @@ interface CategoryRow extends Array<string | number | boolean> {
 // Import Pipeline Types
 // ============================================
 
+/** Tag value type per CoMapeo spec — allows boolean, number, string, or null */
+type TagValue = boolean | number | string | null;
+
+/** Valid document types for appliesTo per CoMapeo spec */
+type DocumentType = "observation" | "track";
+
+/** Valid field types per CoMapeo spec */
+type FieldType = "text" | "number" | "selectOne" | "selectMultiple";
+
 /** Imported preset from a .comapeocat archive */
 interface ImportedPreset {
   id: string;
+  /** Required: display name for the category */
   name: string;
-  icon: string;
-  color: string;
+  /** Required: which document types this category applies to */
+  appliesTo: DocumentType[];
+  /** Required: tags used to match this category to map entities */
+  tags: Record<string, TagValue>;
+  /** Optional: icon identifier */
+  icon?: string;
+  /** Optional: color in hex format */
+  color?: string;
+  /** Optional: field IDs to show for this category */
   fields: string[];
-  geometry?: string[];
-  tags?: Record<string, string>;
+  /** Optional: tags added when changing to this category */
+  addTags?: Record<string, TagValue>;
+  /** Optional: tags removed when changing away from this category */
+  removeTags?: Record<string, TagValue>;
+  /** Optional: synonyms for search */
   terms?: string[];
+  /** @deprecated Use categorySelection.json instead */
   sort?: number;
+  /** @deprecated Use appliesTo instead */
+  geometry?: string[];
 }
 
 /** Imported field from a .comapeocat archive */
@@ -332,10 +355,10 @@ interface ImportedField {
   id: string;
   tagKey: string;
   label: string;
-  type: string;
+  type: FieldType;
   helperText?: string;
   placeholder?: string;
-  options?: Array<{ label: string; value: string }>;
+  options?: Array<{ label: string; value: string | boolean | number | null }>;
   universal?: boolean;
 }
 
