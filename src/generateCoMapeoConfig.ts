@@ -73,8 +73,16 @@ function generateCoMapeoConfig() {
               "Esto puede tardar un momento",
             ],
           },
+          pt: {
+            title: "Corrigindo Inconsistências de Tradução",
+            message: [
+              "Ressincronizando fórmulas e retraduzindo...",
+              "Isso pode levar um momento",
+            ],
+          },
         };
-        showProcessingModalDialog(fixingDialogText[locale]);
+        const dialogLocale = fixingDialogText[locale] || fixingDialogText.en;
+        showProcessingModalDialog(dialogLocale);
         processingDialogOpen = true;
         getScopedLogger("GenerateConfig").info("Fixing translation mismatches...");
         fixTranslationMismatches(true, mismatchResult); // Pass pre-detected mismatch data
