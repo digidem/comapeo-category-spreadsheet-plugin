@@ -189,6 +189,11 @@ function translateSheet(
  * standard languages. Validates all target languages before translation. Skips cells
  * that already have translations.
  *
+ * Uses a 3-phase approach for efficiency:
+ * 1. Collect all unique (sourceText, targetLang) pairs needing translation
+ * 2. Translate all unique texts using rate-limited API calls
+ * 3. Fill column values from cache
+ *
  * @param sheetName - Name of the sheet to translate
  * @param targetLanguages - Array of ISO language codes for target languages
  * @param sourceLanguage - Optional source language code (defaults to primary language)
@@ -319,7 +324,7 @@ function translateSheetBidirectional(
       `[Phase 1] Collected ${pendingTranslations.size} unique translations needed for ${sheetName}`,
     );
 
-    // Phase 2: Translate all unique texts
+    // Phase 2: Translate all unique texts (rate-limited)
     const prePhase2ErrorCount = translationErrors.length;
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
