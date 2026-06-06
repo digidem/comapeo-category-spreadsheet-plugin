@@ -28,7 +28,7 @@ function checkDuplicateCategoryIds(): void {
     const explicitId = String(ids[i][0] || "").trim();
     const name = String(names[i][0] || "").trim();
     if (!name) continue;
-    const effectiveId = explicitId || slugify(name) || `category-${i + 1}`;
+    const effectiveId = (explicitId || slugify(name) || `category-${i + 1}`).toLowerCase();
 
     if (!effectiveIdMap.has(effectiveId)) {
       effectiveIdMap.set(effectiveId, [i + 2]);

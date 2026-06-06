@@ -362,7 +362,7 @@ function validateSheetConsistency(
     }
 
     // Validate option counts for Detail Option Translations
-    if (validateOptionCounts && sourceRowCount > 1) {
+    if (validateOptionCounts && sourceRowCount > 1 && translationRowCount > 1) {
       const detailsSheet =
         SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Details");
       if (!detailsSheet) return;
