@@ -18,7 +18,7 @@
  * ### Color Constant Synchronization
  *
  * Color constants are now shared via `src/lint-colors.ts`. Both production
- * (`src/lint.ts`) and this mock file reference the same `LINT_WARNING_BACKGROUND_COLORS`
+ * (`src/lint/`) and this mock file reference the same `LINT_WARNING_BACKGROUND_COLORS`
  * and `LINT_WARNING_FONT_COLORS` arrays. Changing the palette in `lint-colors.ts`
  * automatically updates both production and tests.
  *
@@ -27,7 +27,8 @@
  * | `LINT_WARNING_BACKGROUND_COLORS[0]` | `#FFC7CE` | Error background |
  * | `LINT_WARNING_BACKGROUND_COLORS[3]` | `#FFF2CC` | Warning background |
  * | `LINT_WARNING_BACKGROUND_COLORS[2]` | `#FFFFCC` | Advisory background |
- * | `LINT_WARNING_FONT_COLORS[2]` | `#FF0000` | Critical mismatch (preserved by escalation) |
+ * | `LINT_CRITICAL_BG` | `#FF0000` | Critical mismatch background (preserved by escalation) |
+ * | `LINT_CRITICAL_FONT` | `#FFFFFF` | Critical mismatch font color |
  * | `LINT_WARNING_FONT_COLORS[0]` | `red` | Error font color |
  * | `LINT_WARNING_FONT_COLORS[1]` | `orange` | Warning font color |
  */
@@ -560,7 +561,9 @@ function runWithMockedLintSpreadsheet(
     // Preserve-background variant: only set font color, skip background.
     // Mirrors production appendLintNotePreserveBackground escalation logic.
     const currentFont = (cellState.fontColor || "").toUpperCase();
-    const isAlreadyError = currentFont === "RED";
+    const isAlreadyError =
+      currentFont === "RED" ||
+      currentFont === LINT_CRITICAL_FONT;
     switch (severity) {
       case "error":
         cellState.fontColor = LINT_WARNING_FONT_COLORS[0]; // "red"

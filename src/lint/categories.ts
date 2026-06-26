@@ -23,32 +23,36 @@ function checkDuplicateCategoryIds(): void {
 
   // Build map of effective ID → rows. Mirror builder: explicit ID → slugify(name) →
   // `category-${index+1}` fallback. Skip blank-name rows — builder returns early.
-  const effectiveIdMap = new Map<string, number[]>();
+  const effectiveIdMap = new Map<string, { rows: number[]; displayId: string }>();
   for (let i = 0; i < ids.length; i++) {
     const explicitId = String(ids[i][0] || "").trim();
     const name = String(names[i][0] || "").trim();
     if (!name) continue;
-    const effectiveId = (explicitId || slugify(name) || `category-${i + 1}`).toLowerCase();
+    const effectiveId = explicitId || slugify(name) || `category-${i + 1}`;
+    const normalizedId = effectiveId.toLowerCase();
 
-    if (!effectiveIdMap.has(effectiveId)) {
-      effectiveIdMap.set(effectiveId, [i + 2]);
+    if (!effectiveIdMap.has(normalizedId)) {
+      effectiveIdMap.set(normalizedId, {
+        rows: [i + 2],
+        displayId: effectiveId,
+      });
     } else {
-      effectiveIdMap.get(effectiveId)?.push(i + 2);
+      effectiveIdMap.get(normalizedId)?.rows.push(i + 2);
     }
   }
 
   // Annotate duplicates
-  effectiveIdMap.forEach((rows, effectiveId) => {
+  effectiveIdMap.forEach(({ rows, displayId }) => {
     if (rows.length > 1) {
       const logger = getScopedLogger("LintDuplicateCategoryIds");
       logger.warn(
-        `Duplicate category ID "${effectiveId}" in rows: ${rows.join(", ")}`,
+        `Duplicate category ID "${displayId}" in rows: ${rows.join(", ")}`,
       );
       for (const row of rows) {
         const cell = sheet.getRange(row, 5);
         setLintNote(
           cell,
-          `Duplicate category ID "${effectiveId}" (also in rows ${rows.filter((r) => r !== row).join(", ")})`,
+          `Duplicate category ID "${displayId}" (case-insensitive match; also in rows ${rows.filter((r) => r !== row).join(", ")})`,
           "error",
         );
       }

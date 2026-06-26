@@ -123,37 +123,6 @@ function clearRangeFontColorIfMatches(
   }
 }
 
-function clearRangeNotesWithPrefix(
-  range: GoogleAppsScript.Spreadsheet.Range,
-  prefix: string,
-): void {
-  if (!range) return;
-  if (range.getNumRows() === 0 || range.getNumColumns() === 0) return;
-
-  const notes = range.getNotes();
-  let updated = false;
-
-  for (let row = 0; row < notes.length; row++) {
-    for (let col = 0; col < notes[row].length; col++) {
-      const note = notes[row][col];
-      if (
-        note &&
-        (note.startsWith(prefix) ||
-          note.includes('Icon slug "') ||
-          note.includes("No SVG icon found") ||
-          note.includes("Unable to determine an icon name"))
-      ) {
-        notes[row][col] = "";
-        updated = true;
-      }
-    }
-  }
-
-  if (updated) {
-    range.setNotes(notes);
-  }
-}
-
 function clearRangeLintNotesWithPrefix(
   range: GoogleAppsScript.Spreadsheet.Range,
   prefix: string,
@@ -404,7 +373,7 @@ function appendLintNotePreserveBackground(
   const isAlreadyError =
     currentBg === LINT_ERROR_BG ||
     currentFont === "RED" ||
-    currentFont === LINT_CRITICAL_BG;
+    currentFont === LINT_CRITICAL_FONT;
 
   switch (severity) {
     case "error":
