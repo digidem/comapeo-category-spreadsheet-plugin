@@ -151,6 +151,10 @@ function validateDialogHtml(html: string, context: string = "Dialog"): void {
 /**
  * Test function to validate HTML dialog generation
  * Run this from the Apps Script editor to test HTML validation
+ *
+ * NOTE: Uses console.log intentionally for editor-console output during manual testing.
+ * These test functions are run directly from the GAS editor and their output is meant
+ * for developer inspection in the console, not for scoped logging.
  */
 function testHtmlValidation(): void {
   console.log("=== Testing HTML Validation ===");
@@ -246,6 +250,10 @@ function testHtmlValidation(): void {
 /**
  * INTEGRATION TEST: Test actual dialog HTML generation
  * This validates the real HTML that would be shown to users
+ *
+ * NOTE: Uses console.log intentionally for editor-console output during manual testing.
+ * These test functions are run directly from the GAS editor and their output is meant
+ * for developer inspection in the console, not for scoped logging.
  */
 function testDialogHtmlGeneration(): void {
   console.log("\n=== Testing Dialog HTML Generation ===");
@@ -324,6 +332,10 @@ function testDialogHtmlGeneration(): void {
 
 /**
  * Run all HTML validation tests
+ *
+ * NOTE: Uses console.log intentionally for editor-console output during manual testing.
+ * These test functions are run directly from the GAS editor and their output is meant
+ * for developer inspection in the console, not for scoped logging.
  */
 function runAllHtmlValidationTests(): void {
   testHtmlValidation();
