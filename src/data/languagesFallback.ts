@@ -70,7 +70,6 @@
  */
 
 /// <reference path="../types.ts" />
-/// <reference path="../languageLookup.ts" />
 
 /**
  * Enhanced fallback language data with dual-name support
@@ -207,4 +206,9 @@ const LANGUAGES_FALLBACK_ENHANCED: LanguageMapEnhanced = {
  * Legacy fallback for backward compatibility
  * @deprecated Use LANGUAGES_FALLBACK_ENHANCED instead
  */
-const LANGUAGES_FALLBACK: LanguageMap = toLegacyLanguageMap(LANGUAGES_FALLBACK_ENHANCED);
+const LANGUAGES_FALLBACK: LanguageMap = Object.entries(
+  LANGUAGES_FALLBACK_ENHANCED,
+).reduce<LanguageMap>((legacy, [code, data]) => {
+  legacy[code] = data.englishName;
+  return legacy;
+}, {});
