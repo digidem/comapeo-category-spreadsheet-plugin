@@ -136,7 +136,7 @@ For schema details, see `src/builders/payloadBuilder.ts` and `src/types.ts`.
 - `src/generateCoMapeoConfig.ts` (orchestrator)
 - `src/builders/payloadBuilder.ts` (payload construction)
 - `src/apiService.ts` (API request/response handling)
-- `src/lint.ts` (validation)
+- `src/lint/` (spreadsheet validation modules)
 - `src/translation.ts` (language management)
 - `src/spreadsheetData.ts` (data extraction)
 - `context/reference/comapeocat-format.md` (archive structure)

@@ -354,7 +354,7 @@ class Logger {
 
 ### HIGH-018: Optimize validateTranslationSheets
 
-**File**: `src/lint.ts`
+**File**: `src/lint/translations.ts`
 **Effort**: 2 hours
 
 **Problem**: Reads entire data range multiple times

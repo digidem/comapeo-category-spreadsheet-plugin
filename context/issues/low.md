@@ -36,7 +36,7 @@ Remove: `console.log(configData);`
 Remove debug console.log statement.
 
 ### LOW-004: Extract Color Constants
-**File**: `src/lint.ts` | **Effort**: 30min
+**File**: `src/lint-colors.ts` | **Effort**: 30min
 
 ```typescript
 const COLORS = {

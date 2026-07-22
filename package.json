@@ -8,6 +8,7 @@
     "dev": "npm run version:update && clasp push --watch",
     "push": "npm run version:update && clasp push",
     "lint": "bunx biome lint --write --unsafe .",
+    "test:gas-boot": "node src/scripts/check-gas-boot.cjs",
     "push:all": "npm run version:update && bash src/scripts/push-all.sh",
     "push:one": "npm run version:update && bash src/scripts/push-one.sh",
     "fixture": "bun run scripts/generate-fixture.ts"

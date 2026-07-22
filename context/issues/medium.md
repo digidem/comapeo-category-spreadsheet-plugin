@@ -67,7 +67,7 @@ Prevent API quota exhaustion.
 Reduce to single-pass operation.
 
 ### MED-011: Add Performance Safeguards for Large Sheets
-**File**: `src/lint.ts` | **Effort**: 2h
+**File**: `src/lint/` | **Effort**: 2h
 
 Handle sheets with >10K rows gracefully.
 
