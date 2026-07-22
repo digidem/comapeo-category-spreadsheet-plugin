@@ -27,9 +27,8 @@
 
 ### 1. Data Pipeline
 1.  **Extraction:** `src/spreadsheetData.ts` reads Sheets (Categories, Details, Translations) -> `SheetData` object.
-2.  **Processing:** `src/generateCoMapeoConfig.ts` orchestrates processing modules in `src/generateConfig/`:
+2.  **Processing:** `src/generateCoMapeoConfig.ts` orchestrates processing. Categories are built into the API payload by `src/builders/payloadBuilder.ts` (`buildCategories`, which reads the Applies column -> `appliesTo`). Legacy helpers remain in `src/generateConfig/`:
     *   `processFields.ts`: Field definitions -> `CoMapeoField[]`
-    *   `processPresets.ts`: Categories -> `CoMapeoPreset[]`
     *   `processMetadata.ts`: Metadata & `package.json`
     *   `processTranslations.ts`: Aggregates all translation sheets
 3.  **Export:** `src/driveService.ts` saves JSONs to Drive -> `src/apiService.ts` sends ZIP to external API for packaging -> Returns `.comapeocat`.
