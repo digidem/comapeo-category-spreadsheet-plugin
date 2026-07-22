@@ -19,7 +19,7 @@ The error "Malformed HTML content" occurs when Google Apps Script attempts to re
 
 ## Solution Architecture
 
-### 1. HTML Validation Function (`src/lint.ts`)
+### 1. HTML Validation Function (`src/lint/htmlValidation.ts`)
 
 ```typescript
 validateHtmlContent(html: string): { isValid: boolean; errors: string[] }
@@ -40,7 +40,7 @@ validateHtmlContent(html: string): { isValid: boolean; errors: string[] }
 - `isValid`: Boolean indicating if HTML is valid
 - `errors`: Array of error messages describing issues
 
-### 2. Dialog Validation Function (`src/lint.ts`)
+### 2. Dialog Validation Function (`src/lint/htmlValidation.ts`)
 
 ```typescript
 validateDialogHtml(html: string, context?: string): void

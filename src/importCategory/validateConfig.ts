@@ -4,8 +4,13 @@ const MAX_VALIDATION_ERRORS = 20;
 /** Valid document types per CoMapeo spec */
 const VALID_DOCUMENT_TYPES = ["observation", "track"];
 
-// Reuse VALID_FIELD_TYPES from validation.ts (GAS global scope)
-const VALID_IMPORT_FIELD_TYPES: readonly string[] = VALID_FIELD_TYPES;
+// Keep load-order safe: this file can run before validation.ts in Apps Script.
+const VALID_IMPORT_FIELD_TYPES = [
+  "text",
+  "number",
+  "selectOne",
+  "selectMultiple",
+] as const;
 
 /**
  * Validates the structure of imported configuration data before applying to spreadsheet.

@@ -20,7 +20,7 @@ Users were experiencing "Malformed HTML content" errors during config generation
 
 ## Complete Solution
 
-### 1. Enhanced HTML Validation (`src/lint.ts`)
+### 1. Enhanced HTML Validation (`src/lint/htmlValidation.ts`)
 
 **Added comprehensive validation checks:**
 
@@ -106,7 +106,7 @@ input.value = code;  // Safe - no HTML injection possible
 - Cleaner, more maintainable code
 - Faster rendering
 
-### 5. Comprehensive Test Suite (`src/lint.ts`)
+### 5. Comprehensive Test Suite (`src/lint/htmlValidation.ts`)
 
 **Three levels of testing:**
 
@@ -294,7 +294,7 @@ const message = validateAndSanitizeMessage(messages);
 ## References
 
 - **HTML Validation Strategy**: `../reference/html-validation.md`
-- **Validation Functions**: `src/lint.ts:1129-1450`
+- **Validation Functions**: `src/lint/htmlValidation.ts`
 - **Safe Dialog Wrapper**: `src/dialog.ts:13-48`
 - **Client-Side Rendering Example**: `src/dialog.ts:497-764`
 

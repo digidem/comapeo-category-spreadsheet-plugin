@@ -2,7 +2,12 @@ name: Deploy Script
 
 on:
   workflow_dispatch:
-  push:
+  # Gate on the Plugin checks workflow instead of triggering on the same push
+  # directly: a plain `push:` trigger here would race the Plugin workflow and
+  # could reach `clasp push` while checks are still running or have failed.
+  workflow_run:
+    workflows: ["Plugin"]
+    types: [completed]
     branches: [main, develop]
   release:
     types: [published]
@@ -13,6 +18,21 @@ concurrency:
 
 jobs:
   setup:
+    # For workflow_run, only proceed for a same-repo push that actually passed
+    # checks. workflow_run runs in the base repo's privileged context (full
+    # secrets) regardless of what triggered the upstream Plugin run, and the
+    # branches: filter above matches on head_branch — a fork can name its own
+    # branch "main" or "develop" to satisfy it. Without the event/repo checks
+    # below, a pull_request-triggered Plugin run from such a fork branch would
+    # pass this gate and let deploy check out + `clasp deploy` attacker
+    # -controlled code using this repo's CLASP secrets ("pwn request"; see
+    # https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/).
+    # workflow_dispatch and release runs have no upstream check run to gate on.
+    if: |
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -57,6 +77,11 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # workflow_run doesn't default to the commit that triggered the
+          # upstream Plugin run — pin explicitly so we deploy the exact
+          # commit that passed checks, not whatever HEAD happens to be.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install clasp
         run: sudo npm install @google/clasp@2.4.2 -g
@@ -120,6 +145,14 @@ jobs:
           clasp push -f
 
       - name: Deploy Script
+        # github.ref resolves to the default branch (not the triggering branch) on
+        # workflow_run events, so a develop-branch Plugin run would otherwise satisfy
+        # `github.ref == 'refs/heads/main'` here too. Check head_branch for that event
+        # type instead; github.ref stays reliable for workflow_dispatch and release.
         if: |
-          (github.ref == 'refs/heads/main' || github.event_name == 'release')
-        run: clasp deploy -d "${GITHUB_REF_NAME}"
+          (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') ||
+          (github.event_name != 'workflow_run' && github.ref == 'refs/heads/main') ||
+          github.event_name == 'release'
+        env:
+          DEPLOY_REF_NAME: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+        run: clasp deploy -d "$DEPLOY_REF_NAME"

@@ -88,11 +88,11 @@ Fetch and process icons from external API.
 
 ---
 
-### Validation & Cleanup (3 modules)
+### Validation & Cleanup (3 areas)
 Lint spreadsheet data and cleanup temporary resources.
 
 **Files**:
-- `src/lint.ts` - ✅ Comprehensive validation, ⚠️ Large file (1164 lines)
+- `src/lint/` - ✅ Comprehensive validation split by sheet/domain
 - `src/cleanup.ts` - ✅ Excellent error handling
 - `src/preflightValidation.ts` - ✅ Good coverage
 

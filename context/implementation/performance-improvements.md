@@ -29,12 +29,12 @@ For every improvement initiative:
 
 ---
 
-- [x] **Batch Spreadsheet Writes in Linting (`src/lint.ts`)**  
+- [x] **Batch Spreadsheet Writes in Linting (`src/lint/`)**
   *Gain:* Dramatically reduces per-cell `setBackground/setValue` calls during `lintAllSheets`, cutting spreadsheet round-trips for large sheets.  
   *Risk:* Medium — batching needs to preserve all current highlighting/notes, so comprehensive before/after sheet comparisons are required.  
   *Tested:* `npm run lint`
 
-- [x] **Cache Detail Slugs During Category Validation (`src/lint.ts`)**  
+- [x] **Cache Detail Slugs During Category Validation (`src/lint/categories.ts`)**
   *Gain:* Eliminates repeated reads of the entire Details sheet while validating each category row.  
   *Risk:* Low — ensure cache invalidation within the lint pass so edits within the same run are respected.  
   *Tested:* `npm run lint`

@@ -1,7 +1,7 @@
 /**
  * Shared lint color constants.
  *
- * Used by `src/lint.ts` (production) and `src/test/testLint.ts` (mock framework).
+ * Used by `src/lint/` modules (production) and `src/test/testLint.ts` (mock framework).
  * Keeping them in one place prevents silent test drift when the palette changes.
  */
 

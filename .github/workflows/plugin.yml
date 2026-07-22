@@ -1,0 +1,53 @@
+name: Plugin
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/plugin.yml"
+      - "appsscript.json"
+      - "biome.json"
+      - "bun.lockb"
+      - "index.ts"
+      - "package.json"
+      - "src/**"
+      - "tsconfig.json"
+  push:
+    branches: [main, develop]
+    paths:
+      - ".github/workflows/plugin.yml"
+      - "appsscript.json"
+      - "biome.json"
+      - "bun.lockb"
+      - "index.ts"
+      - "package.json"
+      - "src/**"
+      - "tsconfig.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: TypeScript
+        run: bunx tsc --noEmit
+
+      - name: Biome
+        run: bunx biome lint .
+
+      - name: GAS boot probe
+        run: bun run test:gas-boot
+
+      - name: Lint parity tests
+        run: bun run test:lint-parity
