@@ -4,6 +4,13 @@
  * Task 1: Checks for duplicate effective IDs in Categories column E.
  * The "effective ID" is the explicit ID if present, otherwise the slugified name.
  * Annotates duplicate cells with error-level lint notes.
+ *
+ * IDs are compared exact-case: the package writer's dedup (`writer.js`
+ * `#categories.has(id)`) is a case-sensitive Map keyed on the literal ID, and
+ * `SAFE_ID_REGEX` permits mixed case, so "Foo" and "foo" are two valid,
+ * distinct category IDs there. Flagging them as duplicates would be a false
+ * positive. Case-only collisions are instead surfaced as a non-blocking
+ * warning, since they're a likely authoring mistake even though valid.
  */
 function checkDuplicateCategoryIds(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -21,40 +28,62 @@ function checkDuplicateCategoryIds(): void {
   const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   const ids = idRange.getValues();
 
-  // Build map of effective ID → rows. Mirror builder: explicit ID → slugify(name) →
-  // `category-${index+1}` fallback. Skip blank-name rows — builder returns early.
-  const effectiveIdMap = new Map<string, { rows: number[]; displayId: string }>();
+  // Build map of effective ID (exact case) → rows. Mirror builder: explicit ID →
+  // slugify(name) → `category-${index+1}` fallback. Skip blank-name rows — builder
+  // returns early.
+  const exactIdMap = new Map<string, number[]>();
+  // Case-folded ID → distinct exact IDs sharing that fold, to catch case-only collisions.
+  const foldedIdMap = new Map<string, Set<string>>();
   for (let i = 0; i < ids.length; i++) {
     const explicitId = String(ids[i][0] || "").trim();
     const name = String(names[i][0] || "").trim();
     if (!name) continue;
     const effectiveId = explicitId || slugify(name) || `category-${i + 1}`;
-    const normalizedId = effectiveId.toLowerCase();
 
-    if (!effectiveIdMap.has(normalizedId)) {
-      effectiveIdMap.set(normalizedId, {
-        rows: [i + 2],
-        displayId: effectiveId,
-      });
-    } else {
-      effectiveIdMap.get(normalizedId)?.rows.push(i + 2);
+    if (!exactIdMap.has(effectiveId)) {
+      exactIdMap.set(effectiveId, []);
     }
+    exactIdMap.get(effectiveId)?.push(i + 2);
+
+    const foldedId = effectiveId.toLowerCase();
+    if (!foldedIdMap.has(foldedId)) {
+      foldedIdMap.set(foldedId, new Set());
+    }
+    foldedIdMap.get(foldedId)?.add(effectiveId);
   }
 
-  // Annotate duplicates
-  effectiveIdMap.forEach(({ rows, displayId }) => {
+  const logger = getScopedLogger("LintDuplicateCategoryIds");
+  const annotatedRows = new Set<number>();
+
+  // Exact duplicates: same ID reused across rows. Collides in the package writer's
+  // Map-based dedup, so it's a hard error.
+  exactIdMap.forEach((rows, id) => {
     if (rows.length > 1) {
-      const logger = getScopedLogger("LintDuplicateCategoryIds");
-      logger.warn(
-        `Duplicate category ID "${displayId}" in rows: ${rows.join(", ")}`,
-      );
+      logger.warn(`Duplicate category ID "${id}" in rows: ${rows.join(", ")}`);
       for (const row of rows) {
-        const cell = sheet.getRange(row, 5);
+        annotatedRows.add(row);
         setLintNote(
-          cell,
-          `Duplicate category ID "${displayId}" (case-insensitive match; also in rows ${rows.filter((r) => r !== row).join(", ")})`,
+          sheet.getRange(row, 5),
+          `Duplicate category ID "${id}" (also in rows ${rows.filter((r) => r !== row).join(", ")})`,
           "error",
         );
+      }
+    }
+  });
+
+  // Case-only collisions: distinct exact IDs differing only by letter case. The
+  // writer accepts both, so this is a warning, not an error.
+  foldedIdMap.forEach((variants) => {
+    if (variants.size > 1) {
+      for (const id of variants) {
+        for (const row of exactIdMap.get(id) ?? []) {
+          if (annotatedRows.has(row)) continue;
+          setLintNote(
+            sheet.getRange(row, 5),
+            `Category ID "${id}" differs only by letter case from: ${[...variants].filter((v) => v !== id).join(", ")}`,
+            "warning",
+          );
+        }
       }
     }
   });

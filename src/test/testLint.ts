@@ -895,6 +895,51 @@ function testCaseInsensitiveDuplicateFieldIdParity(): boolean {
   }
 }
 
+function testCaseSensitiveDuplicateCategoryIdParity(): boolean {
+  console.log("=== testCaseSensitiveDuplicateCategoryIdParity ===");
+
+  try {
+    runWithMockedLintSpreadsheet(
+      {
+        Categories: [
+          ["Name", "Icon", "Fields", "Applies", "ID"],
+          ["Cat One", "", "", "observation", "Foo"],
+          ["Cat Two", "", "", "observation", "foo"],
+          ["Cat Three", "", "", "observation", "foo"],
+        ],
+      },
+      (lintCalls) => {
+        checkDuplicateCategoryIds();
+
+        const errors = lintCalls.filter((call) => call.severity === "error");
+        const warnings = lintCalls.filter((call) => call.severity === "warning");
+
+        // Rows 3 and 4 share the exact ID "foo" — the package writer's Map-based
+        // dedup collides on this, so it must stay an error.
+        if (errors.length !== 2 || !errors.every((call) => call.row === 3 || call.row === 4)) {
+          throw new Error(
+            `Expected exact-duplicate errors on rows 3 and 4 only, got ${JSON.stringify(errors)}`,
+          );
+        }
+
+        // Row 2 ("Foo") only collides with row 3/4 by letter case. The writer accepts
+        // "Foo" and "foo" as distinct IDs, so this must be a warning, not an error.
+        if (warnings.length !== 1 || warnings[0].row !== 2) {
+          throw new Error(
+            `Expected a single case-only warning on row 2, got ${JSON.stringify(warnings)}`,
+          );
+        }
+      },
+    );
+
+    console.log("PASS: Category ID dedup is exact-case; case-only collisions warn instead of error");
+    return true;
+  } catch (error) {
+    console.error(`FAIL: ${(error as Error).message}`);
+    return false;
+  }
+}
+
 function testPrimaryLanguageBlankA1RequiresMetadataFallbackError(): boolean {
   console.log("=== testPrimaryLanguageBlankA1RequiresMetadataFallbackError ===");
 
@@ -910,18 +955,21 @@ function testPrimaryLanguageBlankA1RequiresMetadataFallbackError(): boolean {
       (lintCalls) => {
         validatePrimaryLanguageInA1();
 
+        // Blank A1 with no Metadata fallback means the builder throws at generation
+        // time, so this must be "error" severity — matching the lint message itself
+        // ("Config generation will fail with an error").
         const blankA1Errors = lintCalls.filter(
-          (call) => call.row === 1 && call.col === 1 && call.severity === "warning",
+          (call) => call.row === 1 && call.col === 1 && call.severity === "error",
         );
         if (blankA1Errors.length !== 1) {
           throw new Error(
-            `Expected one blank-A1 primary-language warning when Metadata has no fallback, got ${blankA1Errors.length}`,
+            `Expected one blank-A1 primary-language error when Metadata has no fallback, got ${blankA1Errors.length}`,
           );
         }
       },
     );
 
-    console.log("PASS: Blank Categories!A1 produces warning when Metadata has no primaryLanguage fallback");
+    console.log("PASS: Blank Categories!A1 produces an error when Metadata has no primaryLanguage fallback");
     return true;
   } catch (error) {
     console.error(`FAIL: ${(error as Error).message}`);
@@ -1023,7 +1071,7 @@ function testMetadataPrimaryLanguageDuplicateParity(): boolean {
             call.col === 2 &&
             call.severity === "warning" &&
             call.message.includes('Duplicate metadata key "primaryLanguage"') &&
-            call.message.includes("only used if all earlier primaryLanguage rows are blank or invalid"),
+            call.message.includes("is used only if all earlier primaryLanguage rows are blank or have invalid locale codes"),
         );
         if (row4FallbackWarnings.length !== 1) {
           throw new Error(
@@ -1778,6 +1826,7 @@ function runLintParityTests(): void {
       fn: testDriveIconInfoCacheKeepsLintSourceRecognitionConsistent,
     },
     { name: "Case-Insensitive Duplicate Field ID Parity", fn: testCaseInsensitiveDuplicateFieldIdParity },
+    { name: "Case-Sensitive Duplicate Category ID Parity", fn: testCaseSensitiveDuplicateCategoryIdParity },
     { name: "Cross-Sheet Icon Collisions No Collision", fn: testCrossSheetIconCollisionsNoCollision },
     { name: "Cross-Sheet Icon Collisions Detects Collision", fn: testCrossSheetIconCollisionsDetectsCollision },
     { name: "Total Entity Counts Under Limit", fn: testTotalEntityCountsUnderLimit },
