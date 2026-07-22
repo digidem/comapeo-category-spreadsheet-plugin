@@ -18,9 +18,21 @@ concurrency:
 
 jobs:
   setup:
-    # For workflow_run, only proceed if the Plugin checks actually passed.
+    # For workflow_run, only proceed for a same-repo push that actually passed
+    # checks. workflow_run runs in the base repo's privileged context (full
+    # secrets) regardless of what triggered the upstream Plugin run, and the
+    # branches: filter above matches on head_branch — a fork can name its own
+    # branch "main" or "develop" to satisfy it. Without the event/repo checks
+    # below, a pull_request-triggered Plugin run from such a fork branch would
+    # pass this gate and let deploy check out + `clasp deploy` attacker
+    # -controlled code using this repo's CLASP secrets ("pwn request"; see
+    # https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/).
     # workflow_dispatch and release runs have no upstream check run to gate on.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: |
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
