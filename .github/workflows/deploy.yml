@@ -133,6 +133,14 @@ jobs:
           clasp push -f
 
       - name: Deploy Script
+        # github.ref resolves to the default branch (not the triggering branch) on
+        # workflow_run events, so a develop-branch Plugin run would otherwise satisfy
+        # `github.ref == 'refs/heads/main'` here too. Check head_branch for that event
+        # type instead; github.ref stays reliable for workflow_dispatch and release.
         if: |
-          (github.ref == 'refs/heads/main' || github.event_name == 'release')
-        run: clasp deploy -d "${GITHUB_REF_NAME}"
+          (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') ||
+          (github.event_name != 'workflow_run' && github.ref == 'refs/heads/main') ||
+          github.event_name == 'release'
+        env:
+          DEPLOY_REF_NAME: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+        run: clasp deploy -d "$DEPLOY_REF_NAME"
