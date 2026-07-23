@@ -352,10 +352,50 @@ function testUtilsSlugify(): void {
     assertEqual(slugify("\t\n\r"), "", "Should handle various whitespace characters");
   });
 
-  // Test 37: Complex unicode characters
+  // Test 37: Complex unicode characters (slugify is ASCII-only for entity IDs)
   runTest("Edge case: Complex unicode characters", () => {
-    assertEqual(slugify("日本語"), "", "Should remove complex unicode");
+    assertEqual(slugify("日本語"), "", "slugify is ASCII-only; non-Latin entity names fold to empty and fall back to prefix-N");
     assertEqual(slugify("Emoji's 🚀🎉"), "emojis", "Should remove emojis and handle apostrophes");
+  });
+
+  // Test 37b: canonicalizeOptionValue — select option values preserve EVERY
+  // script. Regression: option values used to be slugify()'d (ASCII-only), so
+  // all-Thai / all-Vietnamese / all-Cyrillic / all-Greek option lists collapsed
+  // to one value and the linter deleted the "duplicates".
+  runTest("canonicalizeOptionValue: preserves all scripts (no false duplicates)", () => {
+    // Thai: distinct options stay distinct, combining marks intact.
+    const thaiA = canonicalizeOptionValue("เห็นด้วยตา");
+    const thaiB = canonicalizeOptionValue("ได้ยินเสียงร้อง");
+    assertTrue(thaiA.length > 0, "Thai option value must not be empty");
+    assertTrue(thaiB.length > 0, "Thai option value must not be empty");
+    assertTrue(thaiA !== thaiB, "Distinct Thai options must not collide");
+    assertEqual(canonicalizeOptionValue("เห็นด้วยตา"), "เห็นด้วยตา", "Thai combining marks must be preserved");
+    assertEqual(canonicalizeOptionValue("ไม้ตอง (ทองหลาง)"), "ไม้ตอง-ทองหลาง", "Thai punctuation becomes a separator, script intact");
+
+    // Vietnamese tones are semantic — must NOT collapse (slugify gave "ma" for all).
+    const vn = ["má", "mà", "mả", "mã", "mạ"].map(canonicalizeOptionValue);
+    assertEqual(new Set(vn).size, 5, "Vietnamese tone variants must stay distinct");
+
+    // Cyrillic й ≠ и and Greek ά ≠ α (slugify collapsed both pairs).
+    assertTrue(canonicalizeOptionValue("й") !== canonicalizeOptionValue("и"), "Cyrillic й and и must stay distinct");
+    assertTrue(canonicalizeOptionValue("ά") !== canonicalizeOptionValue("α"), "Greek ά and α must stay distinct");
+
+    // Diacritics preserved (unlike slugify's Café -> cafe).
+    assertEqual(canonicalizeOptionValue("Café"), "café", "Diacritics are semantic and must be kept");
+
+    // Emoji variation selectors must not leave an invisible colliding mark.
+    assertEqual(canonicalizeOptionValue("❤️"), "", "Emoji-only option reduces to empty (falls back), not an invisible mark");
+    assertEqual(canonicalizeOptionValue("☕️"), "", "Coffee emoji also reduces to empty (shares the same fallback path)");
+    // Both canonicalize to "", but callers use `canonicalizeOptionValue(x) || x`
+    // — verify that fallback actually keeps distinct emoji options distinct,
+    // since two different options both mapping to "" would otherwise collide.
+    const heartValue = canonicalizeOptionValue("❤️") || "❤️";
+    const coffeeValue = canonicalizeOptionValue("☕️") || "☕️";
+    assertTrue(heartValue !== coffeeValue, "Distinct emoji options must stay distinct via the raw-label fallback");
+
+    // Empty / separator-only input.
+    assertEqual(canonicalizeOptionValue(""), "", "Empty input -> empty value");
+    assertEqual(canonicalizeOptionValue("   "), "", "Whitespace-only -> empty value");
   });
 
   // Test 38: Performance - many slugs

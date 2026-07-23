@@ -49,7 +49,13 @@ const ALL_LANGUAGES: Record<string, string> = {
 };
 
 /**
- * Converts a string to a slug format.
+ * Converts a string to an ASCII slug format. Used for ENTITY identifiers
+ * (field IDs, category/preset IDs, icon IDs, config name) which the
+ * `.comapeocat` packager restricts to `^[a-zA-Z0-9_-]+$` (see
+ * package/src/writer.js SAFE_ID_REGEX). Non-Latin names fold to "" here and
+ * callers fall back to `prefix-N` — that is intentional. Do NOT use this for
+ * select option values; use canonicalizeOptionValue() instead, which preserves
+ * every script.
  * @param input The input string to be converted.
  * @returns The slugified string.
  */
@@ -65,9 +71,57 @@ function slugify(input: string | any): string {
   return normalized
     .toLocaleLowerCase("en-US")  // Use en-US locale to avoid Turkish 'I' → 'ı' issue
     .trim()
-    .replace(/[^\w\s-]/g, "")    // Remove non-word characters (keep letters, numbers, underscore, whitespace, hyphen)
+    .replace(/[^\w\s-]/g, "")    // Remove non-word characters (keep ASCII letters, numbers, underscore, whitespace, hyphen)
     .replace(/[\s_-]+/g, "-")    // Replace whitespace/underscore/hyphen sequences with single hyphen
     .replace(/^-+|-+$/g, "");    // Remove leading/trailing hyphens
+}
+
+/**
+ * Canonicalizes a select-option label into its stored machine value while
+ * preserving EVERY script (Thai, Vietnamese, Cyrillic, Greek, CJK, ...).
+ *
+ * Unlike slugify() — which is ASCII-only and folds diacritics for entity IDs —
+ * this keeps Unicode letters and combining marks intact so distinct options
+ * never collapse to the same value. Collapsing is what caused the linter to
+ * flag and delete all-Thai (and all-Vietnamese/Cyrillic/Greek) option lists as
+ * "duplicates". Diacritics are semantic in tone languages (má ≠ mà), so they
+ * are preserved rather than stripped.
+ *
+ * Used in lockstep by the builder (parseOptions) and the linter
+ * (parseCanonicalOptions) so generation and validation agree.
+ *
+ * @param input Raw option label from the spreadsheet.
+ * @returns A Unicode-safe canonical value ("" if nothing usable remains —
+ *   e.g. emoji- or punctuation-only input). Callers fall back to the raw
+ *   label in that case so distinct options never collapse to one empty value.
+ */
+function canonicalizeOptionValue(input: string | any): string {
+  if (!input) return "";
+
+  const str = typeof input === "string" ? input : String(input);
+
+  return (
+    str
+      // Composed form so a base + combining mark compares equal to its
+      // precomposed code point (Thai is NFC-stable; this normalizes the rest).
+      .normalize("NFC")
+      // Drop variation selectors (emoji presentation hints). Without this,
+      // "❤️" and "☕️" both reduce to a lone invisible U+FE0F and collide.
+      .replace(/[\u{FE00}-\u{FE0F}]/gu, "")
+      .toLocaleLowerCase("en-US") // en-US avoids the Turkish 'I' → 'ı' issue
+      .trim()
+      // Remove orphan combining marks — a mark run with NO base, i.e. at the
+      // start or preceded by a non-letter/number/mark (space, punctuation).
+      // The boundary class excludes \p{M} on purpose: a mark preceded by another
+      // mark is part of the same cluster (Thai vowel + tone) and must be kept.
+      .replace(/(^|[^\p{L}\p{N}\p{M}])(\p{M}+)/gu, "$1")
+      // Keep letters, (attached) marks, and numbers from any script; preserve
+      // diacritics. Whitespace/underscore/hyphen are kept as separators; every
+      // other symbol/punctuation mark is removed.
+      .replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, "")
+      .replace(/[\s_-]+/g, "-") // collapse separator runs to a single hyphen
+      .replace(/^-+|-+$/g, "")
+  ); // trim leading/trailing hyphens
 }
 
 function sanitizeIconSlug(slug: string | null | undefined): string {

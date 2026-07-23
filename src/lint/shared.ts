@@ -57,7 +57,19 @@ function validateAndCapitalizeCommaList(value: string): string {
   if (!value || typeof value !== "string") return "";
   return value
     .split(",")
-    .map((item) => capitalizeFirstLetter(item.trim()))
+    .map((item) => {
+      const trimmed = item.trim();
+      // Options may use an explicit "value:label" form. Capitalizing the whole
+      // item would corrupt the value prefix (cafe:Café -> Cafe:Café), changing
+      // the stored value. Capitalize only the label; keep the value verbatim.
+      const colonIndex = trimmed.indexOf(":");
+      if (colonIndex > 0) {
+        const explicitValue = trimmed.slice(0, colonIndex);
+        const label = trimmed.slice(colonIndex + 1).trim();
+        return `${explicitValue}:${capitalizeFirstLetter(label)}`;
+      }
+      return capitalizeFirstLetter(trimmed);
+    })
     .filter((item) => item)
     .join(", ");
 }
@@ -614,6 +626,9 @@ function checkManualIdHygiene(
   const nameValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   const idRange = sheet.getRange(2, columnEIndex, lastRow - 1, 1);
   const idValues = idRange.getValues();
+  // Entity IDs must stay ASCII: the .comapeocat packager restricts them to
+  // ^[a-zA-Z0-9_-]+$ (package/src/writer.js), so a manually-entered non-ASCII
+  // ID would be rejected at build time. Warn on those here.
   const slugSafePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
   for (let i = 0; i < idValues.length; i++) {
@@ -630,16 +645,24 @@ function checkManualIdHygiene(
     // Skip if this row was already flagged as whitespace-only
     if (rawIds.has(row)) continue;
 
-    // Check slug-safety
+    // Check slug-safety. Non-ASCII explicit IDs are NOT blocked: the live
+    // build accepts them as entered and the schema allows free-string IDs, so
+    // users may keep meaningful non-Latin IDs (e.g. Thai). But warn that the
+    // standalone comapeocat CLI (package/src/writer.js SAFE_ID_REGEX) rejects
+    // them and the import reader cannot read back non-ASCII icon/translation
+    // entries — so round-trip and CLI builds are not guaranteed.
     if (!slugSafePattern.test(idValue)) {
       const cell = sheet.getRange(row, columnEIndex);
-      appendLintNote(
-        cell,
-        `Manual ID "${idValue}" is used as entered by the builder. Recommended format: lowercase letters, numbers, and hyphens (e.g., "my-category-id").`,
-        "warning",
-      );
+      // Only blame "non-ASCII" when that's actually true — the pattern also
+      // rejects pure-ASCII input (uppercase, spaces, underscores, double
+      // hyphens), where the CLI/round-trip caveat below does not apply.
+      const isNonAscii = /[^\x00-\x7F]/.test(idValue);
+      const message = isNonAscii
+        ? `Manual ID "${idValue}" contains non-ASCII characters. The live build accepts it as entered, but the standalone comapeocat CLI rejects such IDs and import cannot read back non-ASCII icon/translation entries. For full toolchain compatibility use lowercase ASCII letters, numbers, and hyphens (e.g., "my-category-id").`
+        : `Manual ID "${idValue}" is used as entered by the builder. Recommended format: lowercase letters, numbers, and hyphens (e.g., "my-category-id").`;
+      appendLintNote(cell, message, "warning");
       logger.warn(
-        `${sheetName} row ${row}: non-slug-safe ID "${idValue}"`,
+        `${sheetName} row ${row}: ${isNonAscii ? "non-ASCII" : "non-slug-safe"} ID "${idValue}"`,
       );
     }
   }
@@ -766,8 +789,11 @@ function parseCanonicalOptions(optionsStr: string): Array<{
       const label = opt.substring(colonIndex + 1);
       return { value, label, raw: opt };
     }
+    // Mirror the builder: fall back to the raw label when the canonical value
+    // is empty (emoji-/punctuation-only options) so distinct options never
+    // collapse to one empty value. Kept in lockstep with parseOptions().
     return {
-      value: slugify(opt),
+      value: canonicalizeOptionValue(opt) || opt,
       label: opt,
       raw: opt,
     };
