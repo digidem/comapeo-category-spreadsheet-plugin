@@ -250,12 +250,15 @@ function sanitizeRowData(
       // Icon ID); the old code hardcoded index 3 as "Color" and clobbered the
       // Applies column with a hex value, corrupting the sanitized copy.
       const findCol = (aliases: string[], fallback: number): number => {
-        if (header && typeof header.findIndex === "function") {
-          const idx = header.findIndex((cell) => {
-            const norm = String(cell ?? "").trim().toLowerCase();
-            return norm !== "" && aliases.includes(norm);
-          });
-          if (idx !== -1) return idx;
+        if (header) {
+          let found = -1;
+          for (let i = 0; i < header.length; i++) {
+            const norm = String(header[i] ?? "").trim().toLowerCase();
+            if (norm !== "" && aliases.includes(norm)) {
+              found = i;
+            }
+          }
+          if (found !== -1) return found;
         }
         return fallback;
       };
