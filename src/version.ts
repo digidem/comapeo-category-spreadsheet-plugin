@@ -7,11 +7,11 @@
  */
 
 const versionData = {
-  "version": "2.0.0+23988c7",
-  "commit": "23988c7",
-  "branch": "refactor/34-split-lint-modules",
-  "isDirty": false,
-  "buildDate": "2026-07-22T19:17:53.108Z"
+  "version": "2.0.0+ee65598",
+  "commit": "ee65598",
+  "branch": "chore/geometry-cleanup-and-regression-sanitizer-fix",
+  "isDirty": true,
+  "buildDate": "2026-07-23T00:01:05.721Z"
 };
 
 export function getVersionInfo(): string {
