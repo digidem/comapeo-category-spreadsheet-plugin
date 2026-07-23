@@ -391,7 +391,7 @@ function buildFields(data: SheetData): Field[] {
 /**
  * Parses comma-separated options string into SelectOption array
  * Supports two formats:
- * - "Label" -> {value: slugify(Label), label: Label}
+ * - "Label" -> {value: canonicalizeOptionValue(Label), label: Label}
  * - "value:Label" -> {value: value, label: Label}
  */
 function parseOptions(optionsStr: string): SelectOption[] | undefined {
@@ -411,9 +411,11 @@ function parseOptions(optionsStr: string): SelectOption[] | undefined {
       const label = opt.substring(colonIndex + 1);
       return { value, label };
     }
-    // Default format: just label
+    // Default format: just label. Fall back to the raw label when the
+    // canonical value is empty (emoji-/punctuation-only options) so distinct
+    // options never collapse to a single empty value and get deduplicated away.
     return {
-      value: slugify(opt),
+      value: canonicalizeOptionValue(opt) || opt,
       label: opt,
     };
   });
@@ -1249,7 +1251,14 @@ function buildTranslationsPayload(
           const value = o?.value || "";
           const label = o?.label || "";
           if (!label) return "";
-          return value === slugify(label) ? label : `${value}:${label}`;
+          // Mirror parseOptions' fallback: an emoji-/punctuation-only label
+          // canonicalizes to "", so parseOptions stores the raw label as
+          // value. Compare against that same fallback or bare options like
+          // "❤️" get misreconstructed as "❤️:❤️" and no longer match the
+          // source string in the translations sheet.
+          return value === (canonicalizeOptionValue(label) || label)
+            ? label
+            : `${value}:${label}`;
         })
         .filter(Boolean)
         .join(", ");

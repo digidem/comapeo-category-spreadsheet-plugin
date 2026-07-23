@@ -188,10 +188,18 @@ function checkUnreferencedDetails(): void {
       }
     }
 
-    // Check each detail to see if it's referenced by slugified name or explicit ID
+    // Check each detail against the category field tokens. Mirror the builder's
+    // resolution (payloadBuilder fieldNameToId): a category references a detail
+    // by NAME (exact or lowercase), falling back to the slugified name. So match
+    // on the detail's raw/lowercase name and slug, plus its explicit ID. The
+    // name check is essential for non-Latin names — slugify() returns "" for
+    // Thai etc., so without it every Thai detail referenced by name would be
+    // falsely reported as unreferenced.
     for (const entry of detailEntries) {
       const isReferenced =
         (entry.slug && referencedFields.has(entry.slug)) ||
+        referencedFields.has(entry.name) ||
+        referencedFields.has(entry.name.toLowerCase()) ||
         (entry.explicitId &&
           (referencedFields.has(entry.explicitId) ||
             referencedFields.has(entry.explicitId.toLowerCase())));

@@ -351,7 +351,7 @@ function parseExtractedFiles(
 									if (typeof opt === "string") {
 										return {
 											label: opt,
-											value: createOptionValue(opt, fieldId, optionIndex),
+											value: canonicalizeOptionValue(opt) || opt,
 										};
 									} else if (typeof opt === "object" && opt !== null) {
 										const obj = opt as Record<string, unknown>;
@@ -359,7 +359,7 @@ function parseExtractedFiles(
 										const normalizedValue =
 											typeof obj.value === "string" && obj.value.trim() !== ""
 												? obj.value
-											: createOptionValue(optionLabel, fieldId, optionIndex);
+											: canonicalizeOptionValue(optionLabel) || optionLabel;
 										return {
 											label: optionLabel,
 											value: normalizedValue,
@@ -368,7 +368,7 @@ function parseExtractedFiles(
 									const fallbackLabel = String(opt);
 									return {
 										label: fallbackLabel,
-										value: createOptionValue(fallbackLabel, fieldId, optionIndex),
+										value: canonicalizeOptionValue(fallbackLabel) || fallbackLabel,
 									};
 								});
 							} else if (typeof field.options === "object") {
