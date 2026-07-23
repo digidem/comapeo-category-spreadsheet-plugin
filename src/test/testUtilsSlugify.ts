@@ -385,7 +385,13 @@ function testUtilsSlugify(): void {
 
     // Emoji variation selectors must not leave an invisible colliding mark.
     assertEqual(canonicalizeOptionValue("❤️"), "", "Emoji-only option reduces to empty (falls back), not an invisible mark");
-    assertTrue(canonicalizeOptionValue("❤️") !== canonicalizeOptionValue("☕️") || canonicalizeOptionValue("❤️") === "", "No invisible cross-emoji collision");
+    assertEqual(canonicalizeOptionValue("☕️"), "", "Coffee emoji also reduces to empty (shares the same fallback path)");
+    // Both canonicalize to "", but callers use `canonicalizeOptionValue(x) || x`
+    // — verify that fallback actually keeps distinct emoji options distinct,
+    // since two different options both mapping to "" would otherwise collide.
+    const heartValue = canonicalizeOptionValue("❤️") || "❤️";
+    const coffeeValue = canonicalizeOptionValue("☕️") || "☕️";
+    assertTrue(heartValue !== coffeeValue, "Distinct emoji options must stay distinct via the raw-label fallback");
 
     // Empty / separator-only input.
     assertEqual(canonicalizeOptionValue(""), "", "Empty input -> empty value");
