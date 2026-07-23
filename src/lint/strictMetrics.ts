@@ -215,7 +215,13 @@ function buildLintTranslationsByLocale(
         if (!label) {
           return "";
         }
-        return value === canonicalizeOptionValue(label) ? label : `${value}:${label}`;
+        // Mirror parseOptions' fallback (value = canonicalizeOptionValue(opt)
+        // || opt): an emoji-/punctuation-only label canonicalizes to "", so
+        // compare against that same fallback or the reconstruction drifts to
+        // "label:label" and no longer matches the spreadsheet source string.
+        return value === (canonicalizeOptionValue(label) || label)
+          ? label
+          : `${value}:${label}`;
       })
       .filter(Boolean)
       .join(", ");

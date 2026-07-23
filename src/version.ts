@@ -7,11 +7,11 @@
  */
 
 const versionData = {
-  "version": "2.0.0+ee65598",
-  "commit": "ee65598",
-  "branch": "chore/geometry-cleanup-and-regression-sanitizer-fix",
+  "version": "2.0.0+e8105ab",
+  "commit": "e8105ab",
+  "branch": "fix/unicode-option-values-and-lint-fixes",
   "isDirty": true,
-  "buildDate": "2026-07-23T00:01:05.721Z"
+  "buildDate": "2026-07-23T00:39:36.796Z"
 };
 
 export function getVersionInfo(): string {

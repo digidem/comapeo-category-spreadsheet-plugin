@@ -1251,7 +1251,14 @@ function buildTranslationsPayload(
           const value = o?.value || "";
           const label = o?.label || "";
           if (!label) return "";
-          return value === canonicalizeOptionValue(label) ? label : `${value}:${label}`;
+          // Mirror parseOptions' fallback: an emoji-/punctuation-only label
+          // canonicalizes to "", so parseOptions stores the raw label as
+          // value. Compare against that same fallback or bare options like
+          // "❤️" get misreconstructed as "❤️:❤️" and no longer match the
+          // source string in the translations sheet.
+          return value === (canonicalizeOptionValue(label) || label)
+            ? label
+            : `${value}:${label}`;
         })
         .filter(Boolean)
         .join(", ");

@@ -44,8 +44,11 @@ function applyFields(sheet: GoogleAppsScript.Spreadsheet.Sheet, fields: any[]) {
             // form by writing it back as "value:label". Otherwise a legacy
             // config whose stored value predates canonicalizeOptionValue (e.g.
             // diacritic-folded "cafe" for label "Café") would be re-written as
-            // the bare label and drift to "café" on the next export.
-            return value && value !== canonicalizeOptionValue(label)
+            // the bare label and drift to "café" on the next export. Compare
+            // against the same "|| label" fallback parseOptions uses, or an
+            // emoji-/punctuation-only option like "❤️" (which canonicalizes
+            // to "") gets rewritten as "❤️:❤️" instead of staying bare.
+            return value && value !== (canonicalizeOptionValue(label) || label)
               ? `${value}:${label}`
               : label;
           }
