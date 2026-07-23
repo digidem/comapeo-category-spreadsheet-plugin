@@ -215,7 +215,7 @@ function buildLintTranslationsByLocale(
         if (!label) {
           return "";
         }
-        return value === slugify(label) ? label : `${value}:${label}`;
+        return value === canonicalizeOptionValue(label) ? label : `${value}:${label}`;
       })
       .filter(Boolean)
       .join(", ");

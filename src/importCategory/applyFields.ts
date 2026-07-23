@@ -1,3 +1,5 @@
+/// <reference path="../utils.ts" />
+
 /**
  * Fields application functions for the import category functionality.
  * This file contains functions related to applying fields to the spreadsheet.
@@ -35,7 +37,17 @@ function applyFields(sheet: GoogleAppsScript.Spreadsheet.Sheet, fields: any[]) {
           // Handle both string and object formats
           if (typeof opt === "string") return opt;
           if (typeof opt === "object" && opt !== null) {
-            return opt.label || opt.value || opt.name || "";
+            const label = opt.label || opt.name || "";
+            const value = opt.value || "";
+            if (!label) return value;
+            // Preserve an explicit value that differs from the canonical label
+            // form by writing it back as "value:label". Otherwise a legacy
+            // config whose stored value predates canonicalizeOptionValue (e.g.
+            // diacritic-folded "cafe" for label "Café") would be re-written as
+            // the bare label and drift to "café" on the next export.
+            return value && value !== canonicalizeOptionValue(label)
+              ? `${value}:${label}`
+              : label;
           }
           return "";
         })
