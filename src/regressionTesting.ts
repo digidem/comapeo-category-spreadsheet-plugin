@@ -282,7 +282,11 @@ function sanitizeRowData(
         sanitized[iconCol] = TEST_PLACEHOLDER_ICON_URL;
       }
       // Fields reference: keep structure but use generic names
-      if (sanitized[fieldsCol] && typeof sanitized[fieldsCol] === "string") {
+      if (
+        fieldsCol < sanitized.length &&
+        sanitized[fieldsCol] &&
+        typeof sanitized[fieldsCol] === "string"
+      ) {
         const fields = sanitized[fieldsCol].split(",").map((f) => f.trim()).filter((f) => f !== "");
         sanitized[fieldsCol] = fields
           .map((field, index) => {
