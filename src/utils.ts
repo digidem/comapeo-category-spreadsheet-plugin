@@ -242,8 +242,7 @@ function getFieldOptions(
  * @param index - Zero-based option index for fallback uniqueness.
  */
 function createOptionValue(label: string, fieldKey: string | undefined, index: number): string {
-  const baseKey = fieldKey && fieldKey.trim() !== "" ? fieldKey : "option";
-  return buildSlugWithFallback(label, baseKey, index);
+  return canonicalizeOptionValue(label) || label;
 }
 
 // =============================================================================
