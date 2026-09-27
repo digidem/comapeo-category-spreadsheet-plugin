@@ -169,6 +169,9 @@ function handleLanguageSelection(
   } catch (error) {
     const ui = SpreadsheetApp.getUi();
     const message = error instanceof Error ? error.message : String(error);
+    getTranslationServiceLogger().error(
+      `[AUTHDEBUG] handleLanguageSelection failed: ${message}\n${error instanceof Error ? error.stack : "(no stack)"}`,
+    );
     ui.alert(
       translateMenuTexts[locale].error,
       `${translateMenuTexts[locale].errorText}${message}`,
