@@ -150,6 +150,45 @@ function main() {
     `known target language keeps prior behavior (no echo-guard); got: ${categorySheet.values[1][4]}`,
   );
 
+  // 5) Translator throws for an unknown custom code (real LanguageApp
+  // behavior, confirmed by the live probe): the first failure marks the
+  // target unsupported; remaining pairs skip with no call and no sleep.
+  console.log("translator throws for custom target:");
+  const throwCode = "qaa";
+  const throwHeader = `Qaa - ${throwCode}`;
+  const throwRows = [["English", "Spanish", "Italian", throwHeader]];
+  for (let i = 1; i <= 60; i++) {
+    throwRows.push([`throw source ${i}`, "", "", ""]);
+  }
+  const throwFixture = createFakeSpreadsheet({
+    Categories: new FakeSheet("Categories", [["English"]]),
+    Details: new FakeSheet("Details", [["Name", "Label"], ["cat1", "Water"]]),
+    "Category Translations": new FakeSheet("Category Translations", throwRows),
+  });
+  context.SpreadsheetApp.getActiveSpreadsheet = () => throwFixture.spreadsheet;
+  const translateCalls = { count: 0 };
+  context.LanguageApp = {
+    translate(text, sourceLang, targetLang) {
+      translateCalls.count++;
+      if (String(targetLang).toLowerCase() === throwCode) {
+        throw new Error("Translation between the given languages is not currently supported.");
+      }
+      return `[${targetLang}] ${text}`;
+    },
+  };
+  const throwCompleted = context.autoTranslateSheetsBidirectional(["es", throwCode]);
+  assert(throwCompleted === true, "run with a throwing custom target still completes");
+  assert(
+    translateCalls.count === 61,
+    `only the first failing pair is attempted, rest skipped (got ${translateCalls.count} calls)`,
+  );
+  const throwSheet = throwFixture.sheetsByName.get("Category Translations");
+  const dataRows = throwSheet.values.slice(1); // skip header row
+  const qaaFilled = dataRows.filter((row) => String(row[3]).trim() !== "").length;
+  const esFilled = dataRows.filter((row) => String(row[1]).trim() !== "").length;
+  assert(qaaFilled === 0, `throwing target cells left empty (got ${qaaFilled} filled)`);
+  assert(esFilled === 60, `other targets unaffected (got ${esFilled} of 60 filled)`);
+
   console.log("check-custom-lang PASSED");
 }
 

@@ -46,6 +46,12 @@ const CANCEL_CHECK_EVERY_N_PAIRS = 25;
 let translationRunStartedAt = 0;
 let translationCancelled = false;
 
+// Target codes the translator has rejected (LanguageApp throws "not
+// currently supported" for codes it does not know). Pairs for these targets
+// are skipped without further calls: each attempt would fail identically
+// after the 200ms rate-limit interval.
+let unsupportedTranslatorTargets = new Set<TranslationLanguage>();
+
 // Debug-only: when > 0, Phase 2 cancels after this many translate calls.
 // Used by the Developer-menu self-test to exercise the cancel path in the
 // real GAS runtime without needing a second execution to click Cancel.
@@ -432,6 +438,11 @@ function translateSheetBidirectional(
           return;
         }
 
+        if (unsupportedTranslatorTargets.has(targetLang)) {
+          // Translator already rejected this code; don't pay 200ms to fail again.
+          return;
+        }
+
         const cacheKey = `${actualSourceLanguage}::${targetLang}::${originalText}`;
         if (!translationCache.has(cacheKey) && !pendingTranslations.has(cacheKey)) {
           pendingTranslations.set(cacheKey, { sourceText: originalText, targetLang });
@@ -448,6 +459,11 @@ function translateSheetBidirectional(
     const echoWarnedTargets = new Set<TranslationLanguage>();
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
+      if (unsupportedTranslatorTargets.has(targetLang)) {
+        // Translator rejected this code earlier in the run; skip silently.
+        translateIndex++;
+        continue;
+      }
       if (debugCancelAfterPairs > 0 && translateIndex >= debugCancelAfterPairs) {
         getTranslationServiceLogger().info(`[DEBUG] Self-test cancel after ${translateIndex} pairs`);
         translationCancelled = true;
@@ -484,9 +500,12 @@ function translateSheetBidirectional(
           }
         }
       } catch (error) {
-        const errorMessage = `Translation error for "${sourceText}" → ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${(error as Error).message}`;
-        getTranslationServiceLogger().error(errorMessage);
-        translationErrors.push(errorMessage);
+        if (!unsupportedTranslatorTargets.has(targetLang)) {
+          unsupportedTranslatorTargets.add(targetLang);
+          getTranslationServiceLogger().warn(
+            `[TRANSLATION] Translator does not support target "${targetLang}": ${(error as Error).message} — remaining cells for this target left empty for manual fill`,
+          );
+        }
       }
     }
 
