@@ -231,7 +231,7 @@ function translateSheetBidirectional(
   }
 
   // Validate that target languages are available
-  const invalidLanguages = targetLanguages.filter(lang => !availableTargetLanguages[lang]);
+  const invalidLanguages = targetLanguages.filter(lang => !availableTargetLanguages[String(lang).toLowerCase()]);
   if (invalidLanguages.length > 0) {
     throw new Error(`Invalid target languages: ${invalidLanguages.join(', ')}`);
   }
@@ -326,6 +326,7 @@ function translateSheetBidirectional(
 
     // Phase 2: Translate all unique texts (rate-limited)
     const prePhase2ErrorCount = translationErrors.length;
+    const echoWarnedTargets = new Set<TranslationLanguage>();
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
       translateIndex++;
@@ -337,7 +338,22 @@ function translateSheetBidirectional(
         );
         const translation = translatedText ? translatedText.trim() : "";
         if (translation) {
-          translationCache.set(cacheKey, translation);
+          // The translator echoes the source text unchanged for codes it does
+          // not support (e.g. custom/Indigenous languages). Do not cache that
+          // as a translation. For known languages an identical result can be
+          // legitimate (proper nouns, acronyms), so the guard is scoped to
+          // unknown codes only.
+          const isKnownTarget = Boolean(allLanguages[targetLang] || allLanguages[String(targetLang).toLowerCase()]);
+          if (!isKnownTarget && translation === sourceText) {
+            if (!echoWarnedTargets.has(targetLang)) {
+              echoWarnedTargets.add(targetLang);
+              const echoMessage = `Translator returned source text for unsupported target "${targetLang}"; cells left empty for manual fill`;
+              getTranslationServiceLogger().warn(`[TRANSLATION] ${echoMessage}`);
+              translationErrors.push(echoMessage);
+            }
+          } else {
+            translationCache.set(cacheKey, translation);
+          }
         }
       } catch (error) {
         const errorMessage = `Translation error for "${sourceText}" → ${targetLang} (pair ${translateIndex}/${pendingTranslations.size}): ${(error as Error).message}`;
@@ -403,6 +419,32 @@ function translateSheetBidirectional(
 }
 
 /**
+ * Resolves the column header text for a translation target language.
+ *
+ * Standard languages (present in allLanguages) use their display name.
+ * Custom languages — missing from allLanguages but registered in a sheet
+ * header — use the "Name - code" format so getAvailableTargetLanguages()
+ * keeps recognizing the column on later runs. Fully unknown codes fall back
+ * to the bare code.
+ */
+function resolveTranslationColumnHeader(
+  langCode: TranslationLanguage,
+  allLanguages: LanguageMap,
+  availableTargetLanguages: LanguageMap,
+): string {
+  const code = String(langCode);
+  const standardName = allLanguages[code] || allLanguages[code.toLowerCase()];
+  if (standardName) {
+    return standardName;
+  }
+  const customName = availableTargetLanguages[code.toLowerCase()];
+  if (customName) {
+    return `${customName} - ${code}`;
+  }
+  return code;
+}
+
+/**
  * Creates or retrieves the Category Translations sheet
  *
  * Creates a new sheet with language headers (primary language + target languages).
@@ -429,11 +471,13 @@ function createCategoryTranslationsSheet(targetLanguages?: TranslationLanguage[]
     const headers = [primaryLanguage.name];
 
     if (targetLanguages && targetLanguages.length > 0) {
-      // Add only selected target languages
+      // Add only selected target languages.
+      // Custom languages (not in allLanguages) get "Name - code" headers so
+      // getAvailableTargetLanguages() keeps recognizing them; unknown codes
+      // fall back to the bare code.
+      const availableTargetLanguages = getAvailableTargetLanguages();
       for (const langCode of targetLanguages) {
-        if (allLanguages[langCode]) {
-          headers.push(allLanguages[langCode]);
-        }
+        headers.push(resolveTranslationColumnHeader(langCode, allLanguages, availableTargetLanguages));
       }
     } else {
       // Fallback to old behavior if no target languages specified
@@ -486,11 +530,13 @@ function createTranslationSheet(sheetName: string, targetLanguages: TranslationL
     // Create headers: primary language + selected target languages only
     const headers = [primaryLanguage.name];
 
-    // Add only selected target languages
+    // Add only selected target languages.
+    // Custom languages (not in allLanguages) get "Name - code" headers so
+    // getAvailableTargetLanguages() keeps recognizing them; unknown codes
+    // fall back to the bare code.
+    const availableTargetLanguages = getAvailableTargetLanguages();
     for (const langCode of targetLanguages) {
-      if (allLanguages[langCode]) {
-        headers.push(allLanguages[langCode]);
-      }
+      headers.push(resolveTranslationColumnHeader(langCode, allLanguages, availableTargetLanguages));
     }
 
     sheet
@@ -530,11 +576,6 @@ function ensureLanguageColumnsExist(sheet: GoogleAppsScript.Spreadsheet.Sheet, t
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const resolveHeaderCode = createTranslationHeaderResolver(allLanguages);
   const existingCodes = new Set<string>();
-  const codeToName = new Map<string, string>();
-
-  for (const [code, name] of Object.entries(allLanguages)) {
-    codeToName.set(code.toLowerCase(), name);
-  }
 
   headers.forEach((header) => {
     const code = resolveHeaderCode(String(header || ""));
@@ -545,15 +586,13 @@ function ensureLanguageColumnsExist(sheet: GoogleAppsScript.Spreadsheet.Sheet, t
 
   // Check which target languages are missing from the sheet
   const missingLanguages: string[] = [];
+  const availableTargetLanguages = getAvailableTargetLanguages();
   for (const langCode of targetLanguages) {
     const normalizedCode = langCode.toLowerCase();
     if (existingCodes.has(normalizedCode)) {
       continue;
     }
-    const languageName = codeToName.get(normalizedCode);
-    if (languageName) {
-      missingLanguages.push(languageName);
-    }
+    missingLanguages.push(resolveTranslationColumnHeader(langCode, allLanguages, availableTargetLanguages));
   }
 
   // Add missing language columns
@@ -723,17 +762,28 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   const availableTargetLanguages = getAvailableTargetLanguages();
   const allLanguages = getAllLanguages();
 
-  // Validate target languages exist in the comprehensive language list
-  const invalidTargetLanguages = targetLanguages.filter(lang => !allLanguages[lang]);
-  if (invalidTargetLanguages.length > 0) {
-    throw new Error(`Invalid target languages: ${invalidTargetLanguages.join(', ')}. Please check the language codes.`);
+  // Validate target languages are available (not the primary language).
+  // Uses availableTargetLanguages (which includes custom languages from
+  // sheet headers) instead of allLanguages, so that Indigenous languages
+  // not present in the remote languages.json but added as custom languages
+  // are accepted.
+  const unavailableTargetLanguages = targetLanguages.filter(lang => !availableTargetLanguages[String(lang).toLowerCase()]);
+  if (unavailableTargetLanguages.length > 0) {
+    const unavailableLanguageNames = unavailableTargetLanguages
+      .map(lang => availableTargetLanguages[String(lang).toLowerCase()] || lang)
+      .join(', ');
+    throw new Error(`Target languages not available: ${unavailableLanguageNames}. These languages might be the same as your source language (${primaryLanguage.name}).`);
   }
 
-  // Validate target languages are available (not the primary language)
-  const unavailableTargetLanguages = targetLanguages.filter(lang => !availableTargetLanguages[lang]);
-  if (unavailableTargetLanguages.length > 0) {
-    const unavailableLanguageNames = unavailableTargetLanguages.map(lang => allLanguages[lang]).join(', ');
-    throw new Error(`Target languages not available: ${unavailableLanguageNames}. These languages might be the same as your source language (${primaryLanguage.name}).`);
+  // Custom languages pass the availability check via sheet headers, but the
+  // translator itself may not support their codes. Warn instead of failing.
+  const unsupportedTargetLanguages = targetLanguages.filter(
+    (lang) => !(allLanguages[lang] || allLanguages[String(lang).toLowerCase()]),
+  );
+  if (unsupportedTargetLanguages.length > 0) {
+    const warningMessage = `Google Translate may not support: ${unsupportedTargetLanguages.join(", ")}. Fill those columns manually if they remain empty.`;
+    getTranslationServiceLogger().warn(`[TRANSLATION] ${warningMessage}`);
+    spreadsheet.toast(warningMessage, "Language Manager", 10);
   }
 
   // Validate source language is different from target languages
