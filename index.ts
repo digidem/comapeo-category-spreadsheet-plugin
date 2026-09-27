@@ -90,7 +90,11 @@ function translateCoMapeoCategory() {
 function translateToSelectedLanguages(selectedLanguages: string[]) {
   const ui = SpreadsheetApp.getUi();
   try {
-    autoTranslateSheetsBidirectional(selectedLanguages as TranslationLanguage[]);
+    const completed = autoTranslateSheetsBidirectional(selectedLanguages as TranslationLanguage[]);
+    if (!completed) {
+      // Cancel toast is already shown by the translation flow.
+      return;
+    }
     ui.alert(
       translateMenuTexts[activeLocale].completed,
       translateMenuTexts[activeLocale].completedText,

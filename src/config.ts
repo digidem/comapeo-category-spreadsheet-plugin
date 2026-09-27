@@ -27,7 +27,14 @@ const RETRY_CONFIG = {
   /** Base delay in milliseconds between retries (uses exponential backoff) */
   BASE_DELAY_MS: 1000,
   /** Maximum total timeout for all retry attempts in milliseconds (2 minutes) */
-  MAX_TOTAL_TIMEOUT_MS: 120000
+  MAX_TOTAL_TIMEOUT_MS: 120000,
+  /**
+   * Status codes worth retrying (timeouts, rate limits, gateway/upstream
+   * trouble). 500 is excluded on purpose: from this single-purpose builder a
+   * 500 almost always means an unhandled server error for this exact payload,
+   * so an immediate retry would fail identically.
+   */
+  RETRYABLE_STATUS_CODES: [408, 429, 502, 503, 504]
 };
 
 /**

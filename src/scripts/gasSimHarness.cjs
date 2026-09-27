@@ -175,10 +175,126 @@ function loadFiles(context, files) {
   }
 }
 
+// Shared fake spreadsheet used by offline checks (check-custom-lang.cjs,
+// check-translation-cancel.cjs). Supports numeric and A1-notation ranges,
+// value reads/writes, formulas (recorded only) and toasts.
+class FakeSheet {
+  constructor(name, rows = [[]]) {
+    this.name = name;
+    this.values = rows.map((row) => row.slice());
+    this.formulas = [];
+  }
+
+  getName() {
+    return this.name;
+  }
+
+  getLastColumn() {
+    return this.values.reduce((max, row) => Math.max(max, row.length), 0);
+  }
+
+  getLastRow() {
+    return this.values.length;
+  }
+
+  getRange(rowOrA1, col, numRows = 1, numCols = 1) {
+    const sheet = this;
+    let row = rowOrA1;
+    if (typeof rowOrA1 === "string") {
+      const match = /^([A-Z]+)(\d+)$/.exec(rowOrA1.trim());
+      if (!match) {
+        throw new Error(`FakeSheet: unsupported A1 range "${rowOrA1}"`);
+      }
+      row = Number(match[2]);
+      col = match[1].split("").reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0);
+      numRows = 1;
+      numCols = 1;
+    }
+    return {
+      getValues() {
+        const out = [];
+        for (let r = 0; r < numRows; r++) {
+          const source = sheet.values[row - 1 + r] || [];
+          const line = [];
+          for (let c = 0; c < numCols; c++) {
+            line.push(source[col - 1 + c] !== undefined ? source[col - 1 + c] : "");
+          }
+          out.push(line);
+        }
+        return out;
+      },
+      getValue() {
+        return this.getValues()[0][0];
+      },
+      setValues(values) {
+        for (let r = 0; r < values.length; r++) {
+          while (sheet.values.length <= row - 1 + r) {
+            sheet.values.push([]);
+          }
+          const line = values[r];
+          for (let c = 0; c < line.length; c++) {
+            const targetRow = sheet.values[row - 1 + r];
+            while (targetRow.length <= col - 1 + c) {
+              targetRow.push("");
+            }
+            targetRow[col - 1 + c] = line[c];
+          }
+        }
+        return this;
+      },
+      setFormula(formula) {
+        sheet.formulas.push(formula);
+        return this;
+      },
+      setFontWeight() {
+        return this;
+      },
+    };
+  }
+
+  getDataRange() {
+    return this.getRange(1, 1, this.getLastRow(), this.getLastColumn());
+  }
+
+  insertColumnsAfter() {}
+
+  insertColumns() {}
+}
+
+function createFakeSpreadsheet(initialSheets = {}) {
+  const sheetsByName = new Map(Object.entries(initialSheets));
+  const toasts = [];
+  return {
+    spreadsheet: {
+      getName() {
+        return "Test Config";
+      },
+      getSheetByName(name) {
+        return sheetsByName.get(name) || null;
+      },
+      insertSheet(name) {
+        const sheet = new FakeSheet(name);
+        sheetsByName.set(name, sheet);
+        return sheet;
+      },
+      getSpreadsheetLocale() {
+        return "en";
+      },
+      toast(message, title) {
+        toasts.push({ message, title });
+      },
+    },
+    sheetsByName,
+    toasts,
+  };
+}
+
 module.exports = {
   projectRoot,
   collectTypeScriptFiles,
   createGasContext,
   transpile,
   loadFiles,
+  FakeSheet,
+  createFakeSpreadsheet,
 };

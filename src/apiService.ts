@@ -63,12 +63,27 @@ function validateSheetHeaders(
 // API Communication
 // =============================================================================
 
+// UrlFetchApp throws for these even with muteHttpExceptions (quota exhaustion,
+// invalid URL, missing OAuth scope); retrying cannot help.
+const NON_RETRYABLE_FETCH_ERROR = /too many times|bandwidth quota|invalid argument|permission|authoriz/i;
+
 /**
  * Sends a JSON build request to the API and returns the .comapeocat file
+ *
+ * Retry policy: only transient failures are retried — network exceptions and
+ * the status codes in RETRY_CONFIG.RETRYABLE_STATUS_CODES (408/429/502/503/504)
+ * — with exponential backoff. Everything else fails fast:
+ * - 4xx/500 responses mean the request itself is bad and would repeat;
+ * - a 200 with a non-binary body is a protocol mismatch and would repeat;
+ * - UrlFetchApp quota/scope/argument errors cannot be fixed by retrying;
+ * - errors from saveComapeocatToDrive happen AFTER a successful build, so
+ *   retrying would rebuild the archive for nothing.
+ * No dialogs or alerts are shown here; the caller owns user-facing errors.
  *
  * @param buildRequest - The build request payload
  * @param maxRetries - Maximum number of total attempts (default: 3)
  * @returns URL to the saved .comapeocat file
+ * @throws Error with the specific failure reason (timeout, rejected request, unreachable server, Drive save)
  */
 function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY_CONFIG.MAX_RETRIES): string {
   validateBuildRequest(buildRequest, { strict: true });
@@ -82,107 +97,96 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
     // Check total timeout before attempting
     const elapsedTime = Date.now() - startTime;
     if (elapsedTime >= RETRY_CONFIG.MAX_TOTAL_TIMEOUT_MS) {
-      // Close any open modal dialogs before showing the error alert
-      closeProcessingModalDialog();
-
-      const ui = SpreadsheetApp.getUi();
-      const errorMessage = `API request timed out after ${Math.round(elapsedTime / 1000)} seconds.\n\n` +
-        `Last error: ${lastError?.message || "Maximum timeout exceeded"}\n\n` +
-        `Please check your connection and try again.`;
-      ui.alert("Request Timeout", errorMessage, ui.ButtonSet.OK);
-      throw new Error(`API request exceeded maximum timeout of ${RETRY_CONFIG.MAX_TOTAL_TIMEOUT_MS}ms: ${lastError?.message || "timeout"}`);
+      throw new Error(`Build server did not respond within ${Math.round(elapsedTime / 1000)}s: ${lastError?.message || "timeout"}`);
     }
 
     attemptNumber++;
 
+    if (attemptNumber > 1) {
+      const retryMessage = `Retry ${attemptNumber - 1} of ${maxRetries - 1}: ${lastError?.message || "Unknown error"}`;
+      getScopedLogger("ApiService").warn(`Retrying build request (attempt ${attemptNumber} of ${maxRetries}): ${retryMessage}`);
+      SpreadsheetApp.getActiveSpreadsheet().toast(retryMessage, "Retrying build request", 5);
+    }
+
+    getScopedLogger("ApiService").info(`Sending JSON build request to API (attempt ${attemptNumber} of ${maxRetries}):`, apiUrl);
+
+    const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(buildRequest),
+      muteHttpExceptions: true
+    };
+
+    let response: GoogleAppsScript.URL_Fetch.HTTPResponse;
     try {
-      if (attemptNumber > 1) {
-        // Close any open modal dialogs before showing the retry alert
-        closeProcessingModalDialog();
-
-        const ui = SpreadsheetApp.getUi();
-        ui.alert(
-          "Retrying API Request",
-          `Retry ${attemptNumber - 1} of ${maxRetries - 1}. Previous attempt failed: ${lastError?.message || "Unknown error"}`,
-          ui.ButtonSet.OK
-        );
-      }
-
-      getScopedLogger("ApiService").info(`Sending JSON build request to API (attempt ${attemptNumber} of ${maxRetries}):`, apiUrl);
-
-      const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify(buildRequest),
-        muteHttpExceptions: true
-      };
-
-      const response = UrlFetchApp.fetch(apiUrl, options);
-      const responseCode = response.getResponseCode();
-      getScopedLogger("ApiService").info('Response code:', responseCode);
-
-      if (responseCode === 200) {
-        const responseBlob = response.getBlob();
-        const headers = response.getHeaders() as Record<string, string>;
-        const contentTypeKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-type');
-        const contentType = contentTypeKey ? headers[contentTypeKey] : '';
-        getScopedLogger("ApiService").info('Content-Type:', contentType);
-
-        // Verify we got a binary file response
-        if (contentType.includes('application/octet-stream') || contentType.includes('application/zip')) {
-          const fileName = `${buildRequest.metadata.name}-${buildRequest.metadata.version}.comapeocat`;
-          const blob = responseBlob.setName(fileName);
-          return saveComapeocatToDrive(blob);
-        }
-
-        // Check if it's actually an error response in JSON
-        try {
-          const errorResponse: ApiErrorResponse = JSON.parse(response.getContentText());
-          lastError = new Error(`API Error: ${errorResponse.message}` +
-            (errorResponse.details?.errors ? ` - ${errorResponse.details.errors.join(', ')}` : ''));
-        } catch {
-          lastError = new Error("API returned unexpected response format");
-        }
-      } else {
-        // Handle error response
-        try {
-          const errorResponse: ApiErrorResponse = JSON.parse(response.getContentText());
-          lastError = new Error(`API Error (${responseCode}): ${errorResponse.message}` +
-            (errorResponse.details?.errors ? ` - ${errorResponse.details.errors.join(', ')}` : ''));
-        } catch {
-          lastError = new Error(`API request failed with status ${responseCode}: ${response.getContentText()}`);
-        }
-      }
-
-      getScopedLogger("ApiService").error(lastError?.message);
-
-      // Only sleep if we're going to retry (not on last attempt)
-      if (attemptNumber < maxRetries) {
-        Utilities.sleep(RETRY_CONFIG.BASE_DELAY_MS * Math.pow(2, attemptNumber - 1));
-      }
+      response = UrlFetchApp.fetch(apiUrl, options);
     } catch (error) {
-      lastError = error;
-      getScopedLogger("ApiService").error(`Error in API request (attempt ${attemptNumber} of ${maxRetries}):`, error);
-
-      // Only sleep if we're going to retry (not on last attempt)
+      lastError = error instanceof Error ? error : new Error(String(error));
+      getScopedLogger("ApiService").error(`Error in API request (attempt ${attemptNumber} of ${maxRetries}):`, lastError);
+      if (NON_RETRYABLE_FETCH_ERROR.test(lastError.message)) {
+        throw new Error(`Could not reach build server: ${lastError.message}`);
+      }
       if (attemptNumber < maxRetries) {
         Utilities.sleep(RETRY_CONFIG.BASE_DELAY_MS * Math.pow(2, attemptNumber - 1));
       }
+      continue;
+    }
+
+    const responseCode = response.getResponseCode();
+    getScopedLogger("ApiService").info('Response code:', responseCode);
+
+    if (responseCode === 200) {
+      const responseBlob = response.getBlob();
+      const headers = response.getHeaders() as Record<string, string>;
+      const contentTypeKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-type');
+      const contentType = contentTypeKey ? headers[contentTypeKey] : '';
+      getScopedLogger("ApiService").info('Content-Type:', contentType);
+
+      // Verify we got a binary file response
+      if (contentType.includes('application/octet-stream') || contentType.includes('application/zip')) {
+        const fileName = `${buildRequest.metadata.name}-${buildRequest.metadata.version}.comapeocat`;
+        const blob = responseBlob.setName(fileName);
+        // Outside any retry catch on purpose: a Drive failure must not
+        // re-POST the build request.
+        return saveComapeocatToDrive(blob);
+      }
+
+      // 200 without a binary body is a protocol mismatch — retrying the same
+      // request would return the same wrong response.
+      try {
+        const errorResponse: ApiErrorResponse = JSON.parse(response.getContentText());
+        throw new Error(`API Error: ${errorResponse.message}` +
+          (errorResponse.details?.errors ? ` - ${errorResponse.details.errors.join(', ')}` : ''));
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message.startsWith("API Error:")) {
+          throw parseError;
+        }
+        throw new Error("API returned unexpected response format");
+      }
+    }
+
+    // Non-200: build the error message, then fail fast or back off.
+    try {
+      const errorResponse: ApiErrorResponse = JSON.parse(response.getContentText());
+      lastError = new Error(`API Error (${responseCode}): ${errorResponse.message}` +
+        (errorResponse.details?.errors ? ` - ${errorResponse.details.errors.join(', ')}` : ''));
+    } catch {
+      lastError = new Error(`API request failed with status ${responseCode}: ${response.getContentText()}`);
+    }
+
+    getScopedLogger("ApiService").error(lastError?.message);
+
+    if (!RETRY_CONFIG.RETRYABLE_STATUS_CODES.includes(responseCode)) {
+      throw new Error(`Build server rejected the request (${responseCode}): ${lastError.message}`);
+    }
+
+    if (attemptNumber < maxRetries) {
+      Utilities.sleep(RETRY_CONFIG.BASE_DELAY_MS * Math.pow(2, attemptNumber - 1));
     }
   }
 
-  // Exhausted all retries
-  // Close any open modal dialogs before showing the error alert
-  closeProcessingModalDialog();
-
-  const ui = SpreadsheetApp.getUi();
-  const errorMessage = `Failed to generate the CoMapeo category file after ${maxRetries} attempts.\n\n` +
-    `Last error: ${lastError?.message || "Unknown error"}\n\n` +
-    `Please check your internet connection and try again.`;
-
-  ui.alert("Error Generating CoMapeo Category", errorMessage, ui.ButtonSet.OK);
-
-  throw new Error(`Failed to generate CoMapeo category after ${maxRetries} attempts: ${lastError?.message || "Unknown error"}`);
+  // Exhausted all retries on transient failures
+  throw new Error(`Build server unavailable after ${maxRetries} attempts: ${lastError?.message || "Unknown error"}`);
 }
 
 /**

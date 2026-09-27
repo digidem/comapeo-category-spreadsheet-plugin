@@ -30,6 +30,46 @@ const TRANSLATE_CALLS_PER_SECOND = 5;
 const TRANSLATE_MIN_INTERVAL_MS = Math.ceil(1000 / TRANSLATE_CALLS_PER_SECOND);
 let lastTranslateCallTime = 0;
 
+// --- Translation cancel support -------------------------------------------
+// The client dialog calls requestTranslationCancel() via google.script.run;
+// the running translation polls isTranslationCancelRequested() at coarse
+// checkpoints. A timestamp (not "true") is stored so a stale flag from a
+// crashed run is harmless: it only counts if it was set during the current
+// run (>= translationRunStartedAt).
+// Known limitation: a cancel clicked before the run records its start time
+// (during custom-language column setup) is treated as stale and ignored —
+// the window is a few seconds and the run simply completes.
+const TRANSLATION_CANCEL_KEY = "TRANSLATION_CANCEL_REQUESTED";
+// 25 pairs is about 5s of rate-limited translate calls, keeping
+// PropertiesService reads low while still stopping promptly.
+const CANCEL_CHECK_EVERY_N_PAIRS = 25;
+let translationRunStartedAt = 0;
+let translationCancelled = false;
+
+/**
+ * Marks the in-flight translation as cancelled by the user (client entry point).
+ */
+function requestTranslationCancel(): void {
+  PropertiesService.getUserProperties().setProperty(TRANSLATION_CANCEL_KEY, String(Date.now()));
+  getTranslationServiceLogger().info("[TRANSLATION] Cancel requested by user");
+}
+
+/**
+ * Returns true if a cancel was requested during the current translation run.
+ * Always false when no run is in progress.
+ */
+function isTranslationCancelRequested(): boolean {
+  if (translationRunStartedAt === 0) {
+    return false;
+  }
+  const raw = PropertiesService.getUserProperties().getProperty(TRANSLATION_CANCEL_KEY);
+  const requested = raw !== null && Number(raw) >= translationRunStartedAt;
+  if (requested) {
+    translationCancelled = true;
+  }
+  return requested;
+}
+
 function rateLimitedTranslate(text: string, sourceLang: string, targetLang: string): string {
   const now = Date.now();
   const elapsed = now - lastTranslateCallTime;
@@ -90,7 +130,11 @@ function manageLanguagesAndTranslate(
 
   if (autoTranslateLanguages.length > 0) {
     log.info("[LANGUAGE MANAGEMENT] Running bidirectional translation", autoTranslateLanguages);
-    autoTranslateSheetsBidirectional(autoTranslateLanguages);
+    const completed = autoTranslateSheetsBidirectional(autoTranslateLanguages);
+    if (!completed) {
+      // The cancelled toast is already on screen; do not overwrite it.
+      return;
+    }
   } else {
     log.info("[LANGUAGE MANAGEMENT] No auto-translate languages selected; skipping translation");
   }
@@ -329,6 +373,10 @@ function translateSheetBidirectional(
     const echoWarnedTargets = new Set<TranslationLanguage>();
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
+      if (translateIndex > 0 && translateIndex % CANCEL_CHECK_EVERY_N_PAIRS === 0 && isTranslationCancelRequested()) {
+        getTranslationServiceLogger().info(`[Phase 2] Cancel requested after ${translateIndex}/${pendingTranslations.size} pairs`);
+        break;
+      }
       translateIndex++;
       try {
         const translatedText = rateLimitedTranslate(
@@ -364,7 +412,7 @@ function translateSheetBidirectional(
 
     const phase2Errors = translationErrors.length - prePhase2ErrorCount;
     getTranslationServiceLogger().info(
-      `[Phase 2] Attempted ${pendingTranslations.size} unique pairs, ${pendingTranslations.size - phase2Errors} succeeded, ${phase2Errors} errors`,
+      `[Phase 2] Attempted ${translateIndex} of ${pendingTranslations.size} unique pairs, ${translateIndex - phase2Errors} succeeded, ${phase2Errors} errors`,
     );
 
     // Phase 3: Fill column values from cache
@@ -715,6 +763,7 @@ function autoTranslateSheets(): void {
  * Uses bidirectional translation supporting custom language columns.
  *
  * @param targetLanguages - Array of ISO language codes to translate to
+ * @returns true when the run completed normally; false when the user cancelled it
  * @throws Error if target languages are invalid or conflict with source language
  *
  * @example
@@ -725,13 +774,13 @@ function autoTranslateSheets(): void {
  * autoTranslateSheetsBidirectional([]);
  * // Skips translation entirely (useful for single-language configs)
  */
-function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]): void {
+function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]): boolean {
   // Validation - return early if no languages specified (skip translation)
   if (!targetLanguages || targetLanguages.length === 0) {
     getTranslationServiceLogger().info("[TRANSLATION] ✓ SKIPPING TRANSLATION - No target languages specified");
     getTranslationServiceLogger().info("[TRANSLATION] targetLanguages parameter:", targetLanguages);
     getTranslationServiceLogger().info("[TRANSLATION] Returning early without translation");
-    return;
+    return true;
   }
 
   getTranslationServiceLogger().info("[TRANSLATION] Starting bidirectional translation");
@@ -739,6 +788,8 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   getTranslationServiceLogger().info("[TRANSLATION] Target languages:", targetLanguages);
 
   clearTranslationCache();
+  translationRunStartedAt = Date.now();
+  translationCancelled = false;
 
   const allSheets = sheets();
   const translationSheets = sheets(true);
@@ -798,8 +849,13 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
 
   let totalErrors = 0;
   let totalSuccessful = 0;
+  let processedSheets = 0;
 
   for (const sheetName of translationSheets) {
+    if (translationCancelled || isTranslationCancelRequested()) {
+      getTranslationServiceLogger().info(`[TRANSLATION] Cancelled; ${processedSheets} of ${translationSheets.length} sheets processed`);
+      break;
+    }
     let sheet = spreadsheet.getSheetByName(sheetName);
     if (!sheet) {
       if (sheetName === CATEGORY_TRANSLATIONS_SHEET) {
@@ -832,7 +888,17 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
       getTranslationServiceLogger().error(`Error translating sheet ${sheetName}:`, error);
       totalErrors++;
     }
+    processedSheets++;
   }
+
+  if (translationCancelled) {
+    PropertiesService.getUserProperties().deleteProperty(TRANSLATION_CANCEL_KEY);
+    spreadsheet.toast("Translation cancelled. Partial translations were kept; run again to fill the rest.", "Language Manager", 10);
+    translationRunStartedAt = 0;
+    return false;
+  }
+
+  translationRunStartedAt = 0;
 
   getTranslationServiceLogger().info("[TRANSLATION] Translation summary:");
   getTranslationServiceLogger().info("[TRANSLATION] - Total errors:", totalErrors);
@@ -842,6 +908,7 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   if (totalErrors > 0) {
     getTranslationServiceLogger().warn("[TRANSLATION] ⚠️  Some translations failed. Check the logs for details.");
   }
+  return true;
 }
 
 function normalizeCustomLanguages(newLanguages: CustomLanguageInput[] | null | undefined): CustomLanguageInput[] {

@@ -129,7 +129,7 @@ For schema details, see `src/builders/payloadBuilder.ts` and `src/types.ts`.
 
 - **Translation mismatches**: Detected before linting; users can auto-fix or abort.
 - **Lint failures**: Highlighted in sheets; generation stops on critical issues.
-- **API errors**: Retried with exponential backoff (see `RETRY_CONFIG` in `src/config.ts`).
+- **API errors**: Transient failures (408/429/502/503/504, network exceptions) are retried with exponential backoff; 4xx/500 and other permanent failures fail fast (see `RETRY_CONFIG` in `src/config.ts`).
 
 ## Related Files
 
