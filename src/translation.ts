@@ -209,30 +209,32 @@ function probeCustomLanguageSupport(): void {
  */
 function runTranslationCancelSelfTest(): void {
   const log = getTranslationServiceLogger();
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const categoriesSheet = spreadsheet.getSheetByName(CATEGORIES_SHEET);
-  const detailsSheet = spreadsheet.getSheetByName(DETAILS_SHEET);
-  if (!categoriesSheet || !detailsSheet) {
-    log.error("[DEBUG] SELF-TEST SKIPPED: Categories or Details sheet not found");
-    return;
-  }
-
-  const categoriesBackup = categoriesSheet.getDataRange().getValues();
-  const detailsBackup = detailsSheet.getDataRange().getValues();
-
+  let tempSpreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet | null = null;
   try {
-    const testRows = [];
+    // Runs on a throwaway spreadsheet: the real sheet is never touched.
+    tempSpreadsheet = SpreadsheetApp.create("Translation Cancel Self-Test (temp)");
+    const categories = tempSpreadsheet.getSheetByName(CATEGORIES_SHEET) || tempSpreadsheet.insertSheet(CATEGORIES_SHEET);
+    categories.getRange("A1").setValue("English");
+    const testRows: string[][] = [];
     for (let i = 1; i <= 60; i++) {
       testRows.push([`self-test source ${i}`]);
     }
-    categoriesSheet.getRange(2, 1, 60, 1).setValues(testRows);
-    detailsSheet.getRange(2, 1, 60, 1).setValues(testRows);
+    categories.getRange(2, 1, 60, 1).setValues(testRows);
+    const details = tempSpreadsheet.getSheetByName(DETAILS_SHEET) || tempSpreadsheet.insertSheet(DETAILS_SHEET);
+    details.getRange(2, 1, 60, 1).setValues(testRows);
+    // Pre-create the translation sheets so the run never calls the
+    // active-spreadsheet creators.
+    for (const name of sheets(true)) {
+      if (!tempSpreadsheet.getSheetByName(name)) {
+        tempSpreadsheet.insertSheet(name);
+      }
+    }
 
     debugCancelAfterPairs = 10;
-    const completed = autoTranslateSheetsBidirectional(["es"]);
+    const completed = autoTranslateSheetsBidirectional(["es"], tempSpreadsheet);
     debugCancelAfterPairs = 0;
 
-    const categoryTranslations = spreadsheet.getSheetByName(CATEGORY_TRANSLATIONS_SHEET);
+    const categoryTranslations = tempSpreadsheet.getSheetByName(CATEGORY_TRANSLATIONS_SHEET);
     let filled = 0;
     if (categoryTranslations) {
       const values = categoryTranslations.getRange(2, 2, 60, 1).getValues();
@@ -242,10 +244,83 @@ function runTranslationCancelSelfTest(): void {
     const pass = completed === false && filled > 0 && filled < 60;
     log.info(`[DEBUG] SELF-TEST ${pass ? "PASS" : "FAIL"}: completed=${completed} (expect false), filled=${filled} of 60 (expect 1..59)`);
   } finally {
-    categoriesSheet.getRange(1, 1, categoriesBackup.length, categoriesBackup[0].length).setValues(categoriesBackup);
-    detailsSheet.getRange(1, 1, detailsBackup.length, detailsBackup[0].length).setValues(detailsBackup);
-    log.info("[DEBUG] SELF-TEST: original Categories/Details data restored");
+    debugCancelAfterPairs = 0;
+    if (tempSpreadsheet) {
+      DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
+      log.info("[DEBUG] SELF-TEST: temp spreadsheet trashed");
+    }
   }
+}
+
+/**
+ * Developer-menu cleanup: removes rows left behind by earlier versions of
+ * the cancel self-test (which wrote "self-test source N" into the real
+ * Categories/Details and translation sheets). Clears test source cells and
+ * stale translation cells (empty source, non-empty target) — real data is
+ * never touched.
+ */
+function cleanupSelfTestRows(): void {
+  const log = getTranslationServiceLogger();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const testPattern = /^self-test source \d+$/;
+  let clearedSources = 0;
+  let clearedTranslations = 0;
+
+  for (const name of [CATEGORIES_SHEET, DETAILS_SHEET]) {
+    const sheet = spreadsheet.getSheetByName(name);
+    if (!sheet) {
+      continue;
+    }
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      continue;
+    }
+    const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    let changed = false;
+    const cleaned = values.map((row) => {
+      if (testPattern.test(String(row[0]).trim())) {
+        clearedSources++;
+        changed = true;
+        return [""];
+      }
+      return row;
+    });
+    if (changed) {
+      sheet.getRange(2, 1, lastRow - 1, 1).setValues(cleaned);
+    }
+  }
+
+  for (const name of sheets(true)) {
+    const sheet = spreadsheet.getSheetByName(name);
+    if (!sheet) {
+      continue;
+    }
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    if (lastRow < 2 || lastColumn < 2) {
+      continue;
+    }
+    const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+    let changed = false;
+    const cleaned = values.map((row) => {
+      if (String(row[0]).trim() !== "") {
+        return row;
+      }
+      return row.map((cell, index) => {
+        if (index === 0 || String(cell).trim() === "") {
+          return cell;
+        }
+        clearedTranslations++;
+        changed = true;
+        return "";
+      });
+    });
+    if (changed) {
+      sheet.getRange(2, 1, lastRow - 1, lastColumn).setValues(cleaned);
+    }
+  }
+
+  log.info(`[DEBUG] SELF-TEST CLEANUP: cleared ${clearedSources} test source cells and ${clearedTranslations} stale translation cells`);
 }
 
 /**
@@ -332,8 +407,9 @@ function translateSheetBidirectional(
   sheetName: string,
   targetLanguages: TranslationLanguage[],
   sourceLanguage?: TranslationLanguage,
+  spreadsheet?: GoogleAppsScript.Spreadsheet.Spreadsheet,
 ): void {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = (spreadsheet || SpreadsheetApp.getActiveSpreadsheet()).getSheetByName(sheetName);
   if (!sheet) {
     throw new Error(`Sheet "${sheetName}" not found`);
   }
@@ -873,7 +949,7 @@ function autoTranslateSheets(): void {
  * autoTranslateSheetsBidirectional([]);
  * // Skips translation entirely (useful for single-language configs)
  */
-function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]): boolean {
+function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[], explicitSpreadsheet?: GoogleAppsScript.Spreadsheet.Spreadsheet): boolean {
   // Validation - return early if no languages specified (skip translation)
   if (!targetLanguages || targetLanguages.length === 0) {
     getTranslationServiceLogger().info("[TRANSLATION] ✓ SKIPPING TRANSLATION - No target languages specified");
@@ -896,7 +972,7 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
     (sheet) => !translationSheets.includes(sheet),
   );
 
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = explicitSpreadsheet || SpreadsheetApp.getActiveSpreadsheet();
   const categoriesSheet = spreadsheet.getSheetByName(
     categoriesAndDetailsSheets[0],
   );
@@ -982,7 +1058,7 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
 
     try {
       // Use bidirectional translation for selected target languages
-      translateSheetBidirectional(sheetName, targetLanguages, primaryLanguage.code as TranslationLanguage);
+      translateSheetBidirectional(sheetName, targetLanguages, primaryLanguage.code as TranslationLanguage, explicitSpreadsheet);
     } catch (error) {
       getTranslationServiceLogger().error(`Error translating sheet ${sheetName}:`, error);
       totalErrors++;

@@ -73,6 +73,7 @@ function onOpen() {
       .addItem("Clear Language Cache", "clearLanguagesCacheMenuItem")
       .addItem("Probe Custom Language Support", "probeCustomLanguageSupport")
       .addItem("Run Translation Cancel Self-Test", "runTranslationCancelSelfTest")
+      .addItem("Cleanup Self-Test Rows", "cleanupSelfTestRows")
       .addToUi();
   }
 }
