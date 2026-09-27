@@ -281,3 +281,15 @@ function getCategorySelection(): string[] {
   }
   return [];
 }
+
+/**
+ * Client preflight probe: dialog client scripts call this via
+ * google.script.run on open to verify the browser lets the request through
+ * (Brave/Firefox strict cookie modes can strip the session from the dialog
+ * sandbox, which surfaces as a cryptic "authorization required" error only
+ * when the user submits). Server API boundary for the dialogs — the trivial
+ * body is the point.
+ */
+function authPing(): string {
+  return Session.getEffectiveUser().getEmail();
+}

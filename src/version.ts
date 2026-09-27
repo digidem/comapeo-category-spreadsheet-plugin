@@ -7,11 +7,11 @@
  */
 
 const versionData = {
-  "version": "2.0.0+ccec743",
-  "commit": "ccec743",
+  "version": "2.0.0+5ae3140",
+  "commit": "5ae3140",
   "branch": "main",
   "isDirty": true,
-  "buildDate": "2026-09-27T22:19:18.107Z"
+  "buildDate": "2026-09-27T22:51:31.936Z"
 };
 
 export function getVersionInfo(): string {
