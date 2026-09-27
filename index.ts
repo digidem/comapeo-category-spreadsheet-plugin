@@ -74,6 +74,7 @@ function onOpen() {
       .addItem("Probe Custom Language Support", "probeCustomLanguageSupport")
       .addItem("Run Translation Cancel Self-Test", "runTranslationCancelSelfTest")
       .addItem("Cleanup Self-Test Rows", "cleanupSelfTestRows")
+      .addItem("Auth Debug", "debugAuthCheck")
       .addToUi();
   }
 }

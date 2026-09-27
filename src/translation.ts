@@ -324,6 +324,33 @@ function cleanupSelfTestRows(): void {
 }
 
 /**
+ * Developer-menu diagnostic for the "É necessário ter autorização" error:
+ * logs which account the sheet runs as and exactly which service call
+ * (if any) fails, then shows the result in an alert.
+ */
+function debugAuthCheck(): void {
+  const log = getTranslationServiceLogger();
+  const lines: string[] = [];
+  try {
+    lines.push("activeUser=" + Session.getActiveUser().getEmail());
+    lines.push("effectiveUser=" + Session.getEffectiveUser().getEmail());
+    lines.push("scriptId=" + ScriptApp.getScriptId());
+    const props = PropertiesService.getUserProperties();
+    props.setProperty("AUTHDEBUG", "1");
+    const roundtrip = props.getProperty("AUTHDEBUG");
+    props.deleteProperty("AUTHDEBUG");
+    lines.push("properties=" + (roundtrip === "1" ? "ok" : "FAIL"));
+    lines.push("languageApp=" + LanguageApp.translate("hello", "en", "es"));
+    lines.push("ALL OK");
+  } catch (error) {
+    lines.push("FAILED: " + (error instanceof Error ? error.message : String(error)));
+  }
+  const message = lines.join("\n");
+  log.info(`[AUTHDEBUG] ${message}`);
+  SpreadsheetApp.getUi().alert("Auth Debug", message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
  * Translates a sheet from source language to a single target language
  *
  * Reads text from column A (source language) and translates to target language column.
