@@ -71,6 +71,8 @@ function onOpen() {
       .addItem("Generate Performance Report", "generatePerformanceReport")
       .addSeparator()
       .addItem("Clear Language Cache", "clearLanguagesCacheMenuItem")
+      .addItem("Probe Custom Language Support", "probeCustomLanguageSupport")
+      .addItem("Run Translation Cancel Self-Test", "runTranslationCancelSelfTest")
       .addToUi();
   }
 }

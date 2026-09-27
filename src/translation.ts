@@ -46,6 +46,11 @@ const CANCEL_CHECK_EVERY_N_PAIRS = 25;
 let translationRunStartedAt = 0;
 let translationCancelled = false;
 
+// Debug-only: when > 0, Phase 2 cancels after this many translate calls.
+// Used by the Developer-menu self-test to exercise the cancel path in the
+// real GAS runtime without needing a second execution to click Cancel.
+let debugCancelAfterPairs = 0;
+
 /**
  * Marks the in-flight translation as cancelled by the user (client entry point).
  */
@@ -164,6 +169,76 @@ function handleLanguageSelection(
       ui.ButtonSet.OK,
     );
     throw error;
+  }
+}
+
+/**
+ * Developer-menu probe: shows exactly what LanguageApp.translate does with
+ * a custom language code the remote languages.json does not know.
+ * Logs ECHO (returned source text), TRANSLATED, or THREW — the three
+ * outcomes the offline harness cannot predict.
+ */
+function probeCustomLanguageSupport(): void {
+  const log = getTranslationServiceLogger();
+  const probeText = "Hello world";
+  const probeCode = "xav";
+  log.info(`[DEBUG] Probing LanguageApp.translate("${probeText}", "en", "${probeCode}")`);
+  try {
+    const result = rateLimitedTranslate(probeText, "en", probeCode);
+    if (result === probeText) {
+      log.info(`[DEBUG] PROBE RESULT: ECHO — LanguageApp returned the source text unchanged for "${probeCode}". The echo-guard will leave those cells empty.`);
+    } else {
+      log.info(`[DEBUG] PROBE RESULT: TRANSLATED — "${result}"`);
+    }
+  } catch (error) {
+    log.info(`[DEBUG] PROBE RESULT: THREW — ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Developer-menu self-test: exercises the cancel path in the real GAS
+ * runtime. Backs up Categories/Details, writes 60 source rows, runs a
+ * Spanish translation that self-cancels after 10 pairs, verifies partial
+ * results, then restores the original data.
+ */
+function runTranslationCancelSelfTest(): void {
+  const log = getTranslationServiceLogger();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const categoriesSheet = spreadsheet.getSheetByName(CATEGORIES_SHEET);
+  const detailsSheet = spreadsheet.getSheetByName(DETAILS_SHEET);
+  if (!categoriesSheet || !detailsSheet) {
+    log.error("[DEBUG] SELF-TEST SKIPPED: Categories or Details sheet not found");
+    return;
+  }
+
+  const categoriesBackup = categoriesSheet.getDataRange().getValues();
+  const detailsBackup = detailsSheet.getDataRange().getValues();
+
+  try {
+    const testRows = [];
+    for (let i = 1; i <= 60; i++) {
+      testRows.push([`self-test source ${i}`]);
+    }
+    categoriesSheet.getRange(2, 1, 60, 1).setValues(testRows);
+    detailsSheet.getRange(2, 1, 60, 1).setValues(testRows);
+
+    debugCancelAfterPairs = 10;
+    const completed = autoTranslateSheetsBidirectional(["es"]);
+    debugCancelAfterPairs = 0;
+
+    const categoryTranslations = spreadsheet.getSheetByName(CATEGORY_TRANSLATIONS_SHEET);
+    let filled = 0;
+    if (categoryTranslations) {
+      const values = categoryTranslations.getRange(2, 2, 60, 1).getValues();
+      filled = values.filter((row) => String(row[0]).trim() !== "").length;
+    }
+
+    const pass = completed === false && filled > 0 && filled < 60;
+    log.info(`[DEBUG] SELF-TEST ${pass ? "PASS" : "FAIL"}: completed=${completed} (expect false), filled=${filled} of 60 (expect 1..59)`);
+  } finally {
+    categoriesSheet.getRange(1, 1, categoriesBackup.length, categoriesBackup[0].length).setValues(categoriesBackup);
+    detailsSheet.getRange(1, 1, detailsBackup.length, detailsBackup[0].length).setValues(detailsBackup);
+    log.info("[DEBUG] SELF-TEST: original Categories/Details data restored");
   }
 }
 
@@ -373,6 +448,11 @@ function translateSheetBidirectional(
     const echoWarnedTargets = new Set<TranslationLanguage>();
     let translateIndex = 0;
     for (const [cacheKey, { sourceText, targetLang }] of pendingTranslations) {
+      if (debugCancelAfterPairs > 0 && translateIndex >= debugCancelAfterPairs) {
+        getTranslationServiceLogger().info(`[DEBUG] Self-test cancel after ${translateIndex} pairs`);
+        translationCancelled = true;
+        break;
+      }
       if (translateIndex > 0 && translateIndex % CANCEL_CHECK_EVERY_N_PAIRS === 0 && isTranslationCancelRequested()) {
         getTranslationServiceLogger().info(`[Phase 2] Cancel requested after ${translateIndex}/${pendingTranslations.size} pairs`);
         break;
