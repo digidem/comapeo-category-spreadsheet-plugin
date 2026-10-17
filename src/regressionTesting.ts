@@ -199,8 +199,8 @@ function sanitizeAndCopySheetData(
         return row;
       }
 
-      // Sanitize data rows
-      return sanitizeRowData(row, sheetName, rowIndex);
+      // Sanitize data rows (header = row 0, preserved verbatim on the copy)
+      return sanitizeRowData(row, sheetName, rowIndex, allData[0]);
     });
 
     // Write sanitized data to target sheet
@@ -230,27 +230,68 @@ function sanitizeAndCopySheetData(
  * @param row - The row data to sanitize
  * @param sheetName - Name of the sheet (Categories, Details, etc.)
  * @param rowIndex - Index of the row (0-based, not including header)
+ * @param header - Header row (row 0) of the sheet, used to resolve columns
+ *   by name so sanitization never assumes a fixed layout.
  * @returns Sanitized row data
  */
 function sanitizeRowData(
   row: (string | number | boolean)[],
   sheetName: string,
   rowIndex: number,
+  header?: (string | number | boolean)[],
 ): (string | number | boolean)[] {
   const sanitized = [...row];
 
   switch (sheetName) {
-    case "Categories":
-      // Column 0: Category name
-      if (sanitized[0] && typeof sanitized[0] === "string") {
-        sanitized[0] = `Test Category ${rowIndex + 1}`;
+    case "Categories": {
+      // Resolve columns from the preserved header so we never assume a fixed
+      // position. The Categories layout grew from 4 columns (Name, Icon,
+      // Fields, Color) to 6 (Name, Icon, Fields, Applies, Category ID,
+      // Icon ID); the old code hardcoded index 3 as "Color" and clobbered the
+      // Applies column with a hex value, corrupting the sanitized copy.
+      const findCol = (aliases: string[], fallback: number): number => {
+        if (header) {
+          let found = -1;
+          for (let i = 0; i < header.length; i++) {
+            const norm = String(header[i] ?? "").trim().toLowerCase();
+            if (norm !== "" && aliases.includes(norm)) {
+              found = i;
+            }
+          }
+          if (found !== -1) return found;
+        }
+        return fallback;
+      };
+
+      const nameCol = findCol(["name"], 0);
+      const iconCol = findCol(["icon"], 1);
+      const fieldsCol = findCol(["fields", "details", "detail"], 2);
+      // "id" matches the header the import path writes (Name, Icon, Fields,
+      // ID, Color, Icon ID); exact match keeps it distinct from "icon id".
+      const categoryIdCol = findCol(["category id", "categoryid", "id"], 4);
+      const iconIdCol = findCol(["icon id", "iconid"], 5);
+      const colorCol = findCol(["color", "colour"], -1);
+
+      // Category name
+      if (
+        nameCol < sanitized.length &&
+        sanitized[nameCol] &&
+        typeof sanitized[nameCol] === "string"
+      ) {
+        sanitized[nameCol] = `Test Category ${rowIndex + 1}`;
       }
-      // Column 1: Icon URL - always replace with placeholder
-      sanitized[1] = TEST_PLACEHOLDER_ICON_URL;
-      // Column 2: Fields reference - keep structure but use generic names
-      if (sanitized[2] && typeof sanitized[2] === "string") {
-        const fields = sanitized[2].split(",").map((f) => f.trim()).filter((f) => f !== "");
-        sanitized[2] = fields
+      // Icon URL column: always replace with placeholder
+      if (iconCol < sanitized.length) {
+        sanitized[iconCol] = TEST_PLACEHOLDER_ICON_URL;
+      }
+      // Fields reference: keep structure but use generic names
+      if (
+        fieldsCol < sanitized.length &&
+        sanitized[fieldsCol] &&
+        typeof sanitized[fieldsCol] === "string"
+      ) {
+        const fields = sanitized[fieldsCol].split(",").map((f) => f.trim()).filter((f) => f !== "");
+        sanitized[fieldsCol] = fields
           .map((field, index) => {
             // Extract number from field reference or use index
             const match = field.match(/\d+/);
@@ -259,13 +300,35 @@ function sanitizeRowData(
           })
           .join(", ");
       }
-      // Column 3: Color - always use default test color
-      if (sanitized[3] && typeof sanitized[3] === "string") {
-        // Use default test color for all entries to ensure consistency
-        sanitized[3] = "#0066CC"; // Default blue
+      // Applies column (header-resolved; index 3 in the canonical layout):
+      // preserve unchanged. It describes category behavior (observation/track)
+      // and contains no sensitive project data. The old code overwrote this
+      // cell, which made every sanitized category lose its "track" value and
+      // fail generation with a track-coverage error.
+      // Category ID column: deterministic test id matching the sanitized name.
+      // Scrub whatever is there (string or numeric) so no production ID leaks.
+      if (
+        categoryIdCol < sanitized.length &&
+        String(sanitized[categoryIdCol] ?? "").trim() !== ""
+      ) {
+        sanitized[categoryIdCol] = `test-category-${rowIndex + 1}`;
       }
-      // Column 4: Geometry - keep structure
+      // Icon ID column: clear so the placeholder icon falls back to the
+      // sanitized category id consistently in the builder.
+      if (iconIdCol >= 0 && iconIdCol < sanitized.length) {
+        sanitized[iconIdCol] = "";
+      }
+      // Explicit Color value column (legacy/optional): deterministic test color
+      if (
+        colorCol >= 0 &&
+        colorCol < sanitized.length &&
+        sanitized[colorCol] &&
+        typeof sanitized[colorCol] === "string"
+      ) {
+        sanitized[colorCol] = "#0066CC";
+      }
       break;
+    }
 
     case "Details":
       // Column 0: Field name

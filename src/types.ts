@@ -294,20 +294,22 @@ interface FieldRow extends Array<string | number | boolean> {
  * Category row data structure from Categories sheet
  * Represents a single row (excluding header) from the spreadsheet
  *
- * Column mapping:
+ * Column mapping (current layout, see src/constants/columns.ts):
  * [0] = Category Name (A)
  * [1] = Icon (B)
  * [2] = Fields (C) - comma-separated field names
- * [3] = Color (D)
- * [4] = Geometry (E) - e.g., "point", "line", "area"
- * [5+] = Additional columns (translations, etc.)
+ * [3] = Applies (D) - "observation", "track", or both
+ * [4] = Category ID (E)
+ * [5] = Icon ID (F)
+ * [6+] = Additional columns (translations, etc.)
  */
 interface CategoryRow extends Array<string | number | boolean> {
   0: string;  // Category Name (required)
   1?: string; // Icon (optional)
   2?: string; // Fields (optional)
-  3?: string; // Color (optional)
-  4?: string; // Geometry (optional)
+  3?: string; // Applies (optional)
+  4?: string; // Category ID (optional)
+  5?: string; // Icon ID (optional)
 }
 
 // ============================================

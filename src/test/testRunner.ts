@@ -124,7 +124,7 @@ function closeTestRunnerDialog(): void {
 
 function runAllTests(): void {
   const log = getScopedLogger("TestRunner");
-  const totalSuites = 14;
+  const totalSuites = 15;
 
   if (typeof Logger === "undefined") {
     throw new Error("Logger not available - tests must run in Apps Script environment");
@@ -658,6 +658,40 @@ function runAllTests(): void {
     }
   }
 
+  // Test Suite 15: Regression Sanitizer Tests
+  currentSuite++;
+  updateProgress(currentSuite, totalSuites, "Regression Sanitizer");
+  try {
+    log.info("\n--- Test Suite 15: Regression Sanitizer ---");
+    const suiteStart = Date.now();
+    testRegressionTesting();
+    const duration = Date.now() - suiteStart;
+    results.push({
+      suiteName: "Regression Sanitizer",
+      passed: 1,
+      failed: 0,
+      duration,
+      status: "PASSED",
+    });
+    log.info(`✓ Regression sanitizer tests passed (${duration}ms)`);
+    if (spreadsheet) {
+      spreadsheet.toast("✓ Regression Sanitizer passed", "Test Results", 2);
+    }
+  } catch (error) {
+    const duration = 0;
+    results.push({
+      suiteName: "Regression Sanitizer",
+      passed: 0,
+      failed: 1,
+      duration,
+      status: "FAILED",
+    });
+    log.error(`✗ Regression sanitizer tests failed: ${error.message}`);
+    if (spreadsheet) {
+      spreadsheet.toast("✗ Regression Sanitizer FAILED", "Test Results", 3);
+    }
+  }
+
   const totalDuration = Date.now() - startTime;
 
   // Generate Summary Report
@@ -854,6 +888,7 @@ function runTestSuite(suiteName: string): void {
     skip: testSkipTranslation,
     logger: testDebugLogger,
     lint: runLintParityTests,
+    regression: testRegressionTesting,
   };
 
   const suiteNameLower = suiteName.toLowerCase();

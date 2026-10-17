@@ -29,11 +29,6 @@ const VALID_FIELD_TYPES = [
 type ValidFieldType = (typeof VALID_FIELD_TYPES)[number];
 
 /**
- * Valid geometry types for CoMapeo presets
- */
-const VALID_GEOMETRY_TYPES = ["point", "line", "area"] as const;
-
-/**
  * Calculates Levenshtein distance between two strings
  * Used for fuzzy matching and "Did you mean..." suggestions
  *
