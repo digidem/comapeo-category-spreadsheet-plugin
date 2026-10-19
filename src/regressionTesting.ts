@@ -259,12 +259,15 @@ function sanitizeRowData(
           })
           .join(", ");
       }
-      // Column 3: Color - always use default test color
-      if (sanitized[3] && typeof sanitized[3] === "string") {
+      // Column 3: Applies - always use default test tokens
+      sanitized[3] = "track, observation";
+      // Column 4: Category ID - keep structure
+      // Column 5: Color - always use default test color
+      if (sanitized[5] && typeof sanitized[5] === "string") {
         // Use default test color for all entries to ensure consistency
-        sanitized[3] = "#0066CC"; // Default blue
+        sanitized[5] = "#0066CC"; // Default blue
       }
-      // Column 4: Geometry - keep structure
+      // Column 6: Icon ID - keep structure
       break;
 
     case "Details":

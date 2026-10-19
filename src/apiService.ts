@@ -12,9 +12,15 @@ let AUTO_CREATED_CATEGORY_ID_COLUMN = false;
 
 // Column indices are declared globally in src/constants/columns.ts
 
-/** Expected sheet headers for validation */
+/** Expected sheet headers for validation.
+ * CATEGORIES uses a getter because GAS loads files alphabetically by path:
+ * src/apiService.ts is concatenated before src/constants/columns.ts, so a
+ * module-scope reference to CATEGORY_HEADERS would throw at boot.
+ */
 const EXPECTED_HEADERS = {
-  CATEGORIES: ['Name', 'Icon', 'Fields', 'Applies'],
+  get CATEGORIES(): string[] {
+    return CATEGORY_HEADERS.slice();
+  },
   DETAILS: ['Name', 'Helper Text', 'Type', 'Options', 'ID', 'Universal']
 };
 
@@ -344,8 +350,12 @@ function migrateSpreadsheetFormat(): void {
           getScopedLogger("ApiService").info(`Stored primaryLanguage='${headerA1Value}' in Metadata sheet`);
         }
 
-        categoriesSheet.getRange(1, 1, 1, 4)
-          .setValues([['Name', 'Icon', 'Fields', 'Applies']])
+        // Rewrite only the canonical prefix (through Applies) — legacy sheets
+        // may still have other headers past column D that ensureAppliesColumn /
+        // ensureCategoryIdColumn migrate separately.
+        const prefixHeaders = CATEGORY_HEADERS.slice(0, 4);
+        categoriesSheet.getRange(1, 1, 1, prefixHeaders.length)
+          .setValues([prefixHeaders])
           .setFontWeight('bold');
         getScopedLogger("ApiService").info('Updated Categories headers to Name/Icon/Fields/Applies');
         refreshCategoryHeaders();
@@ -501,7 +511,7 @@ function migrateSpreadsheetFormat(): void {
     const warningMessage = 'Spreadsheet format errors detected during migration:\n\n' +
       migrationWarnings.map((w, i) => `${i + 1}. ${w}`).join('\n\n') +
       '\n\nPlease verify your sheet formats match the expected structure:\n' +
-      '• Categories: Name, Icon, Fields, Applies, Category ID\n' +
+      '• Categories: ' + CATEGORY_HEADERS.join(', ') + '\n' +
       '• Details: Name, Helper Text, Type, Options, ID, Universal\n\n' +
       'Generation has been halted until the sheet layouts are corrected.';
 
@@ -618,14 +628,14 @@ function ensureAppliesColumn(categoriesSheet: GoogleAppsScript.Spreadsheet.Sheet
 function validateCategoriesHeaderLayout(
   categoriesSheet: GoogleAppsScript.Spreadsheet.Sheet
 ): string | null {
-  const canonicalHeaders = ['Name', 'Icon', 'Fields', 'Applies', 'Category ID'];
+  const canonicalHeaders = CATEGORY_HEADERS.slice();
   const normalizedExpected = canonicalHeaders.map(h => h.toLowerCase());
   const headers = categoriesSheet
     .getRange(1, 1, 1, categoriesSheet.getLastColumn())
     .getValues()[0];
 
   if (headers.length < canonicalHeaders.length) {
-    return 'Categories sheet must include columns Name, Icon, Fields, Applies, Category ID in that order.';
+    return 'Categories sheet must include columns ' + canonicalHeaders.join(', ') + ' in that order.';
   }
 
   const normalized = headers.map(normalizeHeaderLabel);

@@ -2514,6 +2514,158 @@ function testValidateImportedConfigTagValueTypes(): boolean {
 // Test Runner
 // =============================================================================
 
+function testCanonicalCategoriesLayoutRoundTrip(): boolean {
+  console.log("=== Test: Canonical Categories Layout Round-Trip ===");
+  try {
+    // Generate: canonical Categories layout -> categories (issue #61 / #52)
+    const canonicalHeader = CATEGORY_HEADERS.slice();
+    if (
+      canonicalHeader.join("|") !==
+      "Name|Icon|Fields|Applies|Category ID|Color|Icon ID"
+    ) {
+      console.error(
+        `FAIL: CATEGORY_HEADERS mismatch: ${canonicalHeader.join("|")}`,
+      );
+      return false;
+    }
+    const generateData = {
+      documentName: "Round-Trip Config" as any,
+      Categories: [
+        canonicalHeader,
+        ["River", "", "depth", "track, observation", "river-cat", "#1B5E88", "river-icon"],
+        ["Trail", "", "", "observation", "", "", ""],
+      ],
+      Details: [
+        ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
+        ["depth", "", "t", "", "depth", "FALSE"],
+      ],
+    } as SheetData;
+    const fields = buildFields(generateData);
+    const categoriesAfterGenerate = buildCategories(generateData, fields);
+
+    const river = categoriesAfterGenerate.find((c) => c.name === "River");
+    if (!river) {
+      console.error("FAIL: River category missing after generate");
+      return false;
+    }
+    if (JSON.stringify(river.appliesTo) !== JSON.stringify(["track", "observation"])) {
+      console.error(
+        `FAIL: River appliesTo should be track+observation, got ${JSON.stringify(river.appliesTo)}`,
+      );
+      return false;
+    }
+    if (river.color !== "#1B5E88") {
+      console.error(`FAIL: River color should be #1B5E88, got ${river.color}`);
+      return false;
+    }
+    if (river.id !== "river-cat" || river.iconId !== "river-icon") {
+      console.error(
+        `FAIL: River id/iconId should be river-cat/river-icon, got ${river.id}/${river.iconId}`,
+      );
+      return false;
+    }
+
+    // Import: write the categories back with the canonical import writer
+    // (minimal fake sheet; no SpreadsheetApp needed for the insert path).
+    const fakeSheet: any = {
+      values: [] as any[][],
+      getLastRow() {
+        return this.values.length;
+      },
+      getRange(row: number, col: number, numRows = 1, numCols = 1) {
+        const sheet = this;
+        return {
+          setValues(vals: any[][]) {
+            for (let r = 0; r < vals.length; r++) {
+              while (sheet.values.length <= row - 1 + r) sheet.values.push([]);
+              for (let c = 0; c < vals[r].length; c++) {
+                const target = sheet.values[row - 1 + r];
+                while (target.length <= col - 1 + c) target.push("");
+                target[col - 1 + c] = vals[r][c];
+              }
+            }
+            return this;
+          },
+          clear() {
+            return this;
+          },
+          setFontWeight() {
+            return this;
+          },
+          setBackgrounds(bgs: string[][]) {
+            return this;
+          },
+        };
+      },
+    };
+    const fakeSpreadsheet: any = {
+      getSheetByName: () => null,
+      insertSheet: () => fakeSheet,
+    };
+    populateCategoriesSheet(fakeSpreadsheet, categoriesAfterGenerate, new Map(), fields);
+
+    const header = fakeSheet.values[0];
+    if (JSON.stringify(header) !== JSON.stringify(canonicalHeader)) {
+      console.error(
+        `FAIL: imported header should be canonical, got ${JSON.stringify(header)}`,
+      );
+      return false;
+    }
+    const riverRow = fakeSheet.values[1];
+    if (
+      riverRow[3] !== "track, observation" ||
+      riverRow[4] !== "river-cat" ||
+      riverRow[5] !== "#1B5E88" ||
+      riverRow[6] !== "river-icon"
+    ) {
+      console.error(`FAIL: River row not canonical: ${JSON.stringify(riverRow)}`);
+      return false;
+    }
+    const trailRow = fakeSheet.values[2];
+    if (trailRow[3] !== "observation") {
+      console.error(
+        `FAIL: Trail applies should stay "observation", got ${trailRow[3]}`,
+      );
+      return false;
+    }
+
+    // Generate again from the imported sheet: appliesTo must be identical,
+    // color preserved wherever the Color column carries a value.
+    const roundTripData = {
+      documentName: "Round-Trip Config" as any,
+      Categories: fakeSheet.values.map((row: any[]) => row.slice()),
+      Details: generateData.Details,
+    } as SheetData;
+    const categoriesAfterImport = buildCategories(roundTripData, fields);
+    for (let i = 0; i < categoriesAfterGenerate.length; i++) {
+      const before = categoriesAfterGenerate[i];
+      const after = categoriesAfterImport[i];
+      if (!after) {
+        console.error(`FAIL: category ${before.name} missing after round trip`);
+        return false;
+      }
+      if (JSON.stringify(before.appliesTo) !== JSON.stringify(after.appliesTo)) {
+        console.error(
+          `FAIL: appliesTo changed for ${before.name}: ${JSON.stringify(before.appliesTo)} -> ${JSON.stringify(after.appliesTo)}`,
+        );
+        return false;
+      }
+      if (before.color && before.color !== after.color) {
+        console.error(
+          `FAIL: color changed for ${before.name}: ${before.color} -> ${after.color}`,
+        );
+        return false;
+      }
+    }
+
+    console.log("PASS: canonical layout round-trip preserves appliesTo and color");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + error.message);
+    return false;
+  }
+}
+
 function runBuildAndImportTests(): void {
   console.log("\n========================================");
   console.log("CoMapeo Config v2.0.0 - Build & Import Tests");
@@ -2545,6 +2697,7 @@ function runBuildAndImportTests(): void {
     { name: "Build Categories Requires Observation Coverage", fn: testBuildCategoriesRequiresObservationCoverage },
     { name: "Build Categories Requires Track Coverage", fn: testBuildCategoriesRequiresTrackCoverage },
     { name: "Categories Applies Parsing", fn: testCategoriesAppliesParsing },
+    { name: "Canonical Categories Layout Round-Trip", fn: testCanonicalCategoriesLayoutRoundTrip },
 
     // Round-trip integration tests
     { name: "Integer Field Round-Trip", fn: testIntegerFieldRoundTrip },

@@ -75,7 +75,7 @@ Tips:
 Notes:
 
 - Category colors are based on the background color of column A.
-- There is no separate Color column.
+- Imported configs also carry an explicit hex value in the **Color** column (F). Export prefers it; leave it blank to rely on the column A background.
 - Do not paste hex codes into the **Applies** column.
 - Choose distinct, colorblind-friendly colors when possible.
 - Bright, high-contrast colors tend to display best.

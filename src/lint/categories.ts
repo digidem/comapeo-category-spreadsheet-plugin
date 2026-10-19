@@ -374,11 +374,27 @@ function validateCategoryIcons(): void {
   clearLintArtifacts(iconRange);
 
   const iconValues = iconRange.getValues();
-  // Also read Icon ID column (column F, 1-based index 6) if present
+  // Read the Icon ID column resolved by header (canonical position: column G)
+  // so legacy layouts (Icon ID in column F) still validate correctly.
   const lastCol = categoriesSheet.getLastColumn();
-  const hasIconIdColumn = lastCol >= 6;
+  const headerRowValues =
+    lastCol > 0
+      ? categoriesSheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      : [];
+  let iconIdColOneBased = 0;
+  for (let i = 0; i < headerRowValues.length; i++) {
+    if (
+      String(headerRowValues[i] || "")
+        .trim()
+        .toLowerCase() === "icon id"
+    ) {
+      iconIdColOneBased = i + 1;
+      break;
+    }
+  }
+  const hasIconIdColumn = iconIdColOneBased > 0;
   const iconIdValues = hasIconIdColumn
-    ? categoriesSheet.getRange(2, 6, lastRow - 1, 1).getValues()
+    ? categoriesSheet.getRange(2, iconIdColOneBased, lastRow - 1, 1).getValues()
     : [];
   // Build a set of known icon IDs from the Icons sheet for validation.
   // Mirror buildIconsFromSheet: only register IDs whose icon source (column B)
@@ -687,6 +703,44 @@ function validatePrimaryLanguageInA1(): void {
 }
 
 // Specific sheet linting functions
+/**
+ * Task 7: Flags Categories sheets still using the pre-#61 import layout
+ * (ID at column D, Color at column E, no Applies). The generate-side migration
+ * (ensureAppliesColumn + ensureCategoryIdColumn) converts it on the next run,
+ * but the old layout loses per-category Applies values, so point users at it.
+ */
+function validateCategoryLayoutCanonical(): void {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName("Categories");
+  if (!sheet) return;
+
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return;
+
+  const normalizedHeaders = sheet
+    .getRange(1, 1, 1, lastCol)
+    .getValues()[0]
+    .map((header) => String(header || "").trim().toLowerCase());
+
+  // Old import layout signature: ID at index 3 and Color at index 4.
+  const isOldImportLayout =
+    normalizedHeaders[3] === "id" && normalizedHeaders[4] === "color";
+  if (!isOldImportLayout) return;
+
+  const headerCell = sheet.getRange(1, 4);
+  clearRangeLintNotesWithPrefixes(headerCell, [
+    `${LINT_NOTE_PREFIX}Old Categories layout`,
+  ]);
+  setLintNote(
+    headerCell,
+    'Old Categories layout detected ("ID", "Color", "Icon ID" in columns D-F with no "Applies"). ' +
+      'Run "Generate Config" once to migrate to the canonical layout (' +
+      CATEGORY_HEADERS.join(", ") +
+      '), or re-import the config. The old layout does not carry per-category Applies values.',
+    "warning",
+  );
+}
+
 function lintCategoriesSheet(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const categoriesSheetRef = spreadsheet.getSheetByName("Categories");
@@ -834,4 +888,5 @@ function lintCategoriesSheet(): void {
   checkSlugCollisions("Categories", 1); // Task 3: slug collisions in col A
   validateAppliesColumn(); // Task 4: Applies column validation
   checkManualIdHygiene("Categories", 5, rawCategoryIds); // Task 6: ID hygiene in col E
+  validateCategoryLayoutCanonical(); // Task 7: canonical header layout check
 }
