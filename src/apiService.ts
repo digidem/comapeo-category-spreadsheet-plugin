@@ -79,6 +79,9 @@ const NON_RETRYABLE_FETCH_ERROR = /too many times|bandwidth quota|invalid argume
  * - errors from saveComapeocatToDrive happen AFTER a successful build, so
  *   retrying would rebuild the archive for nothing.
  * No dialogs or alerts are shown here; the caller owns user-facing errors.
+ * A single Idempotency-Key is generated per logical build (one key per
+ * user-initiated generate run) and re-sent on every retry attempt, so a
+ * server that saw the first attempt can deduplicate a double submission.
  *
  * @param buildRequest - The build request payload
  * @param maxRetries - Maximum number of total attempts (default: 3)
@@ -89,6 +92,10 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
   validateBuildRequest(buildRequest, { strict: true });
   // v2 JSON endpoint (legacy ZIP endpoint was /v1, prior code used /build)
   const apiUrl = `${API_BASE_URL}/v2`;
+  // One key per logical build operation, created BEFORE the retry loop so
+  // every attempt (first try and all retries) reuses the same value.
+  const idempotencyKey = Utilities.getUuid();
+  getScopedLogger("ApiService").info(`Idempotency key for this build: ${idempotencyKey}`);
   let attemptNumber = 0;
   let lastError: Error | null = null;
   const startTime = Date.now();
@@ -113,6 +120,9 @@ function sendBuildRequest(buildRequest: BuildRequest, maxRetries: number = RETRY
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method: 'post',
       contentType: 'application/json',
+      headers: {
+        "Idempotency-Key": idempotencyKey
+      },
       payload: JSON.stringify(buildRequest),
       muteHttpExceptions: true
     };
