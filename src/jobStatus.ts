@@ -41,6 +41,7 @@ interface JobStatusState {
 interface JobStatusOptions {
   title?: string;
   detail?: string;
+  /** Sidebar Cancel is hardwired to requestTranslationCancel — translation jobs only. */
   cancellable?: boolean;
 }
 
@@ -61,6 +62,14 @@ const JOB_KEY_PREFIX = "CMJ_JOB_";
 // Keeps the JSON blob far below the 100KB cache value limit even with
 // chatty phases; the sidebar only renders a tail anyway.
 const JOB_LOG_MAX_ENTRIES = 30;
+// ScriptProperties is a ~500KB store shared with driveService/utils/
+// performanceMetrics. Without a sweep every terminal job would permanently
+// leave its mirrored record (log included) there, so startJobStatus drops
+// mirrors older than an hour and caps the total count. Running states are
+// cache-only and never appear in ScriptProperties, so a sweep can never
+// break a concurrently running job's read fallback.
+const JOB_SWEEP_MAX_AGE_MS = 60 * 60 * 1000;
+const JOB_SWEEP_MAX_RECORDS = 20;
 
 function getJobStatusLogger() {
   return typeof getScopedLogger === "function"
@@ -138,11 +147,65 @@ function appendJobLogLine(state: JobStatusState, entry: JobLogEntry): void {
 }
 
 /**
+ * Removes stale mirrored terminal records from ScriptProperties so the
+ * shared property store does not fill up with completed jobs nobody will
+ * read again (clearJobStatus has no production caller). Only CMJ_JOB_ keys
+ * are touched; a concurrently running job keeps its state in the cache, so
+ * this can never break its read fallback. Failures are logged and ignored —
+ * housekeeping must never prevent a job from starting.
+ */
+function sweepStaleJobRecords(): void {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (typeof props.getKeys !== "function") {
+      return;
+    }
+    const keys = props
+      .getKeys()
+      .filter((key) => key.indexOf(JOB_KEY_PREFIX) === 0);
+    if (keys.length === 0) {
+      return;
+    }
+    const now = Date.now();
+    const records: { key: string; touchedAt: number }[] = [];
+    for (const key of keys) {
+      let touchedAt = NaN;
+      try {
+        const raw = props.getProperty(key);
+        const parsed = raw ? (JSON.parse(raw) as JobStatusState) : null;
+        if (parsed && typeof parsed.touchedAt === "number") {
+          touchedAt = parsed.touchedAt;
+        }
+      } catch (parseError) {
+        getJobStatusLogger().warn(`JobStatus mirror ${key} unparseable:`, parseError);
+      }
+      if (!isFinite(touchedAt)) {
+        // readJobState could never use this mirror again — drop it.
+        props.deleteProperty(key);
+        continue;
+      }
+      records.push({ key, touchedAt });
+    }
+    records.sort((a, b) => b.touchedAt - a.touchedAt);
+    for (let i = 0; i < records.length; i++) {
+      const tooOld = now - records[i].touchedAt > JOB_SWEEP_MAX_AGE_MS;
+      const overCap = i >= JOB_SWEEP_MAX_RECORDS;
+      if (tooOld || overCap) {
+        props.deleteProperty(records[i].key);
+      }
+    }
+  } catch (error) {
+    getJobStatusLogger().warn("JobStatus sweep skipped:", error);
+  }
+}
+
+/**
  * Creates a running job record and returns its id. The id must be passed to
  * updateJobStatusProgress / completeJobStatus / failJobStatus by the running
  * operation and to openJobSidebar + getJobStatus by the sidebar.
  */
 function startJobStatus(operation: string, options?: JobStatusOptions): string {
+  sweepStaleJobRecords();
   const jobId = createJobId();
   const now = Date.now();
   const state: JobStatusState = {
@@ -205,6 +268,52 @@ function updateJobStatusProgress(jobId: string, patch?: JobProgressPatch): void 
   }
 }
 
+/**
+ * Creates a minimal terminal record for a job whose running state is no
+ * longer readable — CacheService evicted a RUNNING job mid-run (running
+ * states are never mirrored, so the ScriptProperties fallback is empty
+ * too). Without this the sidebar would poll "no data" forever while the
+ * toast already claimed completed/cancelled.
+ */
+function synthesizeTerminalJobState(
+  jobId: string,
+  status: JobStatusValue,
+  message: string,
+  fields?: { summary?: string; error?: string },
+): void {
+  const now = Date.now();
+  const state: JobStatusState = {
+    jobId,
+    operation: "unknown",
+    title: "Operation",
+    status,
+    percent: status === "completed" ? 100 : 0,
+    phase: status,
+    detail: "",
+    log: [
+      {
+        t: now,
+        msg: message,
+        level:
+          status === "error" ? "error" : status === "cancelled" ? "warn" : "info",
+      },
+    ],
+    cancellable: false,
+    startedAt: now,
+    touchedAt: now,
+  };
+  if (fields && fields.summary) {
+    state.summary = fields.summary;
+  }
+  if (fields && fields.error) {
+    state.error = fields.error;
+  }
+  writeJobState(state);
+  getJobStatusLogger().warn(
+    `[JOB] ${jobId} ${status} (state unreadable; synthesized terminal record)`,
+  );
+}
+
 function endJobStatus(
   jobId: string,
   status: JobStatusValue,
@@ -216,7 +325,11 @@ function endJobStatus(
   }
   try {
     const state = readJobState(jobId);
-    if (!state || state.status !== "running") {
+    if (!state) {
+      synthesizeTerminalJobState(jobId, status, message, fields);
+      return;
+    }
+    if (state.status !== "running") {
       return;
     }
     const now = Date.now();
@@ -317,7 +430,11 @@ function openJobSidebar(jobId: string): void {
     }
     output.setTitle("CoMapeo");
     output.append(
-      "<script>window.SIDEBAR_JOB_ID = " + JSON.stringify(String(jobId)) + ";</script>",
+      "<script>window.SIDEBAR_JOB_ID = " +
+        // JSON.stringify leaves "</script>" intact, which would terminate
+        // the inline bootstrap early — escape every "<".
+        JSON.stringify(String(jobId)).replace(/</g, "\\u003c") +
+        ";</script>",
     );
     const ui = SpreadsheetApp.getUi();
     if (typeof ui.showSidebar !== "function") {

@@ -32,6 +32,7 @@ function createTest() {
     deleteProperty: (key) => {
       store.delete(key);
     },
+    getKeys: () => Array.from(store.keys()),
   });
 
   const makeCache = (store) => ({
@@ -187,16 +188,34 @@ function main() {
   assert(!t.scriptCache.has("CMJ_JOB_" + cancelJobId), "cache entry removed");
   assert(!t.scriptProperties.has("CMJ_JOB_" + cancelJobId), "properties entry removed");
 
-  // 9) Unknown / empty ids are safe no-ops.
+  // 9) Unknown / empty ids: reads and progress stay no-ops, but ending a
+  // job whose state is unreadable synthesizes a minimal terminal record
+  // (RISK 2) so the sidebar always reaches a terminal state.
   assert(context.getJobStatus("nope") === null, "unknown id returns null");
   assert(context.getJobStatus("") === null, "empty id returns null");
   context.updateJobStatusProgress("", { percent: 50 });
   context.updateJobStatusProgress("nope", { percent: 50 });
+  context.clearJobStatus("");
+  assert(context.getJobStatus("") === null, "empty id still returns null after no-op calls");
   context.completeJobStatus("nope");
+  const synthState = context.getJobStatus("nope");
+  assert(
+    synthState !== null && synthState.status === "completed",
+    "end with unreadable state synthesizes a terminal record",
+  );
+  assert(synthState.operation === "unknown", "synthesized record marks operation unknown");
+  assert(synthState.percent === 100, "synthesized completion sits at 100 percent");
+  assert(
+    Array.isArray(synthState.log) && synthState.log.length === 1,
+    "synthesized record keeps a minimal one-line log",
+  );
+  assert(t.scriptProperties.has("CMJ_JOB_nope"), "synthesized record mirrored to ScriptProperties");
   context.failJobStatus("");
   context.cancelJobStatus("nope");
-  context.clearJobStatus("");
-  assert(context.getJobStatus("nope") === null, "unknown id still returns null after no-op calls");
+  assert(
+    context.getJobStatus("nope").status === "completed",
+    "later ends ignore the synthesized terminal record",
+  );
 
   // 10) Sidebar launcher: file output + injected job id + showSidebar.
   const sidebarJobId = context.startJobStatus("import", { title: "Import Category File" });
@@ -212,6 +231,110 @@ function main() {
   const payload = context.getJobStatus(sidebarJobId);
   const roundTrip = JSON.parse(JSON.stringify(payload));
   assert(roundTrip.jobId === sidebarJobId, "job state survives JSON round-trip");
+
+  // 12) RISK 2 regression: CacheService evicts a RUNNING job mid-run.
+  // Running states are cache-only (never mirrored), so end/cancel used to
+  // read null and silently no-op, leaving the sidebar polling "no data".
+  console.log("eviction-mid-run terminal synthesis:");
+  const e = createTest();
+  const ectx = e.context;
+
+  const evictId = ectx.startJobStatus("translation", { cancellable: true });
+  ectx.updateJobStatusProgress(evictId, { percent: 50, phase: "Translating" });
+  e.scriptCache.clear(); // simulate cache eviction mid-run
+  assert(ectx.getJobStatus(evictId) === null, "evicted running state is unreadable before end");
+  ectx.completeJobStatus(evictId, "Finished after eviction");
+  const evictState = ectx.getJobStatus(evictId);
+  assert(evictState !== null, "completeJobStatus synthesizes a record after eviction");
+  assert(evictState.status === "completed", "synthesized record carries the terminal status");
+  assert(evictState.percent === 100, "synthesized completion sits at 100 percent");
+  assert(evictState.summary === "Finished after eviction", "synthesized record keeps the summary");
+  assert(
+    e.scriptProperties.has("CMJ_JOB_" + evictId),
+    "synthesized record mirrored to ScriptProperties",
+  );
+
+  const cancelEvictId = ectx.startJobStatus("translation", { cancellable: true });
+  e.scriptCache.clear();
+  ectx.cancelJobStatus(cancelEvictId, "Cancelled after eviction");
+  assert(
+    ectx.getJobStatus(cancelEvictId).status === "cancelled",
+    "cancelJobStatus synthesizes a cancelled record after eviction",
+  );
+
+  const failEvictId = ectx.startJobStatus("translation", {});
+  e.scriptCache.clear();
+  ectx.failJobStatus(failEvictId, "Boom after eviction");
+  assert(
+    ectx.getJobStatus(failEvictId).status === "error",
+    "failJobStatus synthesizes an error record after eviction",
+  );
+
+  // Progress updates on the evicted job stay silent no-ops.
+  const progressEvictId = ectx.startJobStatus("translation", {});
+  e.scriptCache.clear();
+  ectx.updateJobStatusProgress(progressEvictId, { percent: 90, phase: "zombie" });
+  assert(ectx.getJobStatus(progressEvictId) === null, "progress on evicted running job stays a no-op");
+
+  // 13) RISK 1 regression: startJobStatus sweeps stale mirrored terminal
+  // records, caps the total, leaves unparseable mirrors, and never touches
+  // a concurrently running job (running states are cache-only).
+  console.log("stale-record sweep on start:");
+  const s = createTest();
+  const sctx = s.context;
+
+  const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+  const staleRecord = {
+    jobId: "stale-job",
+    operation: "generate",
+    title: "Old run",
+    status: "completed",
+    percent: 100,
+    phase: "completed",
+    detail: "",
+    log: [{ t: threeHoursAgo, msg: "old", level: "info" }],
+    cancellable: false,
+    startedAt: threeHoursAgo,
+    touchedAt: threeHoursAgo,
+  };
+  s.scriptProperties.set("CMJ_JOB_stale-job", JSON.stringify(staleRecord));
+  s.scriptProperties.set("CMJ_JOB_broken-mirror", "not-json{");
+  for (let i = 0; i < 25; i++) {
+    s.scriptProperties.set(
+      "CMJ_JOB_fresh-" + i,
+      JSON.stringify({
+        ...staleRecord,
+        jobId: "fresh-" + i,
+        title: "Fresh " + i,
+        touchedAt: Date.now() + i, // fresh-24 is the newest
+      }),
+    );
+  }
+
+  const runId = sctx.startJobStatus("generate", { title: "New run" });
+  assert(!s.scriptProperties.has("CMJ_JOB_stale-job"), "sweep removes terminal mirrors older than the threshold");
+  assert(!s.scriptProperties.has("CMJ_JOB_broken-mirror"), "sweep drops unparseable mirrors");
+  const remaining = Array.from(s.scriptProperties.keys()).filter(
+    (key) => key.indexOf("CMJ_JOB_") === 0,
+  );
+  assert(remaining.length === 20, "sweep caps mirrored terminal records at the cap");
+  assert(s.scriptProperties.has("CMJ_JOB_fresh-24"), "sweep keeps the newest mirrors");
+  assert(!s.scriptProperties.has("CMJ_JOB_fresh-0"), "sweep drops the oldest surplus mirrors");
+  const runState = sctx.getJobStatus(runId);
+  assert(runState !== null && runState.status === "running", "sweep preserves the concurrently running job");
+  assert(
+    remaining.indexOf("CMJ_JOB_" + runId) === -1,
+    "running state stays cache-only, untouched by the sweep",
+  );
+  // A second start (another sweep pass) keeps the store at the cap.
+  sctx.startJobStatus("generate", { title: "Another run" });
+  const remainingAfterSecondSweep = Array.from(s.scriptProperties.keys()).filter(
+    (key) => key.indexOf("CMJ_JOB_") === 0,
+  );
+  assert(
+    remainingAfterSecondSweep.length <= 21,
+    "repeated sweeps keep the mirrored store capped",
+  );
 
   console.log("check-job-status PASSED");
 }
