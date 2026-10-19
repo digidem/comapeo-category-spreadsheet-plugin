@@ -64,10 +64,12 @@ When asked to "push for testing" or "deploy for testing", the target is the **"C
 
 ## 🧪 Testing Strategy
 *   **Automated:** Lightweight tests in `src/test/`. Run via `testRunner.ts`.
+*   **Offline check suites (run before push):** `npm run test:<name>` — suites live in `src/scripts/check-*.cjs`, NOT in `src/test/`. Current suites: `gas-boot`, `lint-parity`, `custom-lang`, `api-retry`, `translation-cancel`, `import-layout`, `job-status`. Shared fakes (FakeSheet, createFakeSpreadsheet, Utilities mocks) live in `src/scripts/gasSimHarness.cjs`; extend the existing harness instead of making new ones.
 *   **Manual (Primary):**
     1.  **Round-Trip:** Generate Config -> Download -> Import Config -> Verify Sheets match.
     2.  **Linting:** Use the "Lint Sheets" menu to verify data integrity.
     3.  **HTML Validation:** Dialogs are validated via `src/generateIcons/svgValidator.ts` and `src/formatDetection.ts` helpers to prevent malformed HTML errors.
+    4.  **Regression suite** (`runTestSuite("regression")`) only runs inside Apps Script — CI and the offline suites cannot execute it.
 
 ## 📂 Documentation Index
 *   **`context/reference/architecture.md`**: Full system topology.
