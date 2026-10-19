@@ -11,7 +11,11 @@
 //      imported sheet with identical appliesTo + color per category.
 //   5. validateCategoriesHeaderLayout accepts the canonical layout and flags
 //      the old import layout with an actionable message.
-//   6. Full GAS test suite (runBuildAndImportTests) still passes.
+//   6. Existing-sheet import path: a pre-populated legacy Categories sheet is
+//      rewritten to the canonical header and canonical column reads (RISK 1).
+//   7. Pre-#61 generate layout (Applies + Category ID but no Color) is
+//      auto-healed by ensureCanonicalColorIconIdColumns (RISK 2).
+//   8. Full GAS test suite (runBuildAndImportTests) still passes.
 
 const vm = require("vm");
 const {
@@ -218,7 +222,123 @@ function main() {
     "old import layout flagged with an actionable message",
   );
 
-  // 6) Full build & import regression suite still passes. Runs in a fresh
+  // 6) Existing-sheet import path: a pre-populated legacy sheet keeps its old
+  // header unless populateCategoriesSheet rewrites it (review RISK 1).
+  console.log("populateCategoriesSheet over an existing legacy sheet:");
+  const legacySheet = new FakeSheet("Categories", [
+    ["Name", "Icon", "Fields", "ID", "Color", "Icon ID"],
+    ["Old Cat", "", "", "old-cat", "#FF0000", "old-icon"],
+  ]);
+  const legacyFixture = createFakeSpreadsheet({ Categories: legacySheet });
+  context.SpreadsheetApp.getActiveSpreadsheet = () => legacyFixture.spreadsheet;
+  context.populateCategoriesSheet(
+    legacyFixture.spreadsheet,
+    [
+      {
+        id: "river-cat",
+        name: "River",
+        appliesTo: ["track", "observation"],
+        color: "#1B5E88",
+        iconId: "river-icon",
+        defaultFieldIds: [],
+      },
+    ],
+    new Map(),
+    [],
+  );
+  assert(
+    JSON.stringify(legacySheet.values[0]) === JSON.stringify(canonical),
+    "existing sheet header rewritten to canonical",
+  );
+  assert(
+    JSON.stringify(legacySheet.values[1]) ===
+      JSON.stringify([
+        "River",
+        "",
+        "",
+        "track, observation",
+        "river-cat",
+        "#1B5E88",
+        "river-icon",
+      ]),
+    "existing sheet rows written in canonical columns",
+  );
+  const legacyReadData = {
+    documentName: "Legacy Import",
+    Categories: legacySheet.values.slice(),
+    Details: [["Name", "Helper Text", "Type", "Options", "ID", "Universal"]],
+  };
+  const legacyReadFields = context.buildFields(legacyReadData);
+  const legacyReadCategories = context.buildCategories(
+    legacyReadData,
+    legacyReadFields,
+  );
+  assert(
+    legacyReadCategories.length === 1,
+    "legacy import readback yields one category",
+  );
+  assert(
+    JSON.stringify(legacyReadCategories[0].appliesTo) ===
+      JSON.stringify(["track", "observation"]) &&
+      legacyReadCategories[0].id === "river-cat" &&
+      legacyReadCategories[0].color === "#1B5E88" &&
+      legacyReadCategories[0].iconId === "river-icon",
+    "generate reads appliesTo/id/color/iconId from the canonical columns",
+  );
+
+  // 7) Pre-#61 generate layout auto-heal (review RISK 2): Applies + Category
+  // ID present but no Color column. ensureCanonicalColorIconIdColumns inserts
+  // a blank Color between Category ID and Icon ID so the next
+  // validateCategoriesHeaderLayout passes instead of hard-failing.
+  console.log("pre-#61 generate layout auto-heal:");
+  const pre61Sheet = new FakeSheet("Categories", [
+    ["Name", "Icon", "Fields", "Applies", "Category ID", "Icon ID"],
+    ["River", "", "", "track, observation", "river-cat", "river-icon"],
+  ]);
+  assert(
+    context.ensureCanonicalColorIconIdColumns(pre61Sheet) === true,
+    "reports a change for the pre-#61 layout",
+  );
+  assert(
+    JSON.stringify(pre61Sheet.values[0]) === JSON.stringify(canonical),
+    "Color inserted between Category ID and Icon ID",
+  );
+  assert(
+    pre61Sheet.values[1][4] === "river-cat" &&
+      pre61Sheet.values[1][5] === "" &&
+      pre61Sheet.values[1][6] === "river-icon",
+    "Icon ID values survive the Color insertion; Color starts blank",
+  );
+  assert(
+    context.validateCategoriesHeaderLayout(pre61Sheet) === null,
+    "healed pre-#61 sheet passes validateCategoriesHeaderLayout",
+  );
+
+  // Shorter legacy generate layouts ending at Category ID heal too.
+  const fiveColSheet = new FakeSheet("Categories", [
+    ["Name", "Icon", "Fields", "Applies", "Category ID"],
+    ["River", "", "", "observation", "river-cat"],
+  ]);
+  assert(
+    context.ensureCanonicalColorIconIdColumns(fiveColSheet) === true,
+    "reports a change for the 5-column layout",
+  );
+  assert(
+    JSON.stringify(fiveColSheet.values[0]) === JSON.stringify(canonical),
+    "5-column layout heals to canonical",
+  );
+
+  // Canonical sheets are left untouched.
+  const canonicalSheet = new FakeSheet("Categories", [
+    canonical,
+    ["River", "", "", "track, observation", "river-cat", "#1B5E88", "river-icon"],
+  ]);
+  assert(
+    context.ensureCanonicalColorIconIdColumns(canonicalSheet) === false,
+    "canonical layout is a no-op",
+  );
+
+  // 8) Full build & import regression suite still passes. Runs in a fresh
   // context so the fixtures above cannot pollute SpreadsheetApp state.
   console.log("runBuildAndImportTests regression:");
   const suiteContext = createGasContext();
@@ -240,8 +360,8 @@ function main() {
   assert(summary, "test suite produced a summary line");
   const match = /Results: (\d+) passed, (\d+) failed/.exec(summary);
   assert(
-    Number(match[1]) >= 33,
-    `at least 33 tests pass (got ${match[1]})`,
+    Number(match[1]) >= 34,
+    `at least 34 tests pass (got ${match[1]})`,
   );
   // Known pre-existing failures in the vm harness environment (FakeSheet has
   // no getDisplayValues/setValue/toast, so display-value-dependent tests

@@ -203,6 +203,25 @@ class FakeSheet {
     return this.values.length;
   }
 
+  getMaxRows() {
+    return Math.max(this.values.length, 1);
+  }
+
+  // Real column insertion (1-based column position): shifts every stored row
+  // (values and backgrounds) right by one so migration logic can be tested
+  // end-to-end offline.
+  insertColumnAfter(column) {
+    const insertAt = column; // 0-based index of the new column
+    for (const row of this.values) {
+      row.splice(insertAt, 0, "");
+    }
+    for (const row of this.backgrounds) {
+      if (Array.isArray(row)) {
+        row.splice(insertAt, 0, null);
+      }
+    }
+  }
+
   getRange(rowOrA1, col, numRows = 1, numCols = 1) {
     const sheet = this;
     let row = rowOrA1;
@@ -232,6 +251,21 @@ class FakeSheet {
       getValue() {
         return this.getValues()[0][0];
       },
+      setValue(value) {
+        return this.setValues([[value]]);
+      },
+      clear() {
+        for (let r = 0; r < numRows; r++) {
+          const target = sheet.values[row - 1 + r];
+          if (!target) continue;
+          for (let c = 0; c < numCols; c++) {
+            if (col - 1 + c < target.length) {
+              target[col - 1 + c] = "";
+            }
+          }
+        }
+        return this;
+      },
       setValues(values) {
         for (let r = 0; r < values.length; r++) {
           while (sheet.values.length <= row - 1 + r) {
@@ -250,6 +284,12 @@ class FakeSheet {
       },
       setFormula(formula) {
         sheet.formulas.push(formula);
+        return this;
+      },
+      clearDataValidations() {
+        return this;
+      },
+      setNumberFormat() {
         return this;
       },
       setFontWeight() {

@@ -420,9 +420,28 @@ function validateCategoryIcons(): void {
   // where categoryId = idFromSheet || slugify(name) || `category-${index+1}`.
   // These IDs are valid even without an Icons sheet entry.
   const nameValues = categoriesSheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  const hasCategoryIdColumn = lastCol >= 5;
+  // Resolve the Category ID column by header (canonical position: column E),
+  // mirroring payloadBuilder's getCol("category id", "id") precedence, so
+  // legacy layouts (Color sitting at column E) don't feed color values into
+  // the icon-ID derivation.
+  const findHeaderColByNames = (names: string[]): number => {
+    for (const name of names) {
+      for (let i = 0; i < headerRowValues.length; i++) {
+        if (
+          String(headerRowValues[i] || "")
+            .trim()
+            .toLowerCase() === name
+        ) {
+          return i + 1;
+        }
+      }
+    }
+    return 0;
+  };
+  const categoryIdColOneBased = findHeaderColByNames(["category id", "id"]);
+  const hasCategoryIdColumn = categoryIdColOneBased > 0;
   const categoryIdValues = hasCategoryIdColumn
-    ? categoriesSheet.getRange(2, 5, lastRow - 1, 1).getValues()
+    ? categoriesSheet.getRange(2, categoryIdColOneBased, lastRow - 1, 1).getValues()
     : [];
   for (let i = 0; i < nameValues.length; i++) {
     const name = String(nameValues[i][0] || "").trim();
@@ -704,10 +723,14 @@ function validatePrimaryLanguageInA1(): void {
 
 // Specific sheet linting functions
 /**
- * Task 7: Flags Categories sheets still using the pre-#61 import layout
- * (ID at column D, Color at column E, no Applies). The generate-side migration
- * (ensureAppliesColumn + ensureCategoryIdColumn) converts it on the next run,
- * but the old layout loses per-category Applies values, so point users at it.
+ * Task 7: Flags Categories sheets still using pre-canonical layouts:
+ *  1. The old import layout (ID at column D, Color at column E, no Applies).
+ *  2. The pre-#61 generate layout (Applies + Category ID present but the
+ *     Color column missing — "Icon ID" sits at column F). This layout passed
+ *     the old signature check and the ensure* migrations no-oped on it, then
+ *     validateCategoriesHeaderLayout hard-failed generation with no lint
+ *     warning. Generate now auto-heals it too (see
+ *     ensureCanonicalColorIconIdColumns), so point users at the migration run.
  */
 function validateCategoryLayoutCanonical(): void {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -725,20 +748,33 @@ function validateCategoryLayoutCanonical(): void {
   // Old import layout signature: ID at index 3 and Color at index 4.
   const isOldImportLayout =
     normalizedHeaders[3] === "id" && normalizedHeaders[4] === "color";
-  if (!isOldImportLayout) return;
+
+  // Pre-#61 generate layout signature: canonical prefix through Category ID
+  // at index 4, but no Color at index 5 (Icon ID or nothing sits there).
+  const hasCanonicalPrefix = ["name", "icon", "fields", "applies", "category id"].every(
+    (header, index) => normalizedHeaders[index] === header,
+  );
+  const isPre61GenerateLayout =
+    !isOldImportLayout &&
+    hasCanonicalPrefix &&
+    normalizedHeaders[5] !== "color";
+
+  if (!isOldImportLayout && !isPre61GenerateLayout) return;
 
   const headerCell = sheet.getRange(1, 4);
   clearRangeLintNotesWithPrefixes(headerCell, [
     `${LINT_NOTE_PREFIX}Old Categories layout`,
   ]);
-  setLintNote(
-    headerCell,
-    'Old Categories layout detected ("ID", "Color", "Icon ID" in columns D-F with no "Applies"). ' +
+  const message = isOldImportLayout
+    ? 'Old Categories layout detected ("ID", "Color", "Icon ID" in columns D-F with no "Applies"). ' +
       'Run "Generate Config" once to migrate to the canonical layout (' +
       CATEGORY_HEADERS.join(", ") +
-      '), or re-import the config. The old layout does not carry per-category Applies values.',
-    "warning",
-  );
+      '), or re-import the config. The old layout does not carry per-category Applies values.'
+    : 'Old Categories layout detected: the "Color" column (and possibly "Icon ID") is missing after "Category ID". ' +
+      'Run "Generate Config" once to add the missing column(s) automatically and reach the canonical layout (' +
+      CATEGORY_HEADERS.join(", ") +
+      '). Blank Color cells fall back to the column A background.';
+  setLintNote(headerCell, message, "warning");
 }
 
 function lintCategoriesSheet(): void {

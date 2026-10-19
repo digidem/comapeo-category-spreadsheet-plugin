@@ -1202,6 +1202,16 @@ function populateCategoriesSheet(
     if (lastRow > 1) {
       sheet.getRange(2, 1, lastRow - 1, CATEGORY_HEADERS.length).clear();
     }
+    // Rewrite the header row to the canonical layout (issue #61 / #52).
+    // Pre-existing sheets may still carry the legacy import header
+    // (Name | Icon | Fields | ID | Color | Icon ID) while the data rows
+    // written below are canonical 7-column rows — and generate resolves
+    // columns by header name, so a stale header would read Applies as
+    // Category ID, Category ID as Color, and lose Icon ID entirely.
+    sheet
+      .getRange(1, 1, 1, CATEGORY_HEADERS.length)
+      .setValues([CATEGORY_HEADERS.slice()])
+      .setFontWeight('bold');
   }
 
   if (!categories || categories.length === 0) return;

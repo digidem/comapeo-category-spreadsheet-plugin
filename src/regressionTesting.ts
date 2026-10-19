@@ -199,8 +199,9 @@ function sanitizeAndCopySheetData(
         return row;
       }
 
-      // Sanitize data rows
-      return sanitizeRowData(row, sheetName, rowIndex);
+      // Sanitize data rows (header row passed so column writes can be
+      // header-guarded against legacy layouts)
+      return sanitizeRowData(row, sheetName, rowIndex, allData[0] || []);
     });
 
     // Write sanitized data to target sheet
@@ -230,12 +231,15 @@ function sanitizeAndCopySheetData(
  * @param row - The row data to sanitize
  * @param sheetName - Name of the sheet (Categories, Details, etc.)
  * @param rowIndex - Index of the row (0-based, not including header)
+ * @param headers - The sheet's header row, used to guard canonical-position
+ *   writes against legacy layouts
  * @returns Sanitized row data
  */
 function sanitizeRowData(
   row: (string | number | boolean)[],
   sheetName: string,
   rowIndex: number,
+  headers: (string | number | boolean)[] = [],
 ): (string | number | boolean)[] {
   const sanitized = [...row];
 
@@ -259,8 +263,14 @@ function sanitizeRowData(
           })
           .join(", ");
       }
-      // Column 3: Applies - always use default test tokens
-      sanitized[3] = "track, observation";
+      // Column 3: Applies - always use default test tokens. Header-guarded so
+      // legacy layouts (e.g. "ID" in column D) don't get Applies text written
+      // into their ID column.
+      if (
+        String(headers[3] || "").trim().toLowerCase() === "applies"
+      ) {
+        sanitized[3] = "track, observation";
+      }
       // Column 4: Category ID - keep structure
       // Column 5: Color - always use default test color
       if (sanitized[5] && typeof sanitized[5] === "string") {
