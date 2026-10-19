@@ -46,6 +46,19 @@ const CANCEL_CHECK_EVERY_N_PAIRS = 25;
 let translationRunStartedAt = 0;
 let translationCancelled = false;
 
+/**
+ * Threads sidebar-progress context (#57) from the run entry point down to
+ * the per-pair loop. Absent (undefined) for direct callers like the cancel
+ * self-test and offline checks, which then report no progress.
+ */
+interface TranslationJobProgress {
+  jobId: string;
+  /** Zero-based index of the sheet currently being translated. */
+  sheetIndex: number;
+  /** Total number of translation sheets in this run. */
+  sheetCount: number;
+}
+
 // Target codes the translator has rejected (LanguageApp throws "not
 // currently supported" for codes it does not know). Pairs for these targets
 // are skipped without further calls: each attempt would fail identically
@@ -132,32 +145,62 @@ function manageLanguagesAndTranslate(
     customLanguages,
   });
 
-  if (customLanguages.length > 0) {
-    log.info("[LANGUAGE MANAGEMENT] Adding custom language columns", customLanguages);
-    addCustomLanguagesToTranslationSheets(customLanguages);
-  } else {
-    log.info("[LANGUAGE MANAGEMENT] No custom languages requested");
-  }
+  // Sidebar + polling progress (#57). The job id travels as an explicit
+  // parameter into the translation loop so every layer can report without
+  // relying on module state.
+  const jobId = startJobStatus("translation", {
+    title: "Manage Languages & Translate",
+    detail: `Translating to ${autoTranslateLanguages.length} target language(s)`,
+    cancellable: true,
+  });
+  openJobSidebar(jobId);
 
-  if (autoTranslateLanguages.length > 0) {
-    log.info("[LANGUAGE MANAGEMENT] Running bidirectional translation", autoTranslateLanguages);
-    const completed = autoTranslateSheetsBidirectional(autoTranslateLanguages);
-    if (!completed) {
-      // The cancelled toast is already on screen; do not overwrite it.
-      return;
+  try {
+    if (customLanguages.length > 0) {
+      log.info("[LANGUAGE MANAGEMENT] Adding custom language columns", customLanguages);
+      updateJobStatusProgress(jobId, {
+        percent: 2,
+        phase: "Adding custom languages",
+        detail: `${customLanguages.length} custom language column(s)`,
+        logMessage: `Adding custom language columns: ${customLanguages.map((lang) => lang.iso).join(", ")}`,
+      });
+      addCustomLanguagesToTranslationSheets(customLanguages);
+    } else {
+      log.info("[LANGUAGE MANAGEMENT] No custom languages requested");
     }
-  } else {
-    log.info("[LANGUAGE MANAGEMENT] No auto-translate languages selected; skipping translation");
-  }
 
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  if (spreadsheet) {
-    const appliedUpdates = customLanguages.length > 0 || autoTranslateLanguages.length > 0;
-    const toastTitle = "Language Manager";
-    const toastMessage = appliedUpdates
-      ? "Language updates applied successfully."
-      : "No language changes detected.";
-    spreadsheet.toast(toastMessage, toastTitle, 5);
+    if (autoTranslateLanguages.length > 0) {
+      log.info("[LANGUAGE MANAGEMENT] Running bidirectional translation", autoTranslateLanguages);
+      const completed = autoTranslateSheetsBidirectional(autoTranslateLanguages, undefined, jobId);
+      if (!completed) {
+        // The cancelled toast is already on screen; record the cancelled
+        // state so the sidebar stops polling and shows what happened.
+        cancelJobStatus(jobId, "Translation cancelled. Partial translations were kept.");
+        return;
+      }
+    } else {
+      log.info("[LANGUAGE MANAGEMENT] No auto-translate languages selected; skipping translation");
+    }
+
+    completeJobStatus(
+      jobId,
+      autoTranslateLanguages.length > 0
+        ? "Language updates applied successfully."
+        : "No language changes detected.",
+    );
+
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (spreadsheet) {
+      const appliedUpdates = customLanguages.length > 0 || autoTranslateLanguages.length > 0;
+      const toastTitle = "Language Manager";
+      const toastMessage = appliedUpdates
+        ? "Language updates applied successfully."
+        : "No language changes detected.";
+      spreadsheet.toast(toastMessage, toastTitle, 5);
+    }
+  } catch (error) {
+    failJobStatus(jobId, error instanceof Error ? error.message : String(error));
+    throw error;
   }
 }
 
@@ -438,6 +481,7 @@ function translateSheetBidirectional(
   targetLanguages: TranslationLanguage[],
   sourceLanguage?: TranslationLanguage,
   spreadsheet?: GoogleAppsScript.Spreadsheet.Spreadsheet,
+  jobProgress?: TranslationJobProgress,
 ): void {
   const sheet = (spreadsheet || SpreadsheetApp.getActiveSpreadsheet()).getSheetByName(sheetName);
   if (!sheet) {
@@ -449,6 +493,21 @@ function translateSheetBidirectional(
     getTranslationServiceLogger().warn(`Sheet "${sheetName}" has no data to translate`);
     return;
   }
+
+  // Sidebar progress (#57): overall percent = sheets completed so far plus
+  // this sheet's pair fraction, scaled to 0-90 (completion writes 100).
+  const reportPairProgress = (done: number, total: number, detail: string) => {
+    if (!jobProgress || !jobProgress.jobId || total <= 0) {
+      return;
+    }
+    const sheetFraction = Math.max(0, Math.min(1, done / total));
+    const overall = ((jobProgress.sheetIndex + sheetFraction) / jobProgress.sheetCount) * 90;
+    updateJobStatusProgress(jobProgress.jobId, {
+      percent: overall,
+      phase: `Translating ${sheetName}`,
+      detail,
+    });
+  };
 
   const primaryLanguage = getPrimaryLanguage();
   const actualSourceLanguage = sourceLanguage || primaryLanguage.code;
@@ -524,6 +583,12 @@ function translateSheetBidirectional(
     });
 
     // Phase 1: Collect all unique (sourceText, targetLang) pairs needing translation
+    if (jobProgress && jobProgress.jobId) {
+      updateJobStatusProgress(jobProgress.jobId, {
+        percent: (jobProgress.sheetIndex / jobProgress.sheetCount) * 90,
+        phase: `Collecting phrases: ${sheetName}`,
+      });
+    }
     const pendingTranslations = new Map<string, { sourceText: string; targetLang: string }>();
 
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
@@ -575,6 +640,15 @@ function translateSheetBidirectional(
         translationCancelled = true;
         break;
       }
+      if (translateIndex > 0 && translateIndex % CANCEL_CHECK_EVERY_N_PAIRS === 0) {
+        // Same cadence as the cancel checkpoint: ~5s between sidebar writes,
+        // keeping PropertiesService/CacheService traffic low.
+        reportPairProgress(
+          translateIndex,
+          pendingTranslations.size,
+          `${translateIndex}/${pendingTranslations.size} phrases`,
+        );
+      }
       if (translateIndex > 0 && translateIndex % CANCEL_CHECK_EVERY_N_PAIRS === 0 && isTranslationCancelRequested()) {
         getTranslationServiceLogger().info(`[Phase 2] Cancel requested after ${translateIndex}/${pendingTranslations.size} pairs`);
         break;
@@ -621,6 +695,14 @@ function translateSheetBidirectional(
     );
 
     // Phase 3: Fill column values from cache
+    if (jobProgress && jobProgress.jobId) {
+      const overall = ((jobProgress.sheetIndex + 0.9) / jobProgress.sheetCount) * 90;
+      updateJobStatusProgress(jobProgress.jobId, {
+        percent: overall,
+        phase: `Writing results: ${sheetName}`,
+        logMessage: `[Phase 3] Filling ${sheetName} from cache`,
+      });
+    }
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const rawValue = sheetValues[rowIndex][0];
       const originalText = typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "").trim();
@@ -979,7 +1061,11 @@ function autoTranslateSheets(): void {
  * autoTranslateSheetsBidirectional([]);
  * // Skips translation entirely (useful for single-language configs)
  */
-function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[], explicitSpreadsheet?: GoogleAppsScript.Spreadsheet.Spreadsheet): boolean {
+function autoTranslateSheetsBidirectional(
+  targetLanguages: TranslationLanguage[],
+  explicitSpreadsheet?: GoogleAppsScript.Spreadsheet.Spreadsheet,
+  jobId?: string,
+): boolean {
   // Validation - return early if no languages specified (skip translation)
   if (!targetLanguages || targetLanguages.length === 0) {
     getTranslationServiceLogger().info("[TRANSLATION] ✓ SKIPPING TRANSLATION - No target languages specified");
@@ -1056,10 +1142,27 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
   let totalSuccessful = 0;
   let processedSheets = 0;
 
+  if (jobId) {
+    updateJobStatusProgress(jobId, {
+      percent: 1,
+      phase: "Preparing translation",
+      detail: `${translationSheets.length} sheet(s), ${targetLanguages.length} target language(s)`,
+      logMessage: `Starting bidirectional translation: ${targetLanguages.join(", ")}`,
+    });
+  }
+
   for (const sheetName of translationSheets) {
     if (translationCancelled || isTranslationCancelRequested()) {
       getTranslationServiceLogger().info(`[TRANSLATION] Cancelled; ${processedSheets} of ${translationSheets.length} sheets processed`);
       break;
+    }
+    if (jobId) {
+      updateJobStatusProgress(jobId, {
+        percent: (processedSheets / translationSheets.length) * 90,
+        phase: `Translating ${sheetName}`,
+        detail: `Sheet ${processedSheets + 1} of ${translationSheets.length}`,
+        logMessage: `Translating sheet ${sheetName} (${processedSheets + 1}/${translationSheets.length})`,
+      });
     }
     let sheet = spreadsheet.getSheetByName(sheetName);
     if (!sheet) {
@@ -1088,12 +1191,26 @@ function autoTranslateSheetsBidirectional(targetLanguages: TranslationLanguage[]
 
     try {
       // Use bidirectional translation for selected target languages
-      translateSheetBidirectional(sheetName, targetLanguages, primaryLanguage.code as TranslationLanguage, explicitSpreadsheet);
+      translateSheetBidirectional(
+        sheetName,
+        targetLanguages,
+        primaryLanguage.code as TranslationLanguage,
+        explicitSpreadsheet,
+        jobId ? { jobId, sheetIndex: processedSheets, sheetCount: translationSheets.length } : undefined,
+      );
     } catch (error) {
       getTranslationServiceLogger().error(`Error translating sheet ${sheetName}:`, error);
       totalErrors++;
     }
     processedSheets++;
+  }
+
+  if (jobId && !translationCancelled) {
+    updateJobStatusProgress(jobId, {
+      percent: 95,
+      phase: "Finishing",
+      detail: "Applying final updates",
+    });
   }
 
   if (translationCancelled) {

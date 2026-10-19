@@ -39,6 +39,7 @@ function collectTypeScriptFiles(ignoredDirs) {
 }
 
 function createGasContext() {
+  let uuidCounter = 0;
   const context = {
     console,
     exports: {},
@@ -134,6 +135,10 @@ function createGasContext() {
     },
     formatDate() {
       return "2026-06-28";
+    },
+    getUuid() {
+      uuidCounter += 1;
+      return `uuid-${uuidCounter}`;
     },
     newBlob(value) {
       return {

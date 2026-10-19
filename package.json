@@ -13,6 +13,7 @@
     "test:custom-lang": "node src/scripts/check-custom-lang.cjs",
     "test:api-retry": "node src/scripts/check-api-retry.cjs",
     "test:translation-cancel": "node src/scripts/check-translation-cancel.cjs",
+    "test:job-status": "node src/scripts/check-job-status.cjs",
     "push:all": "npm run version:update && bash src/scripts/push-all.sh",
     "push:one": "npm run version:update && bash src/scripts/push-one.sh",
     "fixture": "bun run scripts/generate-fixture.ts"

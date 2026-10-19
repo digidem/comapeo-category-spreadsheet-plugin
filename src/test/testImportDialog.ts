@@ -306,7 +306,7 @@ function testScriptContainsHandleImport(): ImportDialogTestResult {
     if (!script.includes("function handleImport(")) {
       return { name, passed: false, message: "Missing handleImport function" };
     }
-    if (!script.includes("processImportedCategoryFile")) {
+    if (!script.includes("startImportCategoryJob")) {
       return { name, passed: false, message: "Missing local file import call" };
     }
     if (!script.includes("processImportFile")) {

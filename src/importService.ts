@@ -443,12 +443,13 @@ function buildImportDialogScript(): string {
           updateProgress({ percent: 50, stage: 'Processing...', detail: 'Importing configuration' });
           const base64data = e.target.result.split(',')[1];
 
-          // Use processImportedCategoryFile - progress callbacks cannot work
-          // across Apps Script client/server boundary
+          // Sidebar + polling progress (#57): the server opens the progress
+          // sidebar and records phases; this call streams the result back to
+          // the dialog when the import completes.
           google.script.run
             .withSuccessHandler(handleSuccess)
             .withFailureHandler(handleError)
-            .processImportedCategoryFile(selectedFile.name, base64data);
+            .startImportCategoryJob(selectedFile.name, base64data);
         };
         reader.onerror = function() {
           handleError({message: 'Failed to read file'});

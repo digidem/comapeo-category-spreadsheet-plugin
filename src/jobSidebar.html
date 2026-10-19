@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>CoMapeo</title>
+  <style>
+    body {
+      font-family: 'Roboto', Arial, sans-serif;
+      margin: 0;
+      padding: 14px;
+      color: #202124;
+      background-color: #ffffff;
+    }
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    h1 {
+      font-size: 1.05em;
+      margin: 0;
+      color: #330B9E;
+      font-weight: 700;
+    }
+    .pill {
+      font-size: 0.72em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 3px 9px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .pill.running {
+      background-color: #e8f0fe;
+      color: #1a73e8;
+    }
+    .pill.completed {
+      background-color: #e6f4ea;
+      color: #188038;
+    }
+    .pill.error {
+      background-color: #fce8e6;
+      color: #c5221f;
+    }
+    .pill.cancelled {
+      background-color: #fef7e0;
+      color: #b06000;
+    }
+    .progress-track {
+      width: 100%;
+      height: 8px;
+      background-color: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(45deg, #330B9E, #6d44d9);
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+    .percent-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    #percent {
+      font-size: 1.25em;
+      font-weight: 700;
+      color: #330B9E;
+    }
+    #phase {
+      font-size: 0.85em;
+      color: #5f6368;
+      text-align: right;
+    }
+    #detail {
+      font-size: 0.82em;
+      color: #5f6368;
+      min-height: 1em;
+      word-break: break-word;
+    }
+    .log {
+      background-color: #f8f9fa;
+      border: 1px solid #dadce0;
+      border-radius: 6px;
+      padding: 8px;
+      height: 180px;
+      overflow-y: auto;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.72em;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .log-line.warn { color: #b06000; }
+    .log-line.error { color: #c5221f; }
+    .actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    button {
+      padding: 8px 18px;
+      border: none;
+      border-radius: 18px;
+      font-size: 0.85em;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #cancel-btn {
+      background-color: #fce8e6;
+      color: #c5221f;
+      border: 1px solid #c5221f;
+      display: none;
+    }
+    #cancel-btn:hover:not(:disabled) {
+      background-color: #c5221f;
+      color: #ffffff;
+    }
+    #cancel-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    #close-btn {
+      background: linear-gradient(45deg, #330B9E, #6d44d9);
+      color: #ffffff;
+      display: none;
+    }
+    #result {
+      font-size: 0.85em;
+      display: none;
+      padding: 10px;
+      border-radius: 6px;
+      word-break: break-word;
+    }
+    #result.completed {
+      background-color: #e6f4ea;
+      color: #188038;
+      display: block;
+    }
+    #result.error {
+      background-color: #fce8e6;
+      color: #c5221f;
+      display: block;
+    }
+    #result.cancelled {
+      background-color: #fef7e0;
+      color: #b06000;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1 id="job-title">CoMapeo</h1>
+      <span id="status-pill" class="pill running">Starting</span>
+    </div>
+    <div class="progress-track">
+      <div id="progress-bar" class="progress-fill"></div>
+    </div>
+    <div class="percent-row">
+      <span id="percent">0%</span>
+      <span id="phase"></span>
+    </div>
+    <div id="detail"></div>
+    <div id="result"></div>
+    <div id="log-box" class="log">
+      <div id="log-lines"></div>
+    </div>
+    <div class="actions">
+      <button type="button" id="cancel-btn">Cancel</button>
+      <button type="button" id="close-btn">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // Polling client: reads the job state written by the running server
+    // operation every two seconds via google.script.run. Job state lives in
+    // CacheService/PropertiesService keyed by the job id injected by the
+    // server as window.SIDEBAR_JOB_ID after this script block.
+    var POLL_INTERVAL_MS = 2000;
+    var MAX_MISSES = 30; // ~1 minute of missing state before giving up.
+
+    var jobId = null;
+    var pollTimer = null;
+    var terminal = false;
+    var missingCount = 0;
+    var cancelling = false;
+
+    function getElement(id) {
+      return document.getElementById(id);
+    }
+
+    function setProgress(percent) {
+      var safe = Math.max(0, Math.min(100, Math.round(percent)));
+      getElement('progress-bar').style.width = safe + '%';
+      getElement('percent').textContent = safe + '%';
+    }
+
+    function appendLogLine(entry) {
+      var line = document.createElement('div');
+      line.className = 'log-line' + (entry && entry.level ? ' ' + entry.level : '');
+      var stamp = entry && entry.t ? new Date(entry.t) : new Date();
+      var hh = ('0' + stamp.getHours()).slice(-2);
+      var mm = ('0' + stamp.getMinutes()).slice(-2);
+      var ss = ('0' + stamp.getSeconds()).slice(-2);
+      line.textContent = '[' + hh + ':' + mm + ':' + ss + '] ' +
+        ((entry && entry.msg) ? entry.msg : '');
+      var lines = getElement('log-lines');
+      lines.appendChild(line);
+      while (lines.children.length > 200) {
+        lines.removeChild(lines.firstChild);
+      }
+      var box = getElement('log-box');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function renderLog(log) {
+      getElement('log-lines').innerHTML = '';
+      if (!log || !log.length) {
+        return;
+      }
+      for (var i = 0; i < log.length; i++) {
+        appendLogLine(log[i]);
+      }
+    }
+
+    function render(state) {
+      getElement('job-title').textContent = state.title || 'CoMapeo';
+      var pill = getElement('status-pill');
+      pill.className = 'pill ' + state.status;
+      pill.textContent = state.status;
+      setProgress(state.percent);
+      getElement('phase').textContent = state.phase || '';
+      getElement('detail').textContent = state.detail || '';
+
+      var result = getElement('result');
+      result.className = state.status;
+      if (state.status === 'completed') {
+        result.textContent = state.summary || 'Completed.';
+      } else if (state.status === 'error') {
+        result.textContent = 'Error: ' + (state.error || 'unknown failure');
+      } else if (state.status === 'cancelled') {
+        result.textContent = state.summary || 'Cancelled.';
+      } else {
+        result.className = 'result-hidden';
+      }
+
+      var cancelBtn = getElement('cancel-btn');
+      if (state.status === 'running' && state.cancellable && !cancelling) {
+        cancelBtn.style.display = 'inline-block';
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = 'Cancel';
+      } else if (state.status === 'running' && cancelling) {
+        cancelBtn.style.display = 'inline-block';
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = 'Cancelling…';
+      } else {
+        cancelBtn.style.display = 'none';
+      }
+
+      var closeBtn = getElement('close-btn');
+      if (state.status !== 'running') {
+        closeBtn.style.display = 'inline-block';
+      }
+    }
+
+    function renderMissing() {
+      missingCount++;
+      getElement('detail').textContent = 'Waiting for job data…';
+      if (missingCount >= MAX_MISSES) {
+        stopPolling();
+        var pill = getElement('status-pill');
+        pill.className = 'pill error';
+        pill.textContent = 'no data';
+        getElement('detail').textContent =
+          'No job state found for this sidebar. The operation may have ' +
+          'finished elsewhere or its state expired. Close and retry.';
+        getElement('close-btn').style.display = 'inline-block';
+      }
+    }
+
+    function onStatus(state) {
+      if (!state || !state.jobId) {
+        renderMissing();
+        return;
+      }
+      missingCount = 0;
+      if (!terminal) {
+        renderLog(state.log);
+      }
+      render(state);
+      if (state.status !== 'running') {
+        terminal = true;
+        stopPolling();
+      }
+    }
+
+    function onPollError(error) {
+      console.error('Job status poll failed:', error);
+      getElement('detail').textContent =
+        'Poll failed (' + ((error && error.message) || 'unknown') + '); retrying…';
+    }
+
+    function pollOnce() {
+      if (terminal || !jobId) {
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(onStatus)
+        .withFailureHandler(onPollError)
+        .getJobStatus(jobId);
+    }
+
+    function stopPolling() {
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function requestCancel() {
+      cancelling = true;
+      var cancelBtn = getElement('cancel-btn');
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      appendLogLine({ msg: 'Cancel requested by user', level: 'warn' });
+      google.script.run
+        .withSuccessHandler(function () { /* cancel recorded; keep polling */ })
+        .withFailureHandler(function (error) {
+          console.error('Cancel request failed:', error);
+          appendLogLine({
+            msg: 'Cancel request failed: ' + ((error && error.message) || 'unknown'),
+            level: 'error',
+          });
+          cancelling = false;
+        })
+        .requestTranslationCancel();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      jobId = window.SIDEBAR_JOB_ID || null;
+      if (!jobId) {
+        renderMissing();
+      }
+      getElement('cancel-btn').addEventListener('click', requestCancel);
+      getElement('close-btn').addEventListener('click', function () {
+        stopPolling();
+        google.script.host.close();
+      });
+      pollOnce();
+      pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+    });
+  </script>
+</body>
+</html>
