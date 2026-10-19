@@ -183,6 +183,7 @@ class FakeSheet {
     this.name = name;
     this.values = rows.map((row) => row.slice());
     this.formulas = [];
+    this.backgrounds = [];
   }
 
   getName() {
@@ -249,12 +250,54 @@ class FakeSheet {
       setFontWeight() {
         return this;
       },
+      setFontColors() {
+        return this;
+      },
+      setBackground(color) {
+        sheet.backgrounds[row - 1] = sheet.backgrounds[row - 1] || [];
+        sheet.backgrounds[row - 1][col - 1] = color;
+        return this;
+      },
+      getBackground() {
+        const rowBgs = sheet.backgrounds[row - 1] || [];
+        return rowBgs[col - 1] !== undefined ? rowBgs[col - 1] : null;
+      },
+      setBackgrounds(values) {
+        for (let r = 0; r < values.length; r++) {
+          while (sheet.backgrounds.length <= row - 1 + r) {
+            sheet.backgrounds.push([]);
+          }
+          const line = values[r];
+          for (let c = 0; c < line.length; c++) {
+            const targetRow = sheet.backgrounds[row - 1 + r];
+            while (targetRow.length <= col - 1 + c) {
+              targetRow.push(null);
+            }
+            targetRow[col - 1 + c] = line[c];
+          }
+        }
+        return this;
+      },
+      getBackgrounds() {
+        const out = [];
+        for (let r = 0; r < numRows; r++) {
+          const source = sheet.backgrounds[row - 1 + r] || [];
+          const line = [];
+          for (let c = 0; c < numCols; c++) {
+            line.push(source[col - 1 + c] !== undefined ? source[col - 1 + c] : null);
+          }
+          out.push(line);
+        }
+        return out;
+      },
     };
   }
 
   getDataRange() {
     return this.getRange(1, 1, this.getLastRow(), this.getLastColumn());
   }
+
+  autoResizeColumns() {}
 
   insertColumnsAfter() {}
 

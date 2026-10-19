@@ -1194,12 +1194,12 @@ function populateCategoriesSheet(
 
   if (!sheet) {
     sheet = spreadsheet.insertSheet('Categories');
-    sheet.getRange(1, 1, 1, 6).setValues([['Name', 'Icon', 'Fields', 'ID', 'Color', 'Icon ID']]).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, CATEGORY_HEADERS.length).setValues([CATEGORY_HEADERS.slice()]).setFontWeight('bold');
   } else {
     // Clear existing data (keep header)
     const lastRow = sheet.getLastRow();
     if (lastRow > 1) {
-      sheet.getRange(2, 1, lastRow - 1, 6).clear();
+      sheet.getRange(2, 1, lastRow - 1, CATEGORY_HEADERS.length).clear();
     }
   }
 
@@ -1246,14 +1246,26 @@ function populateCategoriesSheet(
     // Leave empty to preserve undefined state (allows downstream defaults)
     const colorValue = cat.color || '';
 
-    rows.push([cat.name, iconValue, fieldsValue, cat.id || '', colorValue, cat.iconId || '']);
+    // Write appliesTo explicitly so the next generate reads back the same
+    // values (issue #61 / #52). Default only when the source config genuinely
+    // lacks the field.
+    let appliesValue = 'track, observation';
+    if (Array.isArray(cat.appliesTo) && cat.appliesTo.length > 0) {
+      appliesValue = cat.appliesTo.map(value => String(value || '').trim()).filter(Boolean).join(', ');
+    } else {
+      getScopedLogger("ImportService").info(
+        `Category "${cat.name}" has no appliesTo; writing default "track, observation" to the Applies column.`,
+      );
+    }
+
+    rows.push([cat.name, iconValue, fieldsValue, appliesValue, cat.id || '', colorValue, cat.iconId || '']);
     // Only set background color if we have a valid color value
     colors.push(colorValue || '#FFFFFF');  // Use white as background default for empty cells
   }
 
   if (rows.length === 0) return;
 
-  sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+  sheet.getRange(2, 1, rows.length, CATEGORY_HEADERS.length).setValues(rows);
 
   // Set background colors for column A
   const bgColors = colors.map(c => [c]);

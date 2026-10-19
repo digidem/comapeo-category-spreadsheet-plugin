@@ -37,8 +37,11 @@ function applyCategories(
 
   // Set headers ("Name" is the canonical column header; primary language is
   // stored in the Metadata sheet under the "primaryLanguage" key.)
-  sheet.getRange(1, 1, 1, 3).setValues([['Name', 'Icon', 'Fields']]);
-  sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+  // Canonical layout (issue #61 / #52): Name | Icon | Fields | Applies |
+  // Category ID | Color | Icon ID, shared with importService and apiService.
+  const headers = CATEGORY_HEADERS.slice();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
 
   // Create a map of icon name to icon URL for quick lookup
   safeCategoryDebugLog("Building icon map for lookup...");
@@ -109,12 +112,35 @@ function applyCategories(
       fieldsList = fieldLabels.join(", ");
     }
 
-    return [preset.name, iconUrl, fieldsList];
+    // Canonical layout: write appliesTo, category id, color, and icon id
+    // explicitly so a Generate run reads back what was imported (issue #61).
+    // Default only when the legacy preset genuinely lacks appliesTo.
+    const appliesValue =
+      Array.isArray(preset.appliesTo) && preset.appliesTo.length > 0
+        ? preset.appliesTo.join(", ")
+        : "track, observation";
+    const colorValue =
+      typeof preset.color === "string" &&
+      /^#([0-9A-F]{3}){1,2}$/i.test(preset.color)
+        ? preset.color
+        : "";
+
+    return [
+      preset.name,
+      iconUrl,
+      fieldsList,
+      appliesValue,
+      preset.id || "",
+      colorValue,
+      preset.iconId || "",
+    ];
   });
 
   // Add category rows
   if (categoryRows.length > 0) {
-    sheet.getRange(2, 1, categoryRows.length, 3).setValues(categoryRows);
+    sheet
+      .getRange(2, 1, categoryRows.length, CATEGORY_HEADERS.length)
+      .setValues(categoryRows);
 
     // Apply background colors based on preset.color
     presets.forEach((preset, index) => {
@@ -133,5 +159,5 @@ function applyCategories(
   // to avoid import errors
 
   // Auto-resize columns for better readability
-  sheet.autoResizeColumns(1, 3);
+  sheet.autoResizeColumns(1, CATEGORY_HEADERS.length);
 }

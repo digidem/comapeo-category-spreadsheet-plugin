@@ -53,6 +53,17 @@ Auto-generated unique ID used during import/export. Avoid manual edits.
 
 Changing an ID after data collection can break links to existing observations in CoMapeo.
 
+### Color (Column F, optional)
+
+Explicit hex color per category (for example `#1B5E88`). Written by config imports and read at export time.
+
+If empty, the category color falls back to the background color of column A. The background remains the primary way to set colors by hand.
+
+### Icon ID (Column G, optional)
+
+Icon identifier used to link the category to an entry in the Icons sheet. Written by config imports; leave it blank for hand-built sheets.
+
 ## Notes
 
-- Do not place hex colors in **Applies**. Colors are set via the background color of column A.
+- Do not place hex colors in **Applies**. Colors are set via the Color column or the background color of column A.
+- Canonical column order: `Name, Icon, Fields, Applies, Category ID, Color, Icon ID`. Config imports write exactly this layout.

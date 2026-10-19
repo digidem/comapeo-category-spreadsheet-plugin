@@ -55,6 +55,14 @@ This page explains linting color codes and validation rules.
 5. **Category ID (E):**
    - Auto-generated.
 
+6. **Color (F) and Icon ID (G):**
+   - Optional columns written by config imports.
+   - Color falls back to the background color of column A when blank.
+
+7. **Old import layout:**
+   - Sheets with `ID` in column D and `Color` in column E (pre-canonical import layout, no `Applies`) get a warning note on the header row.
+   - Fix: run **Generate Config** once to migrate, or re-import the config.
+
 ## Details sheet validation
 
 1. **Name (A):**

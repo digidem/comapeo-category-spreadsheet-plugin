@@ -1,13 +1,27 @@
-/** Column indices for Categories sheet (0-based)
- * Expected headers (current implementation): Name | Icon | Fields | Applies | Category ID | Icon ID
+/** Canonical Categories sheet headers (single source of truth).
+ * Shared by generate (payloadBuilder), import (importService, importCategory),
+ * migration (apiService), and lint (src/lint/). See issues #61 / #52.
+ * Order: Name | Icon | Fields | Applies | Category ID | Color | Icon ID
  */
+const CATEGORY_HEADERS = [
+  "Name",
+  "Icon",
+  "Fields",
+  "Applies",
+  "Category ID",
+  "Color",
+  "Icon ID",
+];
+
+/** Column indices for Categories sheet (0-based), matching CATEGORY_HEADERS */
 const CATEGORY_COL = {
   NAME: 0,
   ICON: 1,
   FIELDS: 2,
   APPLIES: 3,
   CATEGORY_ID: 4,
-  ICON_ID: 5,
+  COLOR: 5,
+  ICON_ID: 6,
   COLOR_BACKGROUND: 0, // fallback when no explicit color column
 } as const;
 

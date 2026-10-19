@@ -306,8 +306,10 @@ interface CategoryRow extends Array<string | number | boolean> {
   0: string;  // Category Name (required)
   1?: string; // Icon (optional)
   2?: string; // Fields (optional)
-  3?: string; // Color (optional)
-  4?: string; // Geometry (optional)
+  3?: string; // Applies (optional)
+  4?: string; // Category ID (optional)
+  5?: string; // Color (optional)
+  6?: string; // Icon ID (optional)
 }
 
 // ============================================
