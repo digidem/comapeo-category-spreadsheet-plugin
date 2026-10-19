@@ -59,8 +59,55 @@ function processImportedCategoryFile(
   fileName: string,
   base64Data: string,
 ): { success: boolean; message: string; details?: any; warnings?: string[] } {
+  return processImportedCategoryFileCore(fileName, base64Data, "");
+}
+
+/**
+ * Sidebar-driven entry point (#57): starts a job record, opens the progress
+ * sidebar, then runs the import. The sidebar polls getJobStatus(jobId) while
+ * this google.script.run execution works through the phases. Called from the
+ * import dialog client instead of processImportedCategoryFile.
+ */
+function startImportCategoryJob(
+  fileName: string,
+  base64Data: string,
+): { success: boolean; message: string; details?: any; warnings?: string[] } {
+  const jobId = startJobStatus("import", {
+    title: "Import Category File",
+    detail: String(fileName || ""),
+  });
+  openJobSidebar(jobId);
+  const result = processImportedCategoryFileCore(fileName, base64Data, jobId);
+  if (result && result.success) {
+    const details = result.details || {};
+    const summary =
+      `${result.message} (${details.presets || 0} categories, ` +
+      `${details.fields || 0} fields, ${details.icons || 0} icons)`;
+    completeJobStatus(jobId, summary);
+  } else {
+    failJobStatus(jobId, (result && result.message) || "Import failed");
+  }
+  return result;
+}
+
+/**
+ * Import pipeline shared by the direct entry point and the sidebar job.
+ * @param jobId - When non-empty, phase progress is written to the job store
+ *   for the polling sidebar; empty for callers that bypass the sidebar.
+ */
+function processImportedCategoryFileCore(
+  fileName: string,
+  base64Data: string,
+  jobId: string,
+): { success: boolean; message: string; details?: any; warnings?: string[] } {
   try {
     getScopedLogger("ImportCategory").info(`Starting import of file: ${fileName}`);
+    updateJobStatusProgress(jobId, {
+      percent: 5,
+      phase: "Decoding file",
+      detail: String(fileName || ""),
+      logMessage: `Import started: ${fileName}`,
+    });
 
     // Decode the base64 data
     const blob = Utilities.newBlob(
@@ -69,6 +116,11 @@ function processImportedCategoryFile(
       fileName,
     );
     getScopedLogger("ImportCategory").info(`Decoded file size: ${blob.getBytes().length} bytes`);
+    updateJobStatusProgress(jobId, {
+      percent: 15,
+      phase: "Extracting archive",
+      detail: `${blob.getBytes().length} bytes`,
+    });
 
     // Extract the archive using the shared extractor
     const extractionResult = extractAndValidateFile(fileName, blob);
@@ -78,17 +130,34 @@ function processImportedCategoryFile(
         message: extractionResult.message || "Failed to extract file",
       };
     }
+    updateJobStatusProgress(jobId, {
+      percent: 40,
+      phase: "Parsing configuration",
+      detail: `${extractionResult.files.length} file(s) extracted`,
+      logMessage: `Extracted ${extractionResult.files.length} file(s) from archive`,
+    });
 
     // Parse the extracted files using the function from importCategory/parseFiles.ts
     const configData = parseExtractedFiles(
       extractionResult.files,
       extractionResult.tempFolder,
     );
+    updateJobStatusProgress(jobId, {
+      percent: 60,
+      phase: "Applying to spreadsheet",
+      detail: `${configData.presets.length} categories, ${configData.fields.length} fields`,
+      logMessage: `Parsed ${configData.presets.length} categories and ${configData.fields.length} fields`,
+    });
 
     // Apply the configuration to the spreadsheet using the function from importCategory/applyConfiguration.ts
     applyConfigurationToSpreadsheet(configData);
 
     // Clean up temporary resources
+    updateJobStatusProgress(jobId, {
+      percent: 90,
+      phase: "Cleaning up",
+      detail: "Removing temporary extraction files",
+    });
     if (extractionResult.tempFolder) {
       try {
         extractionResult.tempFolder.setTrashed(true);
@@ -102,6 +171,12 @@ function processImportedCategoryFile(
       ...(extractionResult.validationWarnings || []),
       ...(configData._validationWarnings || []),
     ];
+    if (allWarnings.length > 0) {
+      updateJobStatusProgress(jobId, {
+        logMessage: `${allWarnings.length} validation warning(s) recorded`,
+        logLevel: "warn",
+      });
+    }
 
     return {
       success: true,

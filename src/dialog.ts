@@ -338,6 +338,14 @@ function showIconsGeneratedDialog(folderUrl: string) {
   showModalDialogSafe(html, title, 800, 600, "Icons Generated");
 }
 
+// Tracks whether THIS execution actually opened a processing modal. Both
+// the opener and the closer run in the same server execution (menu-click
+// flows), so a module-level flag survives between them even though globals
+// do not persist across google.script.run calls. closeProcessingModalDialog
+// callers (e.g. apiService error paths) may fire when the sidebar-driven
+// flow replaced the modal — the guard prevents a stray modal flash there.
+let processingModalCurrentlyOpen = false;
+
 function showProcessingModalDialog(dialogText: DialogText) {
   const messageLines = Array.isArray(dialogText.message)
     ? dialogText.message
@@ -347,9 +355,13 @@ function showProcessingModalDialog(dialogText: DialogText) {
   const message = validateAndSanitizeMessage(messageLines);
   const html = generateDialog(dialogText.title, message);
   showModalDialogSafe(html, dialogText.title, 800, 600, "Processing");
+  processingModalCurrentlyOpen = true;
 }
 
 function closeProcessingModalDialog(): void {
+  if (!processingModalCurrentlyOpen) {
+    return;
+  }
   try {
     const autoCloseHtml = HtmlService.createHtmlOutput(
       '<!DOCTYPE html><html><body><script>' +
@@ -359,8 +371,10 @@ function closeProcessingModalDialog(): void {
       .setWidth(10)
       .setHeight(10);
     SpreadsheetApp.getUi().showModalDialog(autoCloseHtml, '');
+    processingModalCurrentlyOpen = false;
     Utilities.sleep(50); // Allow dialog to render and close
   } catch (error) {
+    processingModalCurrentlyOpen = false;
     console.warn('Unable to close processing dialog:', error);
   }
 }
@@ -384,6 +398,7 @@ function updateProcessingDialogProgress(mainMessage: string, detailMessage?: str
   // Apps Script limitation: We have to close and reopen to update
   // This creates a brief flicker but provides progress feedback
   showModalDialogSafe(html, title, 800, 600, "Processing Progress");
+  processingModalCurrentlyOpen = true;
 }
 
 function showConfigurationGeneratedDialog(folderUrl: string) {

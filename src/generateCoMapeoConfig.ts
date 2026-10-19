@@ -1,37 +1,62 @@
 /**
  * Generates a CoMapeo configuration file from the spreadsheet data.
  * v2.0.0 - Uses JSON-only API, no ZIP workflow
+ *
+ * Progress reporting (#57): the long-running generation records its stages
+ * in the job status store (src/jobStatus.ts) and a sidebar polls that store,
+ * replacing the old close-and-reopen processing modal. The modal helpers in
+ * src/dialog.ts remain for operations not yet migrated.
  */
 
 function generateCoMapeoConfig() {
-  let processingDialogOpen = false;
-  const closeProcessingDialogIfOpen = () => {
-    if (!processingDialogOpen) return;
-    processingDialogOpen = false;
-    if (typeof closeProcessingModalDialog === "function") {
-      try {
-        closeProcessingModalDialog();
-      } catch (closeError) {
-        getScopedLogger("GenerateConfig").warn("Unable to close processing dialog:", closeError);
-      }
-    }
+  const jobId = startJobStatus("generate", {
+    title: "Generate CoMapeo Category",
+    detail: "Reading spreadsheet and preparing generation",
+  });
+  openJobSidebar(jobId);
+
+  /**
+   * Reuses the localized processing dialog texts as stage labels so the
+   * sidebar shows the same wording the modal used to.
+   */
+  const reportStage = (stageIndex: number, percent: number, extraDetail?: string) => {
+    const stageTexts = processingDialogTexts[stageIndex]
+      ? processingDialogTexts[stageIndex][locale]
+      : null;
+    const phase = stageTexts && stageTexts.title ? stageTexts.title : "Working";
+    const firstMessage =
+      stageTexts && Array.isArray(stageTexts.message) && stageTexts.message.length > 0
+        ? stageTexts.message[0]
+        : "";
+    updateJobStatusProgress(jobId, {
+      percent,
+      phase,
+      detail: extraDetail || firstMessage,
+      logMessage: firstMessage || phase,
+    });
   };
 
   try {
     // Step 1: Initialize
-    showProcessingModalDialog(processingDialogTexts[0][locale]);
-    processingDialogOpen = true;
+    reportStage(0, 5);
     getScopedLogger("GenerateConfig").info("Generating CoMapeo config v2.0.0...");
 
     // Step 1.5: Migrate old spreadsheet format if needed
     migrateSpreadsheetFormat();
+    updateJobStatusProgress(jobId, { percent: 10, phase: "Format check" });
 
     // Step 1.6: Check for translation sheet mismatches BEFORE linting
     getScopedLogger("GenerateConfig").info("Checking translation sheet consistency...");
     const mismatchResult = detectTranslationMismatches();
 
     if (mismatchResult && mismatchResult.hasMismatches) {
-      closeProcessingDialogIfOpen();
+      updateJobStatusProgress(jobId, {
+        percent: 15,
+        phase: "Waiting for your decision",
+        detail: "Translation sheet mismatches detected — a dialog is asking how to proceed",
+        logMessage: `Translation mismatches detected in ${mismatchResult.details.length} sheet(s)`,
+        logLevel: "warn",
+      });
 
       // Build detailed error message
       let errorDetails = "Translation sheet mismatches detected:\n\n";
@@ -58,32 +83,12 @@ function generateCoMapeoConfig() {
 
       if (response === ui.Button.YES) {
         // Fix and continue
-        const fixingDialogText: Record<string, { title: string; message: string[] }> = {
-          en: {
-            title: "Fixing Translation Mismatches",
-            message: [
-              "Re-syncing formulas and re-translating...",
-              "This may take a moment",
-            ],
-          },
-          es: {
-            title: "Corrigiendo Desajustes de Traducción",
-            message: [
-              "Re-sincronizando fórmulas y volviendo a traducir...",
-              "Esto puede tardar un momento",
-            ],
-          },
-          pt: {
-            title: "Corrigindo Inconsistências de Tradução",
-            message: [
-              "Ressincronizando fórmulas e retraduzindo...",
-              "Isso pode levar um momento",
-            ],
-          },
-        };
-        const dialogLocale = fixingDialogText[locale] || fixingDialogText.en;
-        showProcessingModalDialog(dialogLocale);
-        processingDialogOpen = true;
+        updateJobStatusProgress(jobId, {
+          percent: 20,
+          phase: "Fixing Translation Mismatches",
+          detail: "Re-syncing formulas and re-translating",
+          logMessage: "Fixing translation mismatches",
+        });
         getScopedLogger("GenerateConfig").info("Fixing translation mismatches...");
         fixTranslationMismatches(true, mismatchResult); // Pass pre-detected mismatch data
         getScopedLogger("GenerateConfig").info("Translation fixes applied, continuing with generation...");
@@ -103,18 +108,15 @@ function generateCoMapeoConfig() {
 
     // Step 2: Lint (passing false to prevent UI alerts)
     getScopedLogger("GenerateConfig").info("Linting CoMapeo config...");
-    showProcessingModalDialog(processingDialogTexts[2][locale]);
-    processingDialogOpen = true;
+    reportStage(2, 40);
     lintAllSheets(false);
 
     // Step 3: Get data
     const data = getSpreadsheetData();
-    showProcessingModalDialog(processingDialogTexts[3][locale]);
-    processingDialogOpen = true;
+    reportStage(3, 50);
 
     // Step 4: Create build payload (JSON)
-    showProcessingModalDialog(processingDialogTexts[4][locale]);
-    processingDialogOpen = true;
+    reportStage(4, 60);
     getScopedLogger("GenerateConfig").info("Creating build payload...");
     const buildRequest = createBuildPayload(data);
 
@@ -122,19 +124,25 @@ function generateCoMapeoConfig() {
     getScopedLogger("GenerateConfig").info("Category selection order:", getCategorySelection());
 
     // Step 5: Send to API (JSON mode)
-    showProcessingModalDialog(processingDialogTexts[5][locale]);
-    processingDialogOpen = true;
+    reportStage(5, 70);
     getScopedLogger("GenerateConfig").info("Sending JSON request to API...");
     const configUrl = sendBuildRequest(buildRequest);
+    updateJobStatusProgress(jobId, {
+      percent: 90,
+      phase: "Packaging response",
+      detail: "Build API returned successfully",
+      logMessage: "Received .comapeocat from build API",
+    });
 
     // Step 6: Show success dialog
-    showProcessingModalDialog(processingDialogTexts[7][locale]);
-    processingDialogOpen = true;
-    closeProcessingDialogIfOpen();
+    completeJobStatus(jobId, "Configuration generated successfully");
     showConfigurationGeneratedDialog(configUrl);
   } catch (error) {
     getScopedLogger("GenerateConfig").error("Error generating CoMapeo config:", error);
-    closeProcessingDialogIfOpen();
+    failJobStatus(
+      jobId,
+      error instanceof Error ? error.message : String(error),
+    );
 
     const ui = SpreadsheetApp.getUi();
     ui.alert(
