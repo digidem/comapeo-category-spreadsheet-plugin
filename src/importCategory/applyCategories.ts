@@ -125,6 +125,12 @@ function applyCategories(
         ? preset.color
         : "";
 
+    // Only carry the Icon ID reference when the icon itself was actually
+    // extracted from the archive: writing an Icon ID with an empty Icon cell
+    // makes generate fail hard ("Could not load icons for categories ..."),
+    // while leaving both blank degrades gracefully to an icon-less category.
+    const iconIdValue = iconUrl ? preset.iconId || "" : "";
+
     return [
       preset.name,
       iconUrl,
@@ -132,7 +138,7 @@ function applyCategories(
       appliesValue,
       preset.id || "",
       colorValue,
-      preset.iconId || "",
+      iconIdValue,
     ];
   });
 

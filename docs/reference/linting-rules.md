@@ -63,6 +63,10 @@ This page explains linting color codes and validation rules.
    - Sheets with `ID` in column D and `Color` in column E (pre-canonical import layout, no `Applies`) get a warning note on the header row.
    - Fix: run **Generate Config** once to migrate, or re-import the config.
 
+8. **Pre-canonical generate layout:**
+   - Sheets with `Applies` and `Category ID` but no `Color` column (older generate layout, `Icon ID` in column F) also get a warning note on the header row.
+   - Fix: run **Generate Config** once — the missing `Color`/`Icon ID` columns are inserted automatically (blank `Color` falls back to the column A background).
+
 ## Details sheet validation
 
 1. **Name (A):**

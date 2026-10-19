@@ -2666,6 +2666,125 @@ function testCanonicalCategoriesLayoutRoundTrip(): boolean {
   }
 }
 
+function testImportIntoExistingLegacySheet(): boolean {
+  console.log("=== Test: Import Into Existing Legacy Categories Sheet ===");
+  try {
+    // Review RISK 1: a pre-existing Categories sheet keeps its legacy header
+    // (Name | Icon | Fields | ID | Color | Icon ID) while populateCategoriesSheet
+    // writes canonical 7-column rows. The import must rewrite the header row to
+    // CATEGORY_HEADERS so generate resolves every column by header correctly.
+    const fakeSheet: any = {
+      values: [
+        ["Name", "Icon", "Fields", "ID", "Color", "Icon ID"],
+        ["Old Cat", "", "", "old-cat", "#FF0000", "old-icon"],
+      ] as any[][],
+      getLastRow() {
+        return this.values.length;
+      },
+      getRange(row: number, col: number, numRows = 1, numCols = 1) {
+        const sheet = this;
+        return {
+          setValues(vals: any[][]) {
+            for (let r = 0; r < vals.length; r++) {
+              while (sheet.values.length <= row - 1 + r) sheet.values.push([]);
+              for (let c = 0; c < vals[r].length; c++) {
+                const target = sheet.values[row - 1 + r];
+                while (target.length <= col - 1 + c) target.push("");
+                target[col - 1 + c] = vals[r][c];
+              }
+            }
+            return this;
+          },
+          clear() {
+            return this;
+          },
+          setFontWeight() {
+            return this;
+          },
+          setBackgrounds(bgs: string[][]) {
+            return this;
+          },
+        };
+      },
+    };
+    const fakeSpreadsheet: any = {
+      getSheetByName: (name: string) =>
+        name === "Categories" ? fakeSheet : null,
+      insertSheet: () => {
+        throw new Error("insertSheet must not run when Categories exists");
+      },
+    };
+
+    const categories = [
+      {
+        id: "river-cat",
+        name: "River",
+        appliesTo: ["track", "observation"],
+        color: "#1B5E88",
+        iconId: "river-icon",
+        defaultFieldIds: [],
+      } as any,
+    ];
+    populateCategoriesSheet(fakeSpreadsheet, categories, new Map(), []);
+
+    const header = fakeSheet.values[0];
+    if (JSON.stringify(header) !== JSON.stringify(CATEGORY_HEADERS)) {
+      console.error(
+        `FAIL: legacy header should be rewritten to canonical, got ${JSON.stringify(header)}`,
+      );
+      return false;
+    }
+    const riverRow = fakeSheet.values[1];
+    if (
+      JSON.stringify(riverRow) !==
+      JSON.stringify([
+        "River",
+        "",
+        "",
+        "track, observation",
+        "river-cat",
+        "#1B5E88",
+        "river-icon",
+      ])
+    ) {
+      console.error(`FAIL: imported row not canonical: ${JSON.stringify(riverRow)}`);
+      return false;
+    }
+
+    // Generate must read every column back from its canonical position.
+    const roundTripData = {
+      documentName: "Existing Sheet Import" as any,
+      Categories: fakeSheet.values.map((row: any[]) => row.slice()),
+      Details: [
+        ["Name", "Helper Text", "Type", "Options", "ID", "Universal"],
+      ],
+    } as SheetData;
+    const rebuilt = buildCategories(roundTripData, []);
+    if (rebuilt.length !== 1) {
+      console.error(`FAIL: expected 1 category after readback, got ${rebuilt.length}`);
+      return false;
+    }
+    if (
+      JSON.stringify(rebuilt[0].appliesTo) !==
+        JSON.stringify(["track", "observation"]) ||
+      rebuilt[0].id !== "river-cat" ||
+      rebuilt[0].color !== "#1B5E88" ||
+      rebuilt[0].iconId !== "river-icon"
+    ) {
+      console.error(
+        `FAIL: generate misread the imported sheet: ${JSON.stringify(rebuilt[0])}`,
+      );
+      return false;
+    }
+
+    console.log("PASS: existing legacy sheet gets canonical header and columns");
+    return true;
+  } catch (error) {
+    console.error("FAIL: Exception thrown - " + (error as Error).message);
+    return false;
+  }
+}
+
 function runBuildAndImportTests(): void {
   console.log("\n========================================");
   console.log("CoMapeo Config v2.0.0 - Build & Import Tests");
@@ -2698,6 +2817,7 @@ function runBuildAndImportTests(): void {
     { name: "Build Categories Requires Track Coverage", fn: testBuildCategoriesRequiresTrackCoverage },
     { name: "Categories Applies Parsing", fn: testCategoriesAppliesParsing },
     { name: "Canonical Categories Layout Round-Trip", fn: testCanonicalCategoriesLayoutRoundTrip },
+    { name: "Import Into Existing Legacy Sheet", fn: testImportIntoExistingLegacySheet },
 
     // Round-trip integration tests
     { name: "Integer Field Round-Trip", fn: testIntegerFieldRoundTrip },

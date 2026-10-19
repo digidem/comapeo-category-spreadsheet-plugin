@@ -12,18 +12,6 @@ let AUTO_CREATED_CATEGORY_ID_COLUMN = false;
 
 // Column indices are declared globally in src/constants/columns.ts
 
-/** Expected sheet headers for validation.
- * CATEGORIES uses a getter because GAS loads files alphabetically by path:
- * src/apiService.ts is concatenated before src/constants/columns.ts, so a
- * module-scope reference to CATEGORY_HEADERS would throw at boot.
- */
-const EXPECTED_HEADERS = {
-  get CATEGORIES(): string[] {
-    return CATEGORY_HEADERS.slice();
-  },
-  DETAILS: ['Name', 'Helper Text', 'Type', 'Options', 'ID', 'Universal']
-};
-
 // =============================================================================
 // Validation Functions
 // =============================================================================
@@ -428,6 +416,15 @@ function migrateSpreadsheetFormat(): void {
           logCategoryWarning(`Failed to ensure Category ID column on Categories sheet: ${(error as Error).message}`);
         }
 
+        try {
+          if (ensureCanonicalColorIconIdColumns(categoriesSheet)) {
+            refreshCategoryHeaders();
+            migrationNotices.push('Color and/or Icon ID columns were missing and have been added automatically (left blank). Generate reads colors from the Color column with fallback to the column A background; verify columns F and G before rerunning.');
+          }
+        } catch (error) {
+          logCategoryWarning(`Failed to ensure Color/Icon ID columns on Categories sheet: ${(error as Error).message}`);
+        }
+
         const categoriesLayoutError = validateCategoriesHeaderLayout(categoriesSheet);
         if (categoriesLayoutError) {
           logCategoryWarning(categoriesLayoutError);
@@ -705,6 +702,69 @@ function ensureCategoryIdColumn(categoriesSheet: GoogleAppsScript.Spreadsheet.Sh
   populateMissingCategoryIds(categoriesSheet, idColIndex);
   ensurePlainTextColumn(categoriesSheet, idColIndex);
   return columnInserted;
+}
+
+/**
+ * Ensures the trailing canonical columns (Color at F, Icon ID at G) exist so
+ * pre-canonical generate layouts auto-heal instead of failing
+ * validateCategoriesHeaderLayout (issue #61 / #52 review RISK 2).
+ *
+ * Handles two legacy layouts:
+ *  - Pre-#61 generate layout (Name | Icon | Fields | Applies | Category ID |
+ *    Icon ID, no Color): inserts a blank Color column after Category ID,
+ *    pushing Icon ID into its canonical slot at G. Blank Color falls back to
+ *    the column A background at export time, so no data is invented.
+ *  - Older generate layouts that end at Category ID: inserts blank Color and
+ *    Icon ID columns.
+ *
+ * Sheets whose first five columns are not the canonical prefix are left
+ * untouched — validateCategoriesHeaderLayout reports those with a clear
+ * message instead of guessing at a repair.
+ * @returns true when any column was inserted.
+ */
+function ensureCanonicalColorIconIdColumns(
+  categoriesSheet: GoogleAppsScript.Spreadsheet.Sheet
+): boolean {
+  const lastCol = categoriesSheet.getLastColumn();
+  if (lastCol === 0) return false;
+
+  const readNormalizedHeaders = (): string[] => {
+    return categoriesSheet
+      .getRange(1, 1, 1, categoriesSheet.getLastColumn())
+      .getValues()[0]
+      .map(normalizeHeaderLabel);
+  };
+
+  let normalized = readNormalizedHeaders();
+  if (normalized[4] !== 'category id') return false;
+
+  let changed = false;
+
+  if (normalized[5] !== 'color') {
+    // Only insert when Color is absent entirely; a Color header sitting at
+    // some other position is a layout validateCategoriesHeaderLayout already
+    // reports clearly.
+    const colorIndex = normalized.indexOf('color');
+    if (colorIndex === -1) {
+      categoriesSheet.insertColumnAfter(5); // new column becomes index 5
+      setHeaderValue(categoriesSheet, 5, 'Color');
+      ensurePlainTextColumn(categoriesSheet, 5);
+      changed = true;
+    }
+  }
+
+  normalized = readNormalizedHeaders();
+  if (normalized[6] !== 'icon id') {
+    const iconIdIndex = normalized.indexOf('icon id');
+    if (iconIdIndex === -1) {
+      categoriesSheet.insertColumnAfter(6); // new column becomes index 6
+      setHeaderValue(categoriesSheet, 6, 'Icon ID');
+      ensurePlainTextColumn(categoriesSheet, 6);
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 function populateMissingCategoryIds(
