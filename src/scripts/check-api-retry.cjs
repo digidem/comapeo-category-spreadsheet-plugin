@@ -6,7 +6,9 @@
 // Verifies: only transient failures retry (408/429/502/503/504 + network
 // exceptions), permanent failures fail fast without sleeping, Drive-save
 // errors never re-POST the build, and sendBuildRequest itself shows no
-// blocking ui.alert (the caller owns user-facing errors).
+// blocking ui.alert (the caller owns user-facing errors). Also verifies the
+// Idempotency-Key header: present on every POST, one key per logical build
+// reused across all retries of that build, and a fresh key for a new build.
 
 const {
   collectTypeScriptFiles,
@@ -56,6 +58,7 @@ function createTest({ fetchScript }) {
     sleeps: [],
     alerts: 0,
     driveSaves: 0,
+    requests: [],
     toasts,
   };
 
@@ -78,9 +81,12 @@ function createTest({ fetchScript }) {
   context.Utilities.sleep = (ms) => {
     state.sleeps.push(ms);
   };
+  let uuidCounter = 0;
+  context.Utilities.getUuid = () => `test-uuid-${++uuidCounter}`;
   context.UrlFetchApp = {
-    fetch() {
+    fetch(url, options) {
       state.fetches++;
+      state.requests.push({ url, options });
       const step = fetchScript.shift();
       if (step instanceof Error) {
         throw step;
@@ -115,6 +121,7 @@ function runCases() {
   assert(t.state.fetches === 1, `single fetch on success (got ${t.state.fetches})`);
   assert(t.state.sleeps.length === 0, "no backoff sleep on success");
   assert(t.state.driveSaves === 1, "blob saved to Drive once");
+  assert(typeof t.state.requests[0].options.headers["Idempotency-Key"] === "string" && t.state.requests[0].options.headers["Idempotency-Key"].length > 0, "POST carries a non-empty Idempotency-Key header");
 
   // 2) Transient 503s retry with exponential backoff, then succeed.
   t = createTest({ fetchScript: [makeResponse(503, "unavailable"), makeResponse(503, "unavailable"), OK] });
@@ -124,6 +131,9 @@ function runCases() {
   assert(JSON.stringify(t.state.sleeps) === "[1000,2000]", `backoff 1000ms then 2000ms (got ${JSON.stringify(t.state.sleeps)})`);
   assert(t.state.toasts.filter((toast) => toast.title === "Retrying build request").length === 2, "retry notice via non-blocking toast");
   assert(t.state.alerts === 0, "no blocking ui.alert on the retry path");
+  const retryKeys = new Set(t.state.requests.map((req) => req.options.headers["Idempotency-Key"]));
+  assert(retryKeys.size === 1, `all retries of one build reuse one Idempotency-Key (got ${retryKeys.size}: ${[...retryKeys].join(",")})`);
+  assert(retryKeys.has("test-uuid-1"), "retry run used the first generated key");
 
   // 3) Permanent failures fail fast: 400/401/422/500, one fetch, no sleep.
   for (const code of [400, 401, 422, 500]) {
@@ -201,6 +211,16 @@ function runCases() {
     // expected
   }
   assert(t.state.alerts === 0, `no ui.alert from sendBuildRequest (got ${t.state.alerts})`);
+
+  // 10) A new build gets a fresh Idempotency-Key (per-build, not global).
+  // Two sequential builds in the same context share the uuid counter, so the
+  // second run must produce a different key than the first.
+  t = createTest({ fetchScript: [OK, OK] });
+  t.run();
+  t.run();
+  const firstKey = t.state.requests[0].options.headers["Idempotency-Key"];
+  const secondKey = t.state.requests[1].options.headers["Idempotency-Key"];
+  assert(firstKey !== secondKey, `new build uses a new Idempotency-Key (${firstKey} vs ${secondKey})`);
 }
 
 function main() {
