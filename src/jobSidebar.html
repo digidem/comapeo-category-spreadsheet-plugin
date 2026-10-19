@@ -192,6 +192,9 @@
     // server as window.SIDEBAR_JOB_ID after this script block.
     var POLL_INTERVAL_MS = 2000;
     var MAX_MISSES = 30; // ~1 minute of missing state before giving up.
+    var MISSING_MESSAGE =
+      'No job state found for this sidebar. The operation may have ' +
+      'finished elsewhere or its state expired. Close and retry.';
 
     var jobId = null;
     var pollTimer = null;
@@ -277,18 +280,21 @@
       }
     }
 
+    function giveUp(detailMessage) {
+      terminal = true;
+      stopPolling();
+      var pill = getElement('status-pill');
+      pill.className = 'pill error';
+      pill.textContent = 'no data';
+      getElement('detail').textContent = detailMessage;
+      getElement('close-btn').style.display = 'inline-block';
+    }
+
     function renderMissing() {
       missingCount++;
       getElement('detail').textContent = 'Waiting for job data…';
       if (missingCount >= MAX_MISSES) {
-        stopPolling();
-        var pill = getElement('status-pill');
-        pill.className = 'pill error';
-        pill.textContent = 'no data';
-        getElement('detail').textContent =
-          'No job state found for this sidebar. The operation may have ' +
-          'finished elsewhere or its state expired. Close and retry.';
-        getElement('close-btn').style.display = 'inline-block';
+        giveUp(MISSING_MESSAGE);
       }
     }
 
@@ -310,6 +316,17 @@
 
     function onPollError(error) {
       console.error('Job status poll failed:', error);
+      // Persistent transport failures (expired auth, blocked cookies) must
+      // count toward MAX_MISSES or the sidebar polls forever every 2s.
+      missingCount++;
+      if (missingCount >= MAX_MISSES) {
+        giveUp(
+          'Poll failed ' + MAX_MISSES + ' times (' +
+            ((error && error.message) || 'unknown') + '); stopped retrying. ' +
+            'Close and retry the operation.',
+        );
+        return;
+      }
       getElement('detail').textContent =
         'Poll failed (' + ((error && error.message) || 'unknown') + '); retrying…';
     }
@@ -353,7 +370,10 @@
     document.addEventListener('DOMContentLoaded', function () {
       jobId = window.SIDEBAR_JOB_ID || null;
       if (!jobId) {
-        renderMissing();
+        // Without an id no poll can ever succeed, so render the terminal
+        // no-data state directly instead of dead-ending on a single
+        // renderMissing() call that never reaches MAX_MISSES.
+        giveUp(MISSING_MESSAGE);
       }
       getElement('cancel-btn').addEventListener('click', requestCancel);
       getElement('close-btn').addEventListener('click', function () {
